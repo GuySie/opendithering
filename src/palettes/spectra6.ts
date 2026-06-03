@@ -17,6 +17,18 @@ export const spectra6Group: PaletteGroup = {
       ],
     },
     {
+      id: 'spectra6-wenting',
+      name: 'Wenting',
+      colors: [
+        { name: 'black',  measured: [46, 44, 66],    ideal: [0, 0, 0] },
+        { name: 'white',  measured: [211, 214, 205], ideal: [255, 255, 255] },
+        { name: 'green',  measured: [92, 138, 91],   ideal: [0, 255, 0] },
+        { name: 'blue',   measured: [49, 106, 193],  ideal: [0, 0, 255] },
+        { name: 'red',    measured: [177, 29, 25],   ideal: [255, 0, 0] },
+        { name: 'yellow', measured: [217, 199, 1],   ideal: [255, 255, 0] },
+      ],
+    },
+    {
       id: 'spectra6-epdoptimize',
       name: 'EPDOptimize',
       colors: [

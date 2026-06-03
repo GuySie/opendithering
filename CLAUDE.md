@@ -30,7 +30,7 @@ The UI shows a **Calibration** dropdown (always visible) and a row of **color sw
 **Variant naming convention:** use the source name as the variant name (e.g. `EPDOptimize`, `aitjcize`). If the origin is unknown, use `Estimated`. The auto-generated variant is always named `Ideal`. Do not use "Default".
 
 **Current variant sources:**
-- `spectra6` — **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`spectra6` entry); **aitjcize**: `aitjcize/esp32-photoframe` `main/color_palette.c` (`color_palette_get_defaults`)
+- `spectra6` — **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`spectra6` entry); **aitjcize**: `aitjcize/esp32-photoframe` `main/color_palette.c` (`color_palette_get_defaults`); **Wenting**: `mattcarter11/eink-dithering-tester` `src/config.js` (`wenting` const); **EPDOptimize (Legacy)**: independently confirmed by Rayman, Parallax forums post 177818 (2026-01-11), `SPECTRA6_REAL_WORD_RGB`
 - `acep` — **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`acep` entry)
 - `bw`, `bwr`, `bwry`, `grayscale4`, `grayscale8` — **Estimated**: origin unknown; do not label as calibrated
 - `grayscale16` — **Estimated**: origin unknown; **Measured**: photographed from a physical Seeed reTerminal E1003 panel (guysie)
