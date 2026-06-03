@@ -350,12 +350,19 @@ function imageDataToBitmap(data: ImageData): HTMLCanvasElement {
 // ── UI wiring ─────────────────────────────────────────────────────────────
 
 // Display preset
+function setDimsEditable(editable: boolean) {
+  dimWidth.readOnly = !editable
+  dimHeight.readOnly = !editable
+  paletteSelect.disabled = !editable
+  customDims.classList.toggle('dims-readonly', !editable)
+}
+
 presetSelect.addEventListener('change', () => {
   const preset = DISPLAY_PRESETS.find(p => p.id === presetSelect.value)!
   if (preset.id === 'custom') {
-    customDims.style.display = 'block'
+    setDimsEditable(true)
   } else {
-    customDims.style.display = 'none'
+    setDimsEditable(false)
     displayWidth = preset.width
     displayHeight = preset.height
     paletteGroupId = preset.paletteGroupId
@@ -824,4 +831,4 @@ renderSwatches()
 
 // Set initial display preset
 presetSelect.value = 'seeed-reterminal-e1002'
-customDims.style.display = 'none'
+setDimsEditable(false)

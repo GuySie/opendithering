@@ -1,15 +1,27 @@
 import type { DisplayPreset } from '../types'
 
 export const DISPLAY_PRESETS: DisplayPreset[] = [
+  { id: 'seeed-reterminal-e1001',     name: 'reTerminal E1001',         manufacturer: 'Seeed Studio',  width: 800,  height: 480,  paletteGroupId: 'bw' },
   { id: 'seeed-reterminal-e1002',     name: 'reTerminal E1002',         manufacturer: 'Seeed Studio',  width: 800,  height: 480,  paletteGroupId: 'spectra6' },
-  { id: 'seeed-reterminal-e1003',     name: 'reTerminal E1003',         manufacturer: 'Seeed Studio',  width: 1404, height: 1872, paletteGroupId: 'grayscale16' },
-  { id: 'waveshare-73-acep',          name: '7.3" Gallery (ACeP)',       manufacturer: 'Waveshare',     width: 800, height: 480, paletteGroupId: 'acep' },
-  { id: 'waveshare-565-acep',         name: '5.65" Gallery (ACeP)',      manufacturer: 'Waveshare',     width: 600, height: 448, paletteGroupId: 'acep' },
+  { id: 'seeed-reterminal-e1003',     name: 'reTerminal E1003',         manufacturer: 'Seeed Studio',  width: 1872, height: 1404, paletteGroupId: 'grayscale16' },
+  { id: 'seeed-reterminal-e1004',     name: 'reTerminal E1004',         manufacturer: 'Seeed Studio',  width: 1600, height: 1200, paletteGroupId: 'spectra6' },
+  { id: 'trmnl-og',                    name: 'TRMNL OG',                  manufacturer: 'TRMNL',         width: 800,  height: 480,  paletteGroupId: 'bw' },
+  { id: 'trmnl-og-2bpp',              name: 'TRMNL OG (2bpp)',           manufacturer: 'TRMNL',         width: 800,  height: 480,  paletteGroupId: 'grayscale4' },
+  { id: 'trmnl-x',                    name: 'TRMNL X',                   manufacturer: 'TRMNL',         width: 1872, height: 1404, paletteGroupId: 'grayscale16' },
+  { id: 'waveshare-photopainter-e6',   name: 'PhotoPainter (E6)',         manufacturer: 'Waveshare',     width: 800, height: 480, paletteGroupId: 'spectra6' },
+  { id: 'waveshare-photopainter-acep', name: 'PhotoPainter (ACeP)',       manufacturer: 'Waveshare',     width: 800, height: 480, paletteGroupId: 'acep' },
   { id: 'pimoroni-impression-73',     name: 'Inky Impression 7.3"',      manufacturer: 'Pimoroni',      width: 800, height: 480, paletteGroupId: 'acep' },
   { id: 'pimoroni-impression-565',    name: 'Inky Impression 5.7"',      manufacturer: 'Pimoroni',      width: 600, height: 448, paletteGroupId: 'acep' },
-  { id: 'waveshare-27-bwr',           name: '2.7" BWR',                  manufacturer: 'Waveshare',     width: 264, height: 176, paletteGroupId: 'bwr' },
-  { id: 'waveshare-42-bw',            name: '4.2" BW',                   manufacturer: 'Waveshare',     width: 400, height: 300, paletteGroupId: 'bw' },
-  { id: 'waveshare-213-bw',           name: '2.13" BW',                  manufacturer: 'Waveshare',     width: 250, height: 122, paletteGroupId: 'bw' },
+  { id: 'inkplate-6',                  name: 'Inkplate 6',                manufacturer: 'Soldered',      width: 800,  height: 600,  paletteGroupId: 'bw' },
+  { id: 'inkplate-6-3bpp',             name: 'Inkplate 6 (3bpp)',         manufacturer: 'Soldered',      width: 800,  height: 600,  paletteGroupId: 'grayscale8' },
+  { id: 'inkplate-10',                 name: 'Inkplate 10',               manufacturer: 'Soldered',      width: 1200, height: 825,  paletteGroupId: 'bw' },
+  { id: 'inkplate-10-3bpp',            name: 'Inkplate 10 (3bpp)',        manufacturer: 'Soldered',      width: 1200, height: 825,  paletteGroupId: 'grayscale8' },
+  { id: 'inkplate-6color',             name: 'Inkplate 6COLOR',           manufacturer: 'Soldered',      width: 600,  height: 448,  paletteGroupId: 'acep' },
+  { id: 'gicisky-esl-21',              name: 'ESL 2.1"',                  manufacturer: 'Gicisky',       width: 250,  height: 128,  paletteGroupId: 'bwr' },
+  { id: 'gicisky-esl-29',              name: 'ESL 2.9"',                  manufacturer: 'Gicisky',       width: 296,  height: 128,  paletteGroupId: 'bwr' },
+  { id: 'gicisky-esl-42',              name: 'ESL 4.2"',                  manufacturer: 'Gicisky',       width: 400,  height: 300,  paletteGroupId: 'bwr' },
+  { id: 'gicisky-esl-75',              name: 'ESL 7.5"',                  manufacturer: 'Gicisky',       width: 800,  height: 480,  paletteGroupId: 'bwr' },
+  { id: 'gicisky-esl-102',             name: 'ESL 10.2"',                 manufacturer: 'Gicisky',       width: 960,  height: 640,  paletteGroupId: 'bwr' },
   { id: 'custom',                     name: 'Custom',                    manufacturer: '',              width: 800, height: 480, paletteGroupId: 'spectra6' },
 ]
 

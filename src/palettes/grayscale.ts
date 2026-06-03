@@ -29,6 +29,20 @@ export const grayscale4Group: PaletteGroup = {
   ],
 }
 
+export const grayscale8Group: PaletteGroup = {
+  id: 'grayscale8',
+  name: 'Grayscale 8-level',
+  variants: [
+    {
+      id: 'grayscale8-default',
+      name: 'Estimated',
+      colors: Array.from({ length: 8 }, (_, i) =>
+        grayEntry(i, 7, i === 0 ? 'black' : i === 7 ? 'white' : `gray ${i}`)
+      ),
+    },
+  ],
+}
+
 export const grayscale16Group: PaletteGroup = {
   id: 'grayscale16',
   name: 'Grayscale 16-level',

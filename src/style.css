@@ -368,8 +368,10 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   display: flex;
 }
 
-/* ── Custom dims visibility ── */
+/* ── Display dims / panel type ── */
 .custom-dims { margin-top: 0.5rem; }
+.dims-readonly input[type="number"],
+.dims-readonly select { opacity: 0.55; cursor: default; pointer-events: none; }
 
 /* ── Palette swatches ── */
 .palette-swatches {

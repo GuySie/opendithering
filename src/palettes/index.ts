@@ -1,9 +1,10 @@
 import type { Palette, PaletteGroup } from '../types'
 import { bwGroup } from './bw'
 import { bwrGroup } from './bwr'
+import { bwryGroup } from './bwry'
 import { spectra6Group } from './spectra6'
 import { acepGroup } from './acep'
-import { grayscale4Group, grayscale16Group } from './grayscale'
+import { grayscale4Group, grayscale8Group, grayscale16Group } from './grayscale'
 
 const PALETTE_GROUPS = new Map<string, PaletteGroup>()
 const VARIANT_MAP    = new Map<string, Palette>()
@@ -28,9 +29,11 @@ function registerPaletteGroup(group: PaletteGroup): void {
 
 registerPaletteGroup(bwGroup)
 registerPaletteGroup(bwrGroup)
+registerPaletteGroup(bwryGroup)
 registerPaletteGroup(spectra6Group)
 registerPaletteGroup(acepGroup)
 registerPaletteGroup(grayscale4Group)
+registerPaletteGroup(grayscale8Group)
 registerPaletteGroup(grayscale16Group)
 
 export function getPaletteGroup(id: string): PaletteGroup {

@@ -32,7 +32,7 @@ The UI shows a **Calibration** dropdown (always visible) and a row of **color sw
 **Current variant sources:**
 - `spectra6` — **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`spectra6` entry); **aitjcize**: `aitjcize/esp32-photoframe` `main/color_palette.c` (`color_palette_get_defaults`)
 - `acep` — **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`acep` entry)
-- `bw`, `bwr`, `grayscale4` — **Estimated**: origin unknown; do not label as calibrated
+- `bw`, `bwr`, `bwry`, `grayscale4`, `grayscale8` — **Estimated**: origin unknown; do not label as calibrated
 - `grayscale16` — **Estimated**: origin unknown; **Measured**: photographed from a physical Seeed reTerminal E1003 panel (guysie)
 
 To add a calibration variant to an existing palette, add another `Palette` entry to its `variants` array in the palette file. The registry picks it up automatically.
@@ -60,10 +60,11 @@ src/
 ├── palettes/
 │   ├── index.ts               # Registry: getPaletteGroup(id), getAllPaletteGroups(), getPaletteVariant(groupId, variantId)
 │   ├── bw.ts                  # 2-color
-│   ├── bwr.ts                 # 3-color
+│   ├── bwr.ts                 # 3-color (BWR)
+│   ├── bwry.ts                # 4-color (BWRY)
 │   ├── spectra6.ts            # 6-color (Spectra 6 panels)
 │   ├── acep.ts                # 7-color (Gallery / ACeP panels)
-│   └── grayscale.ts           # 4-level and 16-level
+│   └── grayscale.ts           # 4-level, 8-level, and 16-level
 ├── displays/
 │   └── presets.ts             # Device preset registry (name, W×H, paletteGroupId)
 ├── dithering/
