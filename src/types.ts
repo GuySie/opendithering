@@ -59,6 +59,7 @@ export interface ImageFile {
   name: string
   original: ImageData
   dithered: ImageData | null
+  ideal?: ImageData
   width: number   // display target width (after resize)
   height: number  // display target height (after resize)
 }

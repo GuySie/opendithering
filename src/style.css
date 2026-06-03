@@ -287,6 +287,27 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   min-height: 1.6rem;
 }
 
+.preview-toggle {
+  margin-left: auto;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.preview-toggle-btn {
+  background: none;
+  border: none;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.preview-toggle-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
 .badge {
   background: var(--surface2);
   border: 1px solid var(--border);

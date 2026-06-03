@@ -16,6 +16,7 @@ let displayHeight = 480
 let paletteGroupId       = 'spectra6'
 let calibrationVariantId = 'spectra6-aitjcize'
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let showIdealPreview = false
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -50,7 +51,9 @@ const viewportDith     = el<HTMLDivElement>('viewportDith')
 const emptyState       = el<HTMLDivElement>('emptyState')
 const previewPanels    = el<HTMLDivElement>('previewPanels')
 const procOverlay      = el<HTMLDivElement>('processingOverlay')
-const paletteBadge     = el<HTMLSpanElement>('paletteBadge')
+const paletteBadge         = el<HTMLSpanElement>('paletteBadge')
+const ditheredPanelLabel   = el<HTMLSpanElement>('ditheredPanelLabel')
+const previewToggleBtns    = Array.from(document.querySelectorAll<HTMLButtonElement>('.preview-toggle-btn'))
 const btnDownloadPng   = el<HTMLButtonElement>('btnDownloadPng')
 const btnDownloadBmp   = el<HTMLButtonElement>('btnDownloadBmp')
 const btnDownloadZip   = el<HTMLButtonElement>('btnDownloadZip')
@@ -254,6 +257,14 @@ function showDithered(data: ImageData) {
   }
 }
 
+function refreshDitheredView() {
+  const img = images.find(i => i.id === activeId)
+  if (!img) return
+  const data = showIdealPreview ? img.ideal : img.dithered
+  if (data) showDithered(data)
+  ditheredPanelLabel.textContent = showIdealPreview ? 'Export file' : 'As on device'
+}
+
 // ── Processing ─────────────────────────────────────────────────────────────
 
 function scheduleProcess() {
@@ -290,11 +301,10 @@ async function processActive() {
   const resized = resizeForPreview(img.original, displayWidth, displayHeight, resizeMode)
   putImageData(canvasOrig, resized)
 
-  img.dithered = result.measured  // store measured for preview
-  // Store ideal on the img object under a parallel field
-  ;(img as ImageFile & { ideal?: ImageData }).ideal = result.ideal
+  img.dithered = result.measured
+  img.ideal = result.ideal
 
-  showDithered(result.measured)
+  refreshDitheredView()
   updatePaletteBadge()
   renderSwatches()
   updateExportButtons()
@@ -518,6 +528,14 @@ expandPaletteCheck.addEventListener('change', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
+previewToggleBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    showIdealPreview = btn.dataset.mode === 'export'
+    previewToggleBtns.forEach(b => b.classList.toggle('active', b === btn))
+    refreshDitheredView()
+  })
+})
+
 function syncSlidersFromSettings() {
   setSlider('sliderExposure', 'valExposure', settings.exposure * 100, settings.exposure)
   setSlider('sliderSaturation', 'valSaturation', settings.saturation * 100, settings.saturation)
@@ -587,7 +605,7 @@ function updateExportButtons() {
 btnDownloadPng.addEventListener('click', async () => {
   const img = images.find(i => i.id === activeId)
   if (!img) return
-  const ideal = (img as ImageFile & { ideal?: ImageData }).ideal
+  const ideal = img.ideal
   if (!ideal) return
   const blob = await imageDataToBlob(ideal)
   downloadBlob(blob, stripExt(img.name) + '_dithered.png')
@@ -596,7 +614,7 @@ btnDownloadPng.addEventListener('click', async () => {
 btnDownloadBmp.addEventListener('click', async () => {
   const img = images.find(i => i.id === activeId)
   if (!img) return
-  const ideal = (img as ImageFile & { ideal?: ImageData }).ideal
+  const ideal = img.ideal
   if (!ideal) return
   const blob = imageDataToBmpBlob(ideal)
   downloadBlob(blob, stripExt(img.name) + '_dithered.bmp')
@@ -623,9 +641,9 @@ btnDownloadZip.addEventListener('click', async () => {
       })
       bmp.close()
       img.dithered = r.measured
-      ;(img as ImageFile & { ideal?: ImageData }).ideal = r.ideal
+      ;img.ideal = r.ideal
     }
-    const ideal = (img as ImageFile & { ideal?: ImageData }).ideal
+    const ideal = img.ideal
     if (!ideal) continue
     const blob = await imageDataToBlob(ideal)
     zip.file(stripExt(img.name) + '_dithered.png', blob)

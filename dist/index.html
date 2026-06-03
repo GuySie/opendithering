@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenDithering</title>
-  <script type="module" crossorigin src="./assets/index-C4w-nUqN.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-Ci_a0Ei2.css">
+  <script type="module" crossorigin src="./assets/index-uUlGS4xS.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BKbO9vQi.css">
 </head>
 <body>
   <header>
@@ -183,7 +183,7 @@
           <button class="btn-secondary" id="btnDownloadBmp" disabled>↓ BMP</button>
           <button class="btn-secondary" id="btnDownloadZip" disabled>↓ ZIP (all)</button>
         </div>
-        <p class="export-hint">Preview uses measured colors (realistic). Export uses ideal colors (for firmware).</p>
+        <p class="export-hint">Preview uses calibrated colors (realistic). Export uses ideal colors (as device expects).</p>
       </section>
 
     </aside>
@@ -203,7 +203,14 @@
           </div>
         </div>
         <div class="preview-panel">
-          <div class="panel-label">As on device <span class="badge" id="paletteBadge"></span></div>
+          <div class="panel-label">
+            <span id="ditheredPanelLabel">As on device</span>
+            <span class="badge" id="paletteBadge"></span>
+            <div class="preview-toggle">
+              <button class="preview-toggle-btn active" data-mode="calibrated">Calibrated</button>
+              <button class="preview-toggle-btn" data-mode="export">Export</button>
+            </div>
+          </div>
           <div class="canvas-viewport" id="viewportDith">
             <canvas id="canvasDithered"></canvas>
             <div class="processing-overlay" id="processingOverlay" hidden>Processing…</div>
