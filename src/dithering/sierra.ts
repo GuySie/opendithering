@@ -1,0 +1,26 @@
+import type { DitheringAlgorithm, Palette, ColorSpace } from '../types'
+import { errorDiffuse } from './error-diffusion'
+
+//     * 5 3
+// 2 4 5 4 2
+//   2 3 2    /32
+const KERNEL = [
+  { dx:  1, dy: 0, weight: 5 },
+  { dx:  2, dy: 0, weight: 3 },
+  { dx: -2, dy: 1, weight: 2 },
+  { dx: -1, dy: 1, weight: 4 },
+  { dx:  0, dy: 1, weight: 5 },
+  { dx:  1, dy: 1, weight: 4 },
+  { dx:  2, dy: 1, weight: 2 },
+  { dx: -1, dy: 2, weight: 2 },
+  { dx:  0, dy: 2, weight: 3 },
+  { dx:  1, dy: 2, weight: 2 },
+]
+
+export const sierra: DitheringAlgorithm = {
+  id: 'sierra',
+  name: 'Sierra',
+  dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean): ImageData {
+    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 32, localVariance)
+  },
+}

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenDithering</title>
+  <script type="module" crossorigin src="./assets/index-C4w-nUqN.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-Ci_a0Ei2.css">
+</head>
+<body>
+  <header>
+    <h1>OpenDithering</h1>
+    <p class="tagline">Dither images for e-paper displays</p>
+  </header>
+
+  <div class="app-layout">
+    <!-- ── Sidebar ── -->
+    <aside class="sidebar" id="sidebar">
+
+      <section class="section">
+        <h2>1. Upload</h2>
+        <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Upload images">
+          <span class="drop-icon">↑</span>
+          <span>Drop images here or <strong>click to browse</strong></span>
+          <span class="drop-hint">JPEG · PNG · WebP · GIF</span>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" multiple hidden />
+        <div class="thumbnail-strip" id="thumbnailStrip"></div>
+      </section>
+
+      <section class="section">
+        <h2>2. Display</h2>
+        <label for="presetSelect">Device preset</label>
+        <select id="presetSelect"></select>
+        <div class="custom-dims" id="customDims">
+          <div class="dim-row">
+            <label for="dimWidth">Width</label>
+            <input type="number" id="dimWidth" min="1" max="7680" value="800" />
+            <label for="dimHeight">Height</label>
+            <input type="number" id="dimHeight" min="1" max="4320" value="480" />
+          </div>
+          <label for="paletteSelect">Panel type</label>
+          <select id="paletteSelect"></select>
+        </div>
+
+        <label for="resizeMode">Resize mode</label>
+        <select id="resizeMode">
+          <option value="cover">Cover (fill, crop)</option>
+          <option value="contain">Contain (fit, pad)</option>
+          <option value="stretch">Stretch (distort)</option>
+          <option value="none">None (center-crop)</option>
+        </select>
+
+        <label for="calibrationSelect">Calibration</label>
+        <select id="calibrationSelect"></select>
+        <div class="palette-swatches" id="paletteSwatches"></div>
+      </section>
+
+      <section class="section">
+        <h2>3. Preset</h2>
+        <div class="preset-buttons" id="tonePresets">
+          <button class="preset-btn active" data-preset="balanced">Balanced</button>
+          <button class="preset-btn" data-preset="vivid">Vivid</button>
+          <button class="preset-btn" data-preset="soft">Soft</button>
+          <button class="preset-btn" data-preset="grayscale">Grayscale</button>
+          <button class="preset-btn" data-preset="custom" id="customPresetBtn">Custom</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>4. Tone</h2>
+
+        <div class="slider-row">
+          <label for="sliderExposure">Exposure</label>
+          <input type="range" id="sliderExposure" min="50" max="200" value="100" step="1" />
+          <span class="slider-val" id="valExposure">1.0</span>
+        </div>
+        <div class="slider-row">
+          <label for="sliderSaturation">Saturation</label>
+          <input type="range" id="sliderSaturation" min="0" max="200" value="130" step="1" />
+          <span class="slider-val" id="valSaturation">1.3</span>
+        </div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="checkCDR" checked />
+          Compress dynamic range
+        </label>
+
+        <div class="tone-mode-row">
+          <label for="toneMode">Tone mode</label>
+          <select id="toneMode">
+            <option value="scurve">S-curve</option>
+            <option value="contrast">Contrast</option>
+          </select>
+        </div>
+
+        <!-- Contrast panel -->
+        <div class="advanced-panel" id="panelContrast" hidden>
+          <div class="slider-row">
+            <label for="sliderContrast">Contrast</label>
+            <input type="range" id="sliderContrast" min="50" max="200" value="100" step="1" />
+            <span class="slider-val" id="valContrast">1.0</span>
+          </div>
+        </div>
+
+        <!-- S-curve panel -->
+        <div class="advanced-panel" id="panelScurve">
+          <details>
+            <summary>S-curve parameters</summary>
+            <div class="slider-row">
+              <label for="sliderStrength">Strength</label>
+              <input type="range" id="sliderStrength" min="0" max="100" value="90" step="1" />
+              <span class="slider-val" id="valStrength">0.9</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderShadowBoost">Shadow boost</label>
+              <input type="range" id="sliderShadowBoost" min="0" max="100" value="0" step="1" />
+              <span class="slider-val" id="valShadowBoost">0.0</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderHighlightCompress">Highlight compress</label>
+              <input type="range" id="sliderHighlightCompress" min="50" max="500" value="150" step="5" />
+              <span class="slider-val" id="valHighlightCompress">1.5</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderMidpoint">Midpoint</label>
+              <input type="range" id="sliderMidpoint" min="30" max="70" value="50" step="1" />
+              <span class="slider-val" id="valMidpoint">0.5</span>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>5. Dithering</h2>
+        <label for="algorithmSelect">Algorithm</label>
+        <select id="algorithmSelect"></select>
+        <div id="panelKnoxAlpha" hidden>
+          <div class="slider-row">
+            <label for="sliderKnoxAlpha">Tone dependency (α)</label>
+            <input type="range" id="sliderKnoxAlpha" min="0" max="100" value="50" />
+            <span class="slider-val" id="valKnoxAlpha">0.50</span>
+          </div>
+        </div>
+        <div class="slider-row">
+          <label for="sliderDitherStrength">Diffusion strength</label>
+          <input type="range" id="sliderDitherStrength" min="0" max="100" value="100" />
+          <span class="slider-val" id="valDitherStrength">100%</span>
+        </div>
+        <div id="panelColorMatching">
+          <label for="colorPreset">Color matching</label>
+          <select id="colorPreset">
+            <option value="rgb_rgb">RGB (fast)</option>
+            <option value="rgb_cielab">Lab distance (perceptual lookup)</option>
+            <option value="rgb_oklab">OKLab distance</option>
+            <option value="oklab_oklab">OKLab (full perceptual)</option>
+            <option value="advanced">Advanced…</option>
+          </select>
+          <div id="panelAdvancedColor" hidden>
+            <label for="errorSpaceSel">Error space</label>
+            <select id="errorSpaceSel">
+              <option value="rgb">RGB</option>
+              <option value="cielab">CIELAB</option>
+              <option value="oklab">OKLab</option>
+            </select>
+            <label for="distSpaceSel">Distance space</label>
+            <select id="distSpaceSel">
+              <option value="rgb">RGB</option>
+              <option value="cielab">CIELAB</option>
+              <option value="oklab">OKLab</option>
+            </select>
+          </div>
+        </div>
+        <div id="panelLocalVariance">
+          <label class="checkbox-label"><input type="checkbox" id="localVarianceDetection" /> Local variance (reduce diffusion in flat areas)</label>
+        </div>
+        <label class="checkbox-label"><input type="checkbox" id="expandPalette" /> Expand palette with pure primaries</label>
+      </section>
+
+      <section class="section">
+        <h2>6. Export</h2>
+        <div class="export-row">
+          <button class="btn-primary" id="btnDownloadPng" disabled>↓ PNG</button>
+          <button class="btn-secondary" id="btnDownloadBmp" disabled>↓ BMP</button>
+          <button class="btn-secondary" id="btnDownloadZip" disabled>↓ ZIP (all)</button>
+        </div>
+        <p class="export-hint">Preview uses measured colors (realistic). Export uses ideal colors (for firmware).</p>
+      </section>
+
+    </aside>
+
+    <!-- ── Preview area ── -->
+    <main class="preview-area" id="previewArea">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">⬚</div>
+        <p>Upload an image to get started</p>
+      </div>
+
+      <div class="preview-panels" id="previewPanels" hidden>
+        <div class="preview-panel">
+          <div class="panel-label">Original</div>
+          <div class="canvas-viewport" id="viewportOrig">
+            <canvas id="canvasOriginal"></canvas>
+          </div>
+        </div>
+        <div class="preview-panel">
+          <div class="panel-label">As on device <span class="badge" id="paletteBadge"></span></div>
+          <div class="canvas-viewport" id="viewportDith">
+            <canvas id="canvasDithered"></canvas>
+            <div class="processing-overlay" id="processingOverlay" hidden>Processing…</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "opendithering",
+  "version": "0.1.0",
+  "description": "E-paper image dithering tool for GitHub Pages",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vite": "^8.0.16"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
+  }
+}
