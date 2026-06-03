@@ -39,9 +39,9 @@ const panelKnoxAlpha      = el<HTMLDivElement>('panelKnoxAlpha')
 const panelColorMatching  = el<HTMLDivElement>('panelColorMatching')
 const panelLocalVariance  = el<HTMLDivElement>('panelLocalVariance')
 const colorPresetSel      = el<HTMLSelectElement>('colorPreset')
-const panelAdvancedColor  = el<HTMLDivElement>('panelAdvancedColor')
-const errorSpaceSel       = el<HTMLSelectElement>('errorSpaceSel')
-const distSpaceSel        = el<HTMLSelectElement>('distSpaceSel')
+const errorSpaceSel       = el<HTMLSpanElement>('errorSpaceSel')
+const distSpaceSel        = el<HTMLSpanElement>('distSpaceSel')
+const colorSpaceLabel: Record<string, string> = { rgb: 'RGB', cielab: 'CIELAB', oklab: 'OKLab' }
 const localVarianceCheck  = el<HTMLInputElement>('localVarianceDetection')
 const expandPaletteCheck  = el<HTMLInputElement>('expandPalette')
 const canvasOrig       = el<HTMLCanvasElement>('canvasOriginal')
@@ -496,32 +496,15 @@ algorithmSelect.addEventListener('change', () => {
 })
 
 function applyColorPreset(value: string) {
-  if (value === 'advanced') {
-    panelAdvancedColor.hidden = false
-    return
-  }
-  panelAdvancedColor.hidden = true
   const [errSpace, distSpace] = value.split('_') as [import('./types').ColorSpace, import('./types').ColorSpace]
   settings.errorSpace = errSpace
   settings.distSpace  = distSpace
-  errorSpaceSel.value = errSpace
-  distSpaceSel.value  = distSpace
+  errorSpaceSel.textContent = colorSpaceLabel[errSpace]
+  distSpaceSel.textContent  = colorSpaceLabel[distSpace]
 }
 
 colorPresetSel.addEventListener('change', () => {
   applyColorPreset(colorPresetSel.value)
-  markCustomPreset(); invalidateAll(); scheduleProcess()
-})
-
-errorSpaceSel.addEventListener('change', () => {
-  settings.errorSpace = errorSpaceSel.value as import('./types').ColorSpace
-  colorPresetSel.value = 'advanced'
-  markCustomPreset(); invalidateAll(); scheduleProcess()
-})
-
-distSpaceSel.addEventListener('change', () => {
-  settings.distSpace = distSpaceSel.value as import('./types').ColorSpace
-  colorPresetSel.value = 'advanced'
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -566,13 +549,9 @@ function syncSlidersFromSettings() {
   const pct = Math.round(settings.ditherStrength * 100)
   el<HTMLInputElement>('sliderDitherStrength').value = String(pct)
   el<HTMLSpanElement>('valDitherStrength').textContent = String(pct) + '%'
-  errorSpaceSel.value = settings.errorSpace
-  distSpaceSel.value  = settings.distSpace
-  // Find a matching named preset, else show advanced
-  const presetKey = `${settings.errorSpace}_${settings.distSpace}`
-  const knownPresets = ['rgb_rgb', 'rgb_cielab', 'rgb_oklab', 'oklab_oklab']
-  colorPresetSel.value = knownPresets.includes(presetKey) ? presetKey : 'advanced'
-  panelAdvancedColor.hidden = colorPresetSel.value !== 'advanced'
+  errorSpaceSel.textContent = colorSpaceLabel[settings.errorSpace]
+  distSpaceSel.textContent  = colorSpaceLabel[settings.distSpace]
+  colorPresetSel.value = `${settings.errorSpace}_${settings.distSpace}`
   localVarianceCheck.checked = settings.localVarianceDetection
   expandPaletteCheck.checked = settings.expandPalette
 }

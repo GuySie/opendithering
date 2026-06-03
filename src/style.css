@@ -94,7 +94,8 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   margin-top: 0.5rem;
 }
 .dim-row label { margin: 0; }
-.dim-row input { width: 100%; }
+.dim-row input, .dim-row select { width: 100%; }
+.dim-row span { font-size: 0.85rem; color: var(--text-muted, var(--text)); }
 
 /* ── Drop zone ── */
 .drop-zone {

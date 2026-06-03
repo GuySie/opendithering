@@ -148,25 +148,17 @@
         <div id="panelColorMatching">
           <label for="colorPreset">Color matching</label>
           <select id="colorPreset">
-            <option value="rgb_rgb">RGB (fast)</option>
-            <option value="rgb_cielab">Lab distance (perceptual lookup)</option>
+            <option value="rgb_rgb">RGB (full)</option>
+            <option value="rgb_cielab">CIELAB distance</option>
+            <option value="cielab_cielab">CIELAB (full)</option>
             <option value="rgb_oklab">OKLab distance</option>
-            <option value="oklab_oklab">OKLab (full perceptual)</option>
-            <option value="advanced">Advanced…</option>
+            <option value="oklab_oklab">OKLab (full)</option>
           </select>
-          <div id="panelAdvancedColor" hidden>
-            <label for="errorSpaceSel">Error space</label>
-            <select id="errorSpaceSel">
-              <option value="rgb">RGB</option>
-              <option value="cielab">CIELAB</option>
-              <option value="oklab">OKLab</option>
-            </select>
-            <label for="distSpaceSel">Distance space</label>
-            <select id="distSpaceSel">
-              <option value="rgb">RGB</option>
-              <option value="cielab">CIELAB</option>
-              <option value="oklab">OKLab</option>
-            </select>
+          <div id="panelAdvancedColor" class="dim-row">
+            <label>Find color using</label>
+            <span id="distSpaceSel"></span>
+            <label>Diffuse error in</label>
+            <span id="errorSpaceSel"></span>
           </div>
         </div>
         <div id="panelLocalVariance">

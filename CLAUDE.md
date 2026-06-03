@@ -108,7 +108,7 @@ src/
 
 `ColorSpace` is `'rgb' | 'cielab' | 'oklab'`. For Bayer (ordered) dithering only `distSpace` applies — there is no error buffer.
 
-The UI exposes four named presets (RGB, Lab distance, OKLab distance, OKLab full) plus an Advanced mode with independent dropdowns. `deltaE_lab` uses `2·dL² + da² + db²` (L weighted double) for CIELAB distance; `deltaE_oklab` uses plain Euclidean.
+The UI exposes five named presets via a "Color matching" dropdown: RGB (full), CIELAB distance, CIELAB (full), OKLab distance, OKLab (full). Below the dropdown, two read-only text fields show the active spaces — "Find color using" (`distSpace`) and "Diffuse error in" (`errorSpace`) — and update automatically when the preset changes. There is no manual/advanced mode; all valid combinations are covered by the presets. `deltaE_lab` uses `2·dL² + da² + db²` (L weighted double) for CIELAB distance; `deltaE_oklab` uses plain Euclidean.
 
 **Expand palette** (`expandPalette: boolean`): before dithering, six pure primaries (`[0,0,0]`, `[255,255,255]`, `[255,0,0]`, `[0,255,0]`, `[0,0,255]`, `[255,255,0]`) are appended to the working palette as extra snap-points. After dithering, `remapToOriginalPalette()` replaces any pixel that landed on a primary with the nearest original measured color, so the preview and export are unaffected.
 
