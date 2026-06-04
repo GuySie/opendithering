@@ -4,6 +4,7 @@ import { DISPLAY_PRESETS } from './displays/presets'
 import { getAllPaletteGroups, getPaletteGroup, getPaletteVariant } from './palettes/index'
 import { getAllAlgorithms } from './dithering/index'
 import { runPipeline } from './processing/pipeline'
+import { autoTune } from './processing/autotune'
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,7 @@ const btnDownloadPng   = el<HTMLButtonElement>('btnDownloadPng')
 const btnDownloadBmp   = el<HTMLButtonElement>('btnDownloadBmp')
 const btnDownloadZip   = el<HTMLButtonElement>('btnDownloadZip')
 const checkCDR         = el<HTMLInputElement>('checkCDR')
+const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
 
 function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T
@@ -581,6 +583,44 @@ el<HTMLSpanElement>('valDizzyDiagonal').addEventListener('dblclick', () => {
 checkCDR.addEventListener('change', () => {
   settings.compressDynamicRange = checkCDR.checked
   markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+
+btnAutoTune.addEventListener('click', async () => {
+  if (!activeId) return
+  const img = images.find(i => i.id === activeId)
+  if (!img) return
+
+  btnAutoTune.disabled = true
+  btnAutoTune.textContent = 'Tuning…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
+  const srcBitmap = await createImageBitmap(img.original)
+  const result = autoTune(
+    {
+      source: srcBitmap,
+      srcWidth: img.original.width,
+      srcHeight: img.original.height,
+      dstWidth: displayWidth,
+      dstHeight: displayHeight,
+      resizeMode,
+      palette,
+      settings,
+    },
+    settings.saturation,
+    settings.exposure,
+  )
+  srcBitmap.close()
+
+  settings.saturation = result.saturation
+  settings.exposure = result.exposure
+  markCustomPreset()
+  syncSlidersFromSettings()
+  invalidateAll()
+  scheduleProcess()
+
+  btnAutoTune.disabled = false
+  btnAutoTune.textContent = 'Auto-tune'
 })
 
 toneModeSelect.addEventListener('change', () => {
