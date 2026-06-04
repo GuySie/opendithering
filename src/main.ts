@@ -185,7 +185,7 @@ async function loadFiles(fileList: FileList) {
     addThumbnail(img, bitmap)
     bitmap.close()
   }
-  if (images.length > 0 && !activeId) activateImage(images[0].id)
+  if (images.length > 0) activateImage(images[images.length - 1].id)
   updateExportButtons()
 }
 
