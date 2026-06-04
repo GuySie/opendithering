@@ -78,7 +78,7 @@ src/
 │   ├── sierra.ts
 │   ├── bayer.ts               # Ordered dithering: bayer4 (4×4) and bayer8 (8×8) — registered but hidden from UI dropdown
 │   ├── riemersma.ts           # Hilbert-curve traversal + exponential error queue (standalone)
-│   ├── dizzy.ts               # Dizzy (2024, Liam Appelbe): Fisher-Yates random-order traversal, proportional error to orthogonal (w=1) + diagonal (w=0.1) unprocessed neighbours (standalone)
+│   ├── dizzy.ts               # Dizzy (2024, Liam Appelbe): Fisher-Yates random-order traversal, proportional error to orthogonal (w=1) + diagonal (configurable, default 0.1) unprocessed neighbours (standalone)
 │   └── knox.ts                # Eschbach & Knox: tone-dependent error diffusion in OKLab with fringe-field and cross-edge suppression (standalone)
 ├── processing/
 │   ├── colorspace.ts          # sRGB↔linear, RGB→L*a*b*, RGB→OKLab, deltaE_rgb/lab/oklab, rec709Luminance
@@ -95,7 +95,17 @@ src/
 
 **Add a dithering algorithm:** create `src/dithering/<name>.ts` exporting a `DitheringAlgorithm`, register it in `src/dithering/index.ts`. Kernel-based error-diffusion algorithms only need to call `errorDiffuse(src, palette, errorSpace, distSpace, strength, kernel, divisor)`. Algorithms with custom traversal order (e.g. Riemersma, Bayer, Eschbach & Knox) implement `dither()` standalone — import color-space helpers directly from `../processing/colorspace` and reuse the `findNearestColor` export from `error-diffusion.ts` if needed.
 
-**Algorithm-specific parameters:** the `dither()` signature accepts an optional `extraParams?: Record<string, number>` as its last argument. The pipeline always passes `{ knoxAlpha }` here; add further keys as needed. If an algorithm needs a UI control, add the slider to `index.html`, wire it in `src/main.ts` (show/hide on algorithm change + `syncSlidersFromSettings`), and add the field to `ProcessingSettings` in `src/types.ts`.
+**Algorithm-specific parameters:** the `dither()` signature accepts an optional `extraParams?: Record<string, number>` as its last argument. The pipeline always passes all algorithm param keys; algorithms ignore the ones they don't use. Current keys:
+
+| Key | Algorithm | Default | Notes |
+|-----|-----------|---------|-------|
+| `knoxAlpha` | Eschbach & Knox | 0.5 | tone-dependency strength |
+| `knoxFringe` | Eschbach & Knox | 0.04 | fringe field L-threshold raise per fired neighbour |
+| `knoxEdgeSensitivity` | Eschbach & Knox | 4.0 | gradient scale for cross-edge suppression |
+| `riemersmaQueueSize` | Riemersma | 16 | error history queue length (4–64) |
+| `dizzyDiagonalWeight` | Dizzy | 0.1 | diagonal neighbour weight relative to orthogonal (0–1) |
+
+To add a new algorithm-specific UI control: add a slider to `index.html` (inside a hidden `<div id="panelXxx">`), add the field to `ProcessingSettings` in `src/types.ts` (with a default in `BALANCED_PRESET`), wire the slider listener and show/hide logic in `src/main.ts` (`algorithmSelect` change handler + `syncSlidersFromSettings`), and pass the value in the `extraParams` object in `src/processing/pipeline.ts`.
 
 **Add a display preset:** add an entry to the `DISPLAY_PRESETS` array in `src/displays/presets.ts`. Set `paletteGroupId` to the id of the relevant `PaletteGroup` (e.g. `'spectra6'`, `'acep'`, `'bw'`).
 
@@ -114,7 +124,14 @@ The UI exposes five named presets via a "Color matching" dropdown: RGB (full), C
 
 **Diffusion strength** (`ditherStrength: number`, 0–1): multiplies the error before it is forwarded to neighbours. Default 1.0 (full diffusion).
 
-**Eschbach & Knox tone dependency** (`knoxAlpha: number`, 0–1, Eschbach & Knox only): controls how strongly lightness affects diffusion strength. At α=0 diffusion is uniform; at α=1 the full Knox `4t(1−t)` curve applies — midtones get full diffusion, highlights and shadows get none. Default 0.5. `errorSpace`/`distSpace` settings are ignored by Eschbach & Knox — it always operates in OKLab.
+**Eschbach & Knox parameters** (Eschbach & Knox only — `errorSpace`/`distSpace` ignored, always OKLab):
+- `knoxAlpha` (0–1, default 0.5): tone-dependency strength. At α=0 diffusion is uniform; at α=1 the full Knox `4t(1−t)` curve applies — midtones get full diffusion, highlights and shadows get none.
+- `knoxFringe` (0–0.15, default 0.04): OKLab L-threshold raise applied to unprocessed 4-connected neighbours after each pixel fires. Models physical ink bleed (fringe field effect); tune per device.
+- `knoxEdgeSensitivity` (0.5–8, default 4.0): scales the gradient magnitude used for cross-edge suppression. At 4.0 a ΔL of 0.25/px gives full suppression; lower values require steeper edges to suppress, higher values suppress at gentler gradients.
+
+**Riemersma queue size** (`riemersmaQueueSize: number`, 4–64, default 16): length of the exponential error-history queue traversed along the Hilbert curve. Longer queues spread error over more pixels (smoother gradients, less grain); shorter queues are more local.
+
+**Dizzy diagonal weight** (`dizzyDiagonalWeight: number`, 0–1, default 0.1): weight of diagonal neighbours relative to orthogonal (always 1) in Dizzy's proportional error distribution. 0 = pure 4-connected diffusion; 1 = equal 8-connected spreading.
 
 ### Palette color values
 

@@ -46,6 +46,10 @@ export interface ProcessingSettings {
   expandPalette: boolean         // append pure primaries to working palette
   ditherAlgorithm: string
   knoxAlpha: number              // 0.0–1.0, tone-dependency strength for Eschbach & Knox
+  knoxFringe: number             // 0.00–0.15, fringe field magnitude for Eschbach & Knox
+  knoxEdgeSensitivity: number    // 0.5–8.0, cross-edge suppression sensitivity for Eschbach & Knox
+  riemersmaQueueSize: number     // 4–64, error history queue length for Riemersma
+  dizzyDiagonalWeight: number    // 0.0–1.0, diagonal neighbour weight for Dizzy
 }
 
 export interface DitheringAlgorithm {
@@ -81,6 +85,10 @@ export const BALANCED_PRESET: ProcessingSettings = {
   expandPalette: false,
   ditherAlgorithm: 'floyd-steinberg',
   knoxAlpha: 0.5,
+  knoxFringe: 0.04,
+  knoxEdgeSensitivity: 4.0,
+  riemersmaQueueSize: 16,
+  dizzyDiagonalWeight: 0.1,
 }
 
 export const VIVID_PRESET: ProcessingSettings = {

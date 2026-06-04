@@ -4,13 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenDithering</title>
-  <script type="module" crossorigin src="./assets/index-X2eRdc4q.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-CkS134Nk.css">
+  <script type="module" crossorigin src="./assets/index-DoQLMpCN.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BpM63Gvr.css">
 </head>
 <body>
   <header>
     <h1>OpenDithering</h1>
     <p class="tagline">Dither images for e-paper displays</p>
+    <a class="github-link" href="https://github.com/GuySie/opendithering" target="_blank" rel="noopener" aria-label="View on GitHub">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+      </svg>
+    </a>
   </header>
 
   <div class="app-layout">
@@ -140,6 +145,30 @@
             <input type="range" id="sliderKnoxAlpha" min="0" max="100" value="50" />
             <span class="slider-val" id="valKnoxAlpha">0.50</span>
           </div>
+          <div class="slider-row">
+            <label for="sliderKnoxFringe">Fringe magnitude</label>
+            <input type="range" id="sliderKnoxFringe" min="0" max="15" value="4" step="1" />
+            <span class="slider-val" id="valKnoxFringe">0.04</span>
+          </div>
+          <div class="slider-row">
+            <label for="sliderKnoxEdge">Edge sensitivity</label>
+            <input type="range" id="sliderKnoxEdge" min="50" max="800" value="400" step="25" />
+            <span class="slider-val" id="valKnoxEdge">4.0</span>
+          </div>
+        </div>
+        <div id="panelRiemersmaQueue" hidden>
+          <div class="slider-row">
+            <label for="sliderRiemersmaQueue">History length</label>
+            <input type="range" id="sliderRiemersmaQueue" min="4" max="64" value="16" step="4" />
+            <span class="slider-val" id="valRiemersmaQueue">16</span>
+          </div>
+        </div>
+        <div id="panelDizzyDiagonal" hidden>
+          <div class="slider-row">
+            <label for="sliderDizzyDiagonal">Diagonal weight</label>
+            <input type="range" id="sliderDizzyDiagonal" min="0" max="100" value="10" step="5" />
+            <span class="slider-val" id="valDizzyDiagonal">0.10</span>
+          </div>
         </div>
         <div class="slider-row">
           <label for="sliderDitherStrength">Diffusion strength</label>
@@ -149,25 +178,17 @@
         <div id="panelColorMatching">
           <label for="colorPreset">Color matching</label>
           <select id="colorPreset">
-            <option value="rgb_rgb">RGB (fast)</option>
-            <option value="rgb_cielab">Lab distance (perceptual lookup)</option>
+            <option value="rgb_rgb">RGB (full)</option>
+            <option value="rgb_cielab">CIELAB distance</option>
+            <option value="cielab_cielab">CIELAB (full)</option>
             <option value="rgb_oklab">OKLab distance</option>
-            <option value="oklab_oklab">OKLab (full perceptual)</option>
-            <option value="advanced">Advanced…</option>
+            <option value="oklab_oklab">OKLab (full)</option>
           </select>
-          <div id="panelAdvancedColor" hidden>
-            <label for="errorSpaceSel">Error space</label>
-            <select id="errorSpaceSel">
-              <option value="rgb">RGB</option>
-              <option value="cielab">CIELAB</option>
-              <option value="oklab">OKLab</option>
-            </select>
-            <label for="distSpaceSel">Distance space</label>
-            <select id="distSpaceSel">
-              <option value="rgb">RGB</option>
-              <option value="cielab">CIELAB</option>
-              <option value="oklab">OKLab</option>
-            </select>
+          <div id="panelAdvancedColor" class="dim-row">
+            <label>Find color using</label>
+            <span id="distSpaceSel"></span>
+            <label>Diffuse error in</label>
+            <span id="errorSpaceSel"></span>
           </div>
         </div>
         <div id="panelLocalVariance">

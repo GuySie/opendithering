@@ -36,6 +36,8 @@ const panelContrast    = el<HTMLDivElement>('panelContrast')
 const panelScurve      = el<HTMLDivElement>('panelScurve')
 const algorithmSelect     = el<HTMLSelectElement>('algorithmSelect')
 const panelKnoxAlpha      = el<HTMLDivElement>('panelKnoxAlpha')
+const panelRiemersmaQueue = el<HTMLDivElement>('panelRiemersmaQueue')
+const panelDizzyDiagonal  = el<HTMLDivElement>('panelDizzyDiagonal')
 const panelColorMatching  = el<HTMLDivElement>('panelColorMatching')
 const panelLocalVariance  = el<HTMLDivElement>('panelLocalVariance')
 const colorPresetSel      = el<HTMLSelectElement>('colorPreset')
@@ -474,6 +476,34 @@ el<HTMLInputElement>('sliderKnoxAlpha').addEventListener('input', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
+el<HTMLInputElement>('sliderKnoxFringe').addEventListener('input', () => {
+  const v = parseInt(el<HTMLInputElement>('sliderKnoxFringe').value)
+  settings.knoxFringe = v / 100
+  el<HTMLSpanElement>('valKnoxFringe').textContent = (v / 100).toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+
+el<HTMLInputElement>('sliderKnoxEdge').addEventListener('input', () => {
+  const v = parseInt(el<HTMLInputElement>('sliderKnoxEdge').value)
+  settings.knoxEdgeSensitivity = v / 100
+  el<HTMLSpanElement>('valKnoxEdge').textContent = (v / 100).toFixed(1)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+
+el<HTMLInputElement>('sliderRiemersmaQueue').addEventListener('input', () => {
+  const v = parseInt(el<HTMLInputElement>('sliderRiemersmaQueue').value)
+  settings.riemersmaQueueSize = v
+  el<HTMLSpanElement>('valRiemersmaQueue').textContent = String(v)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+
+el<HTMLInputElement>('sliderDizzyDiagonal').addEventListener('input', () => {
+  const v = parseInt(el<HTMLInputElement>('sliderDizzyDiagonal').value)
+  settings.dizzyDiagonalWeight = v / 100
+  el<HTMLSpanElement>('valDizzyDiagonal').textContent = (v / 100).toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+
 checkCDR.addEventListener('change', () => {
   settings.compressDynamicRange = checkCDR.checked
   markCustomPreset(); invalidateAll(); scheduleProcess()
@@ -488,10 +518,14 @@ toneModeSelect.addEventListener('change', () => {
 
 algorithmSelect.addEventListener('change', () => {
   settings.ditherAlgorithm = algorithmSelect.value
-  const isKnox = settings.ditherAlgorithm === 'knox'
-  panelKnoxAlpha.hidden = !isKnox
-  panelColorMatching.hidden = isKnox
-  panelLocalVariance.hidden = isKnox
+  const isKnox       = settings.ditherAlgorithm === 'knox'
+  const isRiemersma  = settings.ditherAlgorithm === 'riemersma'
+  const isDizzy      = settings.ditherAlgorithm === 'dizzy'
+  panelKnoxAlpha.hidden      = !isKnox
+  panelRiemersmaQueue.hidden = !isRiemersma
+  panelDizzyDiagonal.hidden  = !isDizzy
+  panelColorMatching.hidden  = isKnox
+  panelLocalVariance.hidden  = isKnox
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -539,13 +573,29 @@ function syncSlidersFromSettings() {
   panelContrast.hidden = settings.toneMode !== 'contrast'
   panelScurve.hidden   = settings.toneMode !== 'scurve'
   algorithmSelect.value = settings.ditherAlgorithm
-  const isKnox = settings.ditherAlgorithm === 'knox'
-  panelKnoxAlpha.hidden = !isKnox
-  panelColorMatching.hidden = isKnox
-  panelLocalVariance.hidden = isKnox
+  const isKnox      = settings.ditherAlgorithm === 'knox'
+  const isRiemersma = settings.ditherAlgorithm === 'riemersma'
+  const isDizzy     = settings.ditherAlgorithm === 'dizzy'
+  panelKnoxAlpha.hidden      = !isKnox
+  panelRiemersmaQueue.hidden = !isRiemersma
+  panelDizzyDiagonal.hidden  = !isDizzy
+  panelColorMatching.hidden  = isKnox
+  panelLocalVariance.hidden  = isKnox
   const knoxPct = Math.round((settings.knoxAlpha ?? 0.5) * 100)
   el<HTMLInputElement>('sliderKnoxAlpha').value = String(knoxPct)
   el<HTMLSpanElement>('valKnoxAlpha').textContent = (knoxPct / 100).toFixed(2)
+  const knoxFringePct = Math.round((settings.knoxFringe ?? 0.04) * 100)
+  el<HTMLInputElement>('sliderKnoxFringe').value = String(knoxFringePct)
+  el<HTMLSpanElement>('valKnoxFringe').textContent = (knoxFringePct / 100).toFixed(2)
+  const knoxEdgePct = Math.round((settings.knoxEdgeSensitivity ?? 4.0) * 100)
+  el<HTMLInputElement>('sliderKnoxEdge').value = String(knoxEdgePct)
+  el<HTMLSpanElement>('valKnoxEdge').textContent = (knoxEdgePct / 100).toFixed(1)
+  const riemQ = Math.round(settings.riemersmaQueueSize ?? 16)
+  el<HTMLInputElement>('sliderRiemersmaQueue').value = String(riemQ)
+  el<HTMLSpanElement>('valRiemersmaQueue').textContent = String(riemQ)
+  const dizzyDiagPct = Math.round((settings.dizzyDiagonalWeight ?? 0.1) * 100)
+  el<HTMLInputElement>('sliderDizzyDiagonal').value = String(dizzyDiagPct)
+  el<HTMLSpanElement>('valDizzyDiagonal').textContent = (dizzyDiagPct / 100).toFixed(2)
   const pct = Math.round(settings.ditherStrength * 100)
   el<HTMLInputElement>('sliderDitherStrength').value = String(pct)
   el<HTMLSpanElement>('valDitherStrength').textContent = String(pct) + '%'

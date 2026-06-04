@@ -50,7 +50,13 @@ export function runPipeline(input: PipelineInput): PipelineResult {
   // that preview and export are unaffected by the expansion.
   const workingPalette = settings.expandPalette ? expandWithPrimaries(palette) : palette
 
-  let measured = algorithm.dither(resized, workingPalette, settings.errorSpace, settings.distSpace, settings.ditherStrength, settings.localVarianceDetection, { knoxAlpha: settings.knoxAlpha ?? 0.5 })
+  let measured = algorithm.dither(resized, workingPalette, settings.errorSpace, settings.distSpace, settings.ditherStrength, settings.localVarianceDetection, {
+    knoxAlpha:           settings.knoxAlpha           ?? 0.5,
+    knoxFringe:          settings.knoxFringe           ?? 0.04,
+    knoxEdgeSensitivity: settings.knoxEdgeSensitivity  ?? 4.0,
+    riemersmaQueueSize:  settings.riemersmaQueueSize   ?? 16,
+    dizzyDiagonalWeight: settings.dizzyDiagonalWeight  ?? 0.1,
+  })
 
   if (workingPalette !== palette) {
     measured = remapToOriginalPalette(measured, palette)

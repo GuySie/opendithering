@@ -3,11 +3,6 @@ import { rgbToOklab } from '../processing/colorspace'
 
 type Triple = [number, number, number]
 
-// After a pixel fires, raise the L-channel threshold of its unprocessed 4-connected
-// neighbours by this amount (OKLab L is [0,1]). Compensates for physical ink bleed
-// on e-paper displays (fringe field effect).
-const FRINGE_MAGNITUDE = 0.04
-
 // Floyd-Steinberg kernel
 const FS_KERNEL = [
   { dx:  1, dy: 0, weight: 7 },
@@ -33,7 +28,9 @@ export const knoxDithering: DitheringAlgorithm = {
     _localVariance?: boolean,
     extraParams?: Record<string, number>,
   ): ImageData {
-    const alpha = Math.max(0, Math.min(1, extraParams?.knoxAlpha ?? 0.5))
+    const alpha           = Math.max(0,   Math.min(1,   extraParams?.knoxAlpha          ?? 0.5))
+    const fringeMagnitude = Math.max(0,   Math.min(0.5, extraParams?.knoxFringe         ?? 0.04))
+    const edgeSensitivity = Math.max(0.5, Math.min(16,  extraParams?.knoxEdgeSensitivity ?? 4.0))
     const w = src.width, h = src.height
 
     // Convert source pixels to OKLab once
@@ -50,15 +47,14 @@ export const knoxDithering: DitheringAlgorithm = {
     const palOklab: Triple[] = palette.colors.map(c =>
       rgbToOklab(c.measured[0], c.measured[1], c.measured[2]))
 
-    // Gradient map: g = clamp((|dL/dx| + |dL/dy|) * 4, 0, 1)
-    // ×4 so a 0.25 L-unit change per pixel (steep edge) gives full suppression.
+    // Gradient map: g = clamp((|dL/dx| + |dL/dy|) * edgeSensitivity, 0, 1)
     const gradMap = new Float32Array(w * h)
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const L  = srcOklab[(y * w + x) * 3]
         const Lx = x + 1 < w ? srcOklab[(y * w + x + 1) * 3] : L
         const Ly = y + 1 < h ? srcOklab[((y + 1) * w + x) * 3] : L
-        gradMap[y * w + x] = Math.min(1, (Math.abs(Lx - L) + Math.abs(Ly - L)) * 4)
+        gradMap[y * w + x] = Math.min(1, (Math.abs(Lx - L) + Math.abs(Ly - L)) * edgeSensitivity)
       }
     }
 
@@ -143,7 +139,7 @@ export const knoxDithering: DitheringAlgorithm = {
         for (const { nx, ny } of neighbours) {
           if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
           const processed = ny < y || (ny === y && (ltr ? nx < x : nx > x))
-          if (!processed) fringeBuf[ny * w + nx] += FRINGE_MAGNITUDE
+          if (!processed) fringeBuf[ny * w + nx] += fringeMagnitude
         }
       }
     }

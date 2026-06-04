@@ -33,16 +33,18 @@ function hilbertD2XY(n: number, d: number): [number, number] {
   return [x, y]
 }
 
-const QUEUE_SIZE = 16
-// Exponential weights, oldest→newest: QUEUE_SIZE^(i/(N-1)), normalized to sum=1
-const _raw = Array.from({ length: QUEUE_SIZE }, (_, i) => Math.pow(QUEUE_SIZE, i / (QUEUE_SIZE - 1)))
-const _sum = _raw.reduce((a, b) => a + b, 0)
-const WEIGHTS = _raw.map(w => w / _sum) // WEIGHTS[0]=oldest (smallest), WEIGHTS[N-1]=newest (largest)
+function buildWeights(queueSize: number): Float32Array {
+  const raw = Array.from({ length: queueSize }, (_, i) => Math.pow(queueSize, i / (queueSize - 1)))
+  const sum = raw.reduce((a, b) => a + b, 0)
+  return new Float32Array(raw.map(w => w / sum))
+}
 
 export const riemersma: DitheringAlgorithm = {
   id: 'riemersma',
   name: 'Riemersma',
-  dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean): ImageData {
+  dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
+    const QUEUE_SIZE = Math.max(2, Math.round(extraParams?.riemersmaQueueSize ?? 16))
+    const WEIGHTS = buildWeights(QUEUE_SIZE)
     const w = src.width, h = src.height
 
     const errPalette: Triple[] = palette.colors.map(c =>

@@ -16,16 +16,16 @@ function spaceDist(p: Triple, c: Triple, space: ColorSpace): number {
   return d0 * d0 + d1 * d1 + d2 * d2
 }
 
-// [dx, dy, weight]: orthogonal=1, diagonal=0.1
-const DIRS: [number, number, number][] = [
-  [-1, 0, 1], [1, 0, 1], [0, -1, 1], [0, 1, 1],
-  [-1, -1, 0.1], [1, -1, 0.1], [-1, 1, 0.1], [1, 1, 0.1],
-]
-
 export const dizzy: DitheringAlgorithm = {
   id: 'dizzy',
   name: 'Dizzy',
-  dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean): ImageData {
+  dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
+    const diagWeight = Math.max(0, Math.min(1, extraParams?.dizzyDiagonalWeight ?? 0.1))
+    // [dx, dy, weight]: orthogonal neighbours always weight 1, diagonal weight is configurable
+    const DIRS: [number, number, number][] = [
+      [-1, 0, 1], [1, 0, 1], [0, -1, 1], [0, 1, 1],
+      [-1, -1, diagWeight], [1, -1, diagWeight], [-1, 1, diagWeight], [1, 1, diagWeight],
+    ]
     const w = src.width, h = src.height
     const N = w * h
 
