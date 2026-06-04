@@ -27,7 +27,7 @@ html, body {
 /* ── Header ── */
 header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 1rem;
   padding: 0.75rem 1.25rem;
   border-bottom: 1px solid var(--border);
@@ -35,6 +35,14 @@ header {
 }
 header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; }
 .tagline { color: var(--text-muted); font-size: 0.85rem; }
+.github-link {
+  margin-left: auto;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.github-link:hover { color: var(--text); }
 
 /* ── Layout ── */
 .app-layout {
@@ -194,6 +202,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .advanced-panel { margin-top: 0.5rem; }
 #panelColorMatching { margin-top: 0.6rem; }
 #panelLocalVariance { margin-top: 0.6rem; }
+#panelSerpentine { margin-top: 0.6rem; }
 .advanced-panel details summary {
   cursor: pointer;
   color: var(--text-muted);

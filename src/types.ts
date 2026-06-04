@@ -45,6 +45,7 @@ export interface ProcessingSettings {
   localVarianceDetection: boolean // reduce diffusion strength in flat areas
   expandPalette: boolean         // append pure primaries to working palette
   ditherAlgorithm: string
+  serpentine: boolean             // alternate scan direction each row (default true)
   knoxAlpha: number              // 0.0–1.0, tone-dependency strength for Eschbach & Knox
   knoxFringe: number             // 0.00–0.15, fringe field magnitude for Eschbach & Knox
   knoxEdgeSensitivity: number    // 0.5–8.0, cross-edge suppression sensitivity for Eschbach & Knox
@@ -84,6 +85,7 @@ export const BALANCED_PRESET: ProcessingSettings = {
   localVarianceDetection: false,
   expandPalette: false,
   ditherAlgorithm: 'floyd-steinberg',
+  serpentine: true,
   knoxAlpha: 0.5,
   knoxFringe: 0.04,
   knoxEdgeSensitivity: 4.0,
@@ -107,6 +109,7 @@ export const VIVID_PRESET: ProcessingSettings = {
   localVarianceDetection: false,
   expandPalette: false,
   ditherAlgorithm: 'floyd-steinberg',
+  serpentine: true,
   knoxAlpha: 0.5,
   knoxFringe: 0.04,
   knoxEdgeSensitivity: 4.0,
@@ -130,6 +133,7 @@ export const SOFT_PRESET: ProcessingSettings = {
   localVarianceDetection: false,
   expandPalette: false,
   ditherAlgorithm: 'stucki',
+  serpentine: true,
   knoxAlpha: 0.5,
   knoxFringe: 0.04,
   knoxEdgeSensitivity: 4.0,
@@ -153,6 +157,7 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   localVarianceDetection: false,
   expandPalette: false,
   ditherAlgorithm: 'dizzy',
+  serpentine: true,
   knoxAlpha: 0.5,
   knoxFringe: 0.04,
   knoxEdgeSensitivity: 4.0,

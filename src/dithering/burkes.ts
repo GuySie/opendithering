@@ -16,7 +16,7 @@ const KERNEL = [
 export const burkes: DitheringAlgorithm = {
   id: 'burkes',
   name: 'Burkes',
-  dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean): ImageData {
-    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 32, localVariance)
+  dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
+    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 32, localVariance, extraParams?.serpentine !== 0)
   },
 }

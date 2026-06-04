@@ -22,7 +22,7 @@ const KERNEL = [
 export const stucki: DitheringAlgorithm = {
   id: 'stucki',
   name: 'Stucki',
-  dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean): ImageData {
-    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 42, localVariance)
+  dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
+    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 42, localVariance, extraParams?.serpentine !== 0)
   },
 }

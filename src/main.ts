@@ -40,6 +40,9 @@ const panelRiemersmaQueue = el<HTMLDivElement>('panelRiemersmaQueue')
 const panelDizzyDiagonal  = el<HTMLDivElement>('panelDizzyDiagonal')
 const panelColorMatching  = el<HTMLDivElement>('panelColorMatching')
 const panelLocalVariance  = el<HTMLDivElement>('panelLocalVariance')
+const panelSerpentine     = el<HTMLDivElement>('panelSerpentine')
+const serpentineCheck     = el<HTMLInputElement>('serpentineCheck')
+const SERPENTINE_ALGORITHMS = new Set(['floyd-steinberg', 'atkinson', 'burkes', 'jarvis', 'sierra', 'stucki', 'knox'])
 const colorPresetSel      = el<HTMLSelectElement>('colorPreset')
 const errorSpaceSel       = el<HTMLSpanElement>('errorSpaceSel')
 const distSpaceSel        = el<HTMLSpanElement>('distSpaceSel')
@@ -524,6 +527,7 @@ algorithmSelect.addEventListener('change', () => {
   panelKnoxAlpha.hidden      = !isKnox
   panelRiemersmaQueue.hidden = !isRiemersma
   panelDizzyDiagonal.hidden  = !isDizzy
+  panelSerpentine.hidden     = !SERPENTINE_ALGORITHMS.has(settings.ditherAlgorithm)
   panelColorMatching.hidden  = isKnox
   panelLocalVariance.hidden  = isKnox
   markCustomPreset(); invalidateAll(); scheduleProcess()
@@ -539,6 +543,11 @@ function applyColorPreset(value: string) {
 
 colorPresetSel.addEventListener('change', () => {
   applyColorPreset(colorPresetSel.value)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+
+serpentineCheck.addEventListener('change', () => {
+  settings.serpentine = serpentineCheck.checked
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -579,8 +588,10 @@ function syncSlidersFromSettings() {
   panelKnoxAlpha.hidden      = !isKnox
   panelRiemersmaQueue.hidden = !isRiemersma
   panelDizzyDiagonal.hidden  = !isDizzy
+  panelSerpentine.hidden     = !SERPENTINE_ALGORITHMS.has(settings.ditherAlgorithm)
   panelColorMatching.hidden  = isKnox
   panelLocalVariance.hidden  = isKnox
+  serpentineCheck.checked    = settings.serpentine ?? true
   const knoxPct = Math.round((settings.knoxAlpha ?? 0.5) * 100)
   el<HTMLInputElement>('sliderKnoxAlpha').value = String(knoxPct)
   el<HTMLSpanElement>('valKnoxAlpha').textContent = (knoxPct / 100).toFixed(2)

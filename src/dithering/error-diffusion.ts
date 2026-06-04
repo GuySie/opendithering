@@ -69,6 +69,7 @@ export function errorDiffuse(
   kernel: KernelEntry[],
   divisor: number,
   localVariance?: boolean,
+  serpentine = true,
 ): ImageData {
   const w = src.width, h = src.height
 
@@ -94,8 +95,7 @@ export function errorDiffuse(
   const out = new ImageData(w, h)
 
   for (let y = 0; y < h; y++) {
-    // Serpentine: alternate scan direction each row
-    const leftToRight = y % 2 === 0
+    const leftToRight = !serpentine || y % 2 === 0
     const xStart = leftToRight ? 0 : w - 1
     const xEnd   = leftToRight ? w : -1
     const xStep  = leftToRight ? 1 : -1

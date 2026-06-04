@@ -99,6 +99,7 @@ src/
 
 | Key | Algorithm | Default | Notes |
 |-----|-----------|---------|-------|
+| `serpentine` | FS, Atkinson, Burkes, Jarvis, Sierra, Stucki, Knox | 1 | 1 = alternate scan direction each row, 0 = always left-to-right |
 | `knoxAlpha` | Eschbach & Knox | 0.5 | tone-dependency strength |
 | `knoxFringe` | Eschbach & Knox | 0.04 | fringe field L-threshold raise per fired neighbour |
 | `knoxEdgeSensitivity` | Eschbach & Knox | 4.0 | gradient scale for cross-edge suppression |

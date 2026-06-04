@@ -6,12 +6,12 @@ A browser-based image dithering tool for e-paper displays. Runs entirely client-
 
 ## Experimental
 
-This app is an experiment to find the optimal dithering engine and settings for different e-paper displays. It is permanently work in progress and not meant for production use.
+This app is an experiment to find the optimal dithering engine and settings for different e-paper displays. It is permanently work in progress, can change features at any moment, and is not meant to be relied on for production use. It's a sandbox to play around in.
 
 ## Features
 
 - **Dithering algorithms** — To figure out what works best, we're trying classics like Floyd-Steinberg, Atkinson, Jarvis-Judice-Ninke, Stucki, Burkes and Sierra. But also less well-known or more recent algorithms like Riemersma (Hilbert-curve), Blue noise (void and cluster), Yliluoma II, Eschbach & Knox, and Dizzy
-- **Palette-accurate output** — each palette carries both *calibrated* colors (how the panel actually looks) and *ideal* colors (what the device expects); dithering runs against calibrated, export uses ideal
+- **Palette-accurate output** — each palette carries both *measured* colors (how the panel actually looks) and *ideal* colors (what the device expects); dithering runs against calibrated, export uses ideal
 - **Calibration variants** — choose from different color profiles per panel type, based on estimations or measurements
 - **Multiple display presets** — Seeed reTerminal, TRMNL, Waveshare PhotoPainter, Pimoroni Inky Impression, Soldered Inkplate, Gicisky ESL, or custom dimensions and panels
 - **Image adjustments** — tone mapping, saturation, exposure, dynamic range compression

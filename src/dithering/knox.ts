@@ -31,6 +31,7 @@ export const knoxDithering: DitheringAlgorithm = {
     const alpha           = Math.max(0,   Math.min(1,   extraParams?.knoxAlpha          ?? 0.5))
     const fringeMagnitude = Math.max(0,   Math.min(0.5, extraParams?.knoxFringe         ?? 0.04))
     const edgeSensitivity = Math.max(0.5, Math.min(16,  extraParams?.knoxEdgeSensitivity ?? 4.0))
+    const serpentine      = extraParams?.serpentine !== 0
     const w = src.width, h = src.height
 
     // Convert source pixels to OKLab once
@@ -67,8 +68,7 @@ export const knoxDithering: DitheringAlgorithm = {
     const out = new ImageData(w, h)
 
     for (let y = 0; y < h; y++) {
-      // Serpentine scan
-      const ltr = y % 2 === 0
+      const ltr = !serpentine || y % 2 === 0
       const xStart = ltr ? 0 : w - 1
       const xEnd   = ltr ? w : -1
       const xStep  = ltr ? 1 : -1

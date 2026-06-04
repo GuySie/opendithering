@@ -51,6 +51,7 @@ export function runPipeline(input: PipelineInput): PipelineResult {
   const workingPalette = settings.expandPalette ? expandWithPrimaries(palette) : palette
 
   let measured = algorithm.dither(resized, workingPalette, settings.errorSpace, settings.distSpace, settings.ditherStrength, settings.localVarianceDetection, {
+    serpentine:          settings.serpentine           ? 1 : 0,
     knoxAlpha:           settings.knoxAlpha           ?? 0.5,
     knoxFringe:          settings.knoxFringe           ?? 0.04,
     knoxEdgeSensitivity: settings.knoxEdgeSensitivity  ?? 4.0,
