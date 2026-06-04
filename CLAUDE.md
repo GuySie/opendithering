@@ -50,7 +50,7 @@ Implemented in `src/processing/pipeline.ts`:
 7. **Remap primaries** — if `expandPalette` was used, pixels that landed on a pure primary are remapped back to the nearest original measured color before export or preview
 8. **Palette swap** — measured → ideal (export only)
 
-Steps 3–5 match the aitjcize esp32-photoframe "balanced" preset defaults exactly.
+The **Balanced**, **Vivid**, and **Soft** presets match the corresponding presets in `aitjcize/esp32-photoframe` `@aitjcize/epaper-image-convert` exactly (tone mapping, algorithm, and color method). The **Grayscale** preset diverges intentionally: aitjcize uses `scurve` + LAB + floyd-steinberg; OpenDithering uses `contrast` + OKLab + Dizzy.
 
 ### File structure
 
