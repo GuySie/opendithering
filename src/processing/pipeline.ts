@@ -1,6 +1,7 @@
-import type { ProcessingSettings, Palette, ResizeMode } from '../types'
+import type { ProcessingSettings, Palette, ResizeMode, HueGap } from '../types'
 import { resizeImage } from './resize'
 import { compressDynamicRange, applyToneMapping, applySaturation, applyExposure } from './tone'
+import { applyHueRemap } from './hueremap'
 import { getAlgorithm } from '../dithering/index'
 
 export interface PipelineInput {
@@ -12,6 +13,7 @@ export interface PipelineInput {
   resizeMode: ResizeMode
   palette: Palette
   settings: ProcessingSettings
+  hueGaps?: HueGap[]
 }
 
 export interface PipelineResult {
@@ -37,6 +39,15 @@ export function runPipeline(input: PipelineInput): PipelineResult {
 
   // 4. Saturation
   applySaturation(resized.data, settings.saturation)
+
+  // 4.5. Hue remapping — rotate gap-zone hues toward nearest representable palette hue
+  if (input.hueGaps?.length) {
+    applyHueRemap(resized.data, palette, input.hueGaps, {
+      magenta: settings.hueRemapMagenta ?? 0,
+      cyan:    settings.hueRemapCyan    ?? 0,
+      orange:  settings.hueRemapOrange  ?? 0,
+    })
+  }
 
   // 5. Exposure
   applyExposure(resized.data, settings.exposure)

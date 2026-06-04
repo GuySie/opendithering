@@ -35,6 +35,10 @@ const resizeModeSelect = el<HTMLSelectElement>('resizeMode')
 const toneModeSelect   = el<HTMLSelectElement>('toneMode')
 const panelContrast    = el<HTMLDivElement>('panelContrast')
 const panelScurve      = el<HTMLDivElement>('panelScurve')
+const panelHueRemap        = el<HTMLDivElement>('panelHueRemap')
+const panelHueRemapMagenta = el<HTMLDivElement>('panelHueRemapMagenta')
+const panelHueRemapCyan    = el<HTMLDivElement>('panelHueRemapCyan')
+const panelHueRemapOrange  = el<HTMLDivElement>('panelHueRemapOrange')
 const algorithmSelect     = el<HTMLSelectElement>('algorithmSelect')
 const panelKnoxAlpha      = el<HTMLDivElement>('panelKnoxAlpha')
 const panelRiemersmaQueue = el<HTMLDivElement>('panelRiemersmaQueue')
@@ -70,6 +74,14 @@ function el<T extends HTMLElement>(id: string): T {
 }
 
 // ── Palette helpers ───────────────────────────────────────────────────────
+
+function syncHueRemapPanel() {
+  const gaps = getPaletteGroup(paletteGroupId).hueGaps ?? []
+  panelHueRemap.hidden        = gaps.length === 0
+  panelHueRemapMagenta.hidden = !gaps.some(g => g.id === 'magenta')
+  panelHueRemapCyan.hidden    = !gaps.some(g => g.id === 'cyan')
+  panelHueRemapOrange.hidden  = !gaps.some(g => g.id === 'orange')
+}
 
 function populateCalibrationSelect(groupId: string) {
   calibrationSelect.innerHTML = ''
@@ -300,6 +312,7 @@ async function processActive() {
     resizeMode,
     palette,
     settings,
+    hueGaps: getPaletteGroup(paletteGroupId).hueGaps ?? [],
   })
   srcBitmap.close()
 
@@ -377,6 +390,7 @@ presetSelect.addEventListener('change', () => {
     calibrationVariantId = group.variants[0].id
     populateCalibrationSelect(paletteGroupId)
     renderSwatches()
+    syncHueRemapPanel()
     dimWidth.value = String(preset.width)
     dimHeight.value = String(preset.height)
     // Re-apply orientation for the currently active image
@@ -401,6 +415,7 @@ paletteSelect.addEventListener('change', () => {
   calibrationVariantId = group.variants[0].id
   populateCalibrationSelect(paletteGroupId)
   renderSwatches()
+  syncHueRemapPanel()
   invalidateAll(); scheduleProcess()
 })
 
@@ -578,6 +593,26 @@ el<HTMLSpanElement>('valDizzyDiagonal').addEventListener('dblclick', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
+;(['Magenta', 'Cyan', 'Orange'] as const).forEach(zone => {
+  const key = `hueRemap${zone}` as 'hueRemapMagenta' | 'hueRemapCyan' | 'hueRemapOrange'
+  const sliderId = `sliderHueRemap${zone}`
+  const valId = `valHueRemap${zone}`
+  el<HTMLInputElement>(sliderId).addEventListener('input', () => {
+    const pct = parseInt(el<HTMLInputElement>(sliderId).value)
+    settings[key] = pct / 100
+    el<HTMLSpanElement>(valId).textContent = String(pct) + '%'
+    markCustomPreset(); invalidateAll(); scheduleProcess()
+  });
+  (el<HTMLSpanElement>(valId) as HTMLElement).title = 'Double-click to reset'
+  el<HTMLSpanElement>(valId).addEventListener('dblclick', () => {
+    const v = getResetDefaults()[key] as number
+    el<HTMLInputElement>(sliderId).value = String(Math.round(v * 100))
+    settings[key] = v
+    el<HTMLSpanElement>(valId).textContent = String(Math.round(v * 100)) + '%'
+    markCustomPreset(); invalidateAll(); scheduleProcess()
+  })
+})
+
 checkCDR.addEventListener('change', () => {
   settings.compressDynamicRange = checkCDR.checked
   markCustomPreset(); invalidateAll(); scheduleProcess()
@@ -681,6 +716,16 @@ function syncSlidersFromSettings() {
   const pct = Math.round(settings.ditherStrength * 100)
   el<HTMLInputElement>('sliderDitherStrength').value = String(pct)
   el<HTMLSpanElement>('valDitherStrength').textContent = String(pct) + '%'
+  const magPct = Math.round((settings.hueRemapMagenta ?? 0) * 100)
+  el<HTMLInputElement>('sliderHueRemapMagenta').value = String(magPct)
+  el<HTMLSpanElement>('valHueRemapMagenta').textContent = String(magPct) + '%'
+  const cyanPct = Math.round((settings.hueRemapCyan ?? 0) * 100)
+  el<HTMLInputElement>('sliderHueRemapCyan').value = String(cyanPct)
+  el<HTMLSpanElement>('valHueRemapCyan').textContent = String(cyanPct) + '%'
+  const orgPct = Math.round((settings.hueRemapOrange ?? 0) * 100)
+  el<HTMLInputElement>('sliderHueRemapOrange').value = String(orgPct)
+  el<HTMLSpanElement>('valHueRemapOrange').textContent = String(orgPct) + '%'
+  syncHueRemapPanel()
   errorSpaceSel.textContent = colorSpaceLabel[settings.errorSpace]
   distSpaceSel.textContent  = colorSpaceLabel[settings.distSpace]
   colorPresetSel.value = `${settings.errorSpace}_${settings.distSpace}`
@@ -756,6 +801,7 @@ btnDownloadZip.addEventListener('click', async () => {
         resizeMode,
         palette,
         settings,
+        hueGaps: getPaletteGroup(paletteGroupId).hueGaps ?? [],
       })
       bmp.close()
       img.dithered = r.measured

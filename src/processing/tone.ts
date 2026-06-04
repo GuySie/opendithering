@@ -74,7 +74,7 @@ export function applyToneMapping(data: Uint8ClampedArray, s: ProcessingSettings)
 
 // --- Saturation (HSL) ---
 
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+export function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   const rn = r / 255, gn = g / 255, bn = b / 255
   const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn)
   const l = (max + min) / 2
@@ -97,7 +97,7 @@ function hue2rgb(p: number, q: number, t: number): number {
   return p
 }
 
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+export function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   if (s === 0) {
     const v = Math.round(l * 255)
     return [v, v, v]

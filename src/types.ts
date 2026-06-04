@@ -10,10 +10,18 @@ export interface Palette {
   colors: PaletteColor[]
 }
 
+export interface HueGap {
+  id: string      // e.g. 'magenta' | 'cyan' | 'orange'
+  label: string   // e.g. 'Magenta/Purple'
+  hueMin: number  // degrees, 0–360
+  hueMax: number  // degrees, 0–360
+}
+
 export interface PaletteGroup {
   id: string       // e.g. 'spectra6'
   name: string     // e.g. 'Spectra 6 (6-color)' — used in Custom palette-type picker
   variants: Palette[]  // index 0 = default measured variant; ideal appended by registry
+  hueGaps?: HueGap[]   // hue ranges the palette cannot reproduce well
 }
 
 export interface DisplayPreset {
@@ -51,6 +59,9 @@ export interface ProcessingSettings {
   knoxEdgeSensitivity: number    // 0.5–8.0, cross-edge suppression sensitivity for Eschbach & Knox
   riemersmaQueueSize: number     // 4–64, error history queue length for Riemersma
   dizzyDiagonalWeight: number    // 0.0–1.0, diagonal neighbour weight for Dizzy
+  hueRemapMagenta: number        // 0.0–1.0, remap magenta/purple toward nearest palette hue
+  hueRemapCyan: number           // 0.0–1.0, remap cyan/teal toward nearest palette hue
+  hueRemapOrange: number         // 0.0–1.0, remap orange toward nearest palette hue
 }
 
 export interface DitheringAlgorithm {
@@ -91,6 +102,9 @@ export const BALANCED_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  hueRemapMagenta: 0,
+  hueRemapCyan: 0,
+  hueRemapOrange: 0,
 }
 
 export const VIVID_PRESET: ProcessingSettings = {
@@ -115,6 +129,9 @@ export const VIVID_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  hueRemapMagenta: 0,
+  hueRemapCyan: 0,
+  hueRemapOrange: 0,
 }
 
 export const SOFT_PRESET: ProcessingSettings = {
@@ -139,6 +156,9 @@ export const SOFT_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  hueRemapMagenta: 0,
+  hueRemapCyan: 0,
+  hueRemapOrange: 0,
 }
 
 export const GRAYSCALE_PRESET: ProcessingSettings = {
@@ -163,6 +183,9 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  hueRemapMagenta: 0,
+  hueRemapCyan: 0,
+  hueRemapOrange: 0,
 }
 
 export type PresetName = 'balanced' | 'vivid' | 'soft' | 'grayscale' | 'custom'

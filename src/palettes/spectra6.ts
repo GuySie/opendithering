@@ -3,6 +3,11 @@ import type { PaletteGroup } from '../types'
 export const spectra6Group: PaletteGroup = {
   id: 'spectra6',
   name: 'Spectra 6 (6-color)',
+  hueGaps: [
+    { id: 'magenta', label: 'Magenta/Purple', hueMin: 220, hueMax: 355 },
+    { id: 'cyan',    label: 'Cyan/Teal',      hueMin: 145, hueMax: 215 },
+    { id: 'orange',  label: 'Orange',          hueMin: 15,  hueMax: 55  },
+  ],
   variants: [
     {
       id: 'spectra6-aitjcize',
