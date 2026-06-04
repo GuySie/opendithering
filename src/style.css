@@ -169,6 +169,18 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   color: #fff;
   font-weight: 600;
 }
+.preset-btn[data-preset="custom"] {
+  cursor: default;
+  pointer-events: none;
+  border-color: transparent;
+  background: transparent;
+  opacity: 0.45;
+}
+.preset-btn[data-preset="custom"].active {
+  opacity: 1;
+  background: var(--accent);
+  border-color: var(--accent);
+}
 
 /* ── Sliders ── */
 .slider-row {
@@ -181,7 +193,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 }
 .slider-row label { margin: 0; grid-column: 1 / -1; }
 .slider-row input[type="range"] { grid-column: 1; accent-color: var(--accent); width: 100%; }
-.slider-val { color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 2.8ch; text-align: right; font-size: 0.8rem; }
+.slider-val { color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 2.8ch; text-align: right; font-size: 0.8rem; cursor: pointer; }
 
 /* ── Checkbox ── */
 .checkbox-label {

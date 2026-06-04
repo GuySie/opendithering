@@ -17,6 +17,7 @@ let paletteGroupId       = 'spectra6'
 let calibrationVariantId = 'spectra6-aitjcize'
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let showIdealPreview = false
+let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -424,6 +425,7 @@ el<HTMLDivElement>('tonePresets').addEventListener('click', e => {
 })
 
 function setPreset(name: Exclude<PresetName, 'custom'>) {
+  activePreset = name
   settings = { ...PRESETS[name] }
   syncSlidersFromSettings()
   document.querySelectorAll('.preset-btn').forEach(b =>
@@ -432,10 +434,22 @@ function setPreset(name: Exclude<PresetName, 'custom'>) {
   invalidateAll(); scheduleProcess()
 }
 
+function settingsMatchPreset(s: ProcessingSettings, preset: ProcessingSettings): boolean {
+  return (Object.keys(preset) as (keyof ProcessingSettings)[]).every(key => {
+    const a = s[key], b = preset[key]
+    return typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) < 1e-9 : a === b
+  })
+}
+
 function markCustomPreset() {
+  const effectiveName = settingsMatchPreset(settings, PRESETS[activePreset]) ? activePreset : 'custom'
   document.querySelectorAll('.preset-btn').forEach(b =>
-    b.classList.toggle('active', (b as HTMLElement).dataset.preset === 'custom')
+    b.classList.toggle('active', (b as HTMLElement).dataset.preset === effectiveName)
   )
+}
+
+function getResetDefaults(): ProcessingSettings {
+  return PRESETS[activePreset]
 }
 
 // Sliders
@@ -456,6 +470,15 @@ function sliderSetup(
     markCustomPreset()
     invalidateAll(); scheduleProcess()
   })
+
+  valEl.title = 'Double-click to reset'
+  valEl.addEventListener('dblclick', () => {
+    const defaultVal = (getResetDefaults() as unknown as Record<string, number>)[key as string]
+    slider.value = String(Math.round(defaultVal * scale))
+    ;(settings as unknown as Record<string, number>)[key as string] = defaultVal
+    valEl.textContent = defaultVal.toFixed(decimals)
+    markCustomPreset(); invalidateAll(); scheduleProcess()
+  })
 }
 
 sliderSetup('sliderExposure', 'valExposure', 100, 'exposure')
@@ -470,12 +493,28 @@ el<HTMLInputElement>('sliderDitherStrength').addEventListener('input', () => {
   settings.ditherStrength = pct / 100
   el<HTMLSpanElement>('valDitherStrength').textContent = String(pct) + '%'
   markCustomPreset(); invalidateAll(); scheduleProcess()
+});
+(el<HTMLSpanElement>('valDitherStrength') as HTMLElement).title = 'Double-click to reset'
+el<HTMLSpanElement>('valDitherStrength').addEventListener('dblclick', () => {
+  const v = getResetDefaults().ditherStrength
+  el<HTMLInputElement>('sliderDitherStrength').value = String(Math.round(v * 100))
+  settings.ditherStrength = v
+  el<HTMLSpanElement>('valDitherStrength').textContent = String(Math.round(v * 100)) + '%'
+  markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
 el<HTMLInputElement>('sliderKnoxAlpha').addEventListener('input', () => {
   const pct = parseInt(el<HTMLInputElement>('sliderKnoxAlpha').value)
   settings.knoxAlpha = pct / 100
   el<HTMLSpanElement>('valKnoxAlpha').textContent = (pct / 100).toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+});
+(el<HTMLSpanElement>('valKnoxAlpha') as HTMLElement).title = 'Double-click to reset'
+el<HTMLSpanElement>('valKnoxAlpha').addEventListener('dblclick', () => {
+  const v = getResetDefaults().knoxAlpha
+  el<HTMLInputElement>('sliderKnoxAlpha').value = String(Math.round(v * 100))
+  settings.knoxAlpha = v
+  el<HTMLSpanElement>('valKnoxAlpha').textContent = v.toFixed(2)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -484,6 +523,14 @@ el<HTMLInputElement>('sliderKnoxFringe').addEventListener('input', () => {
   settings.knoxFringe = v / 100
   el<HTMLSpanElement>('valKnoxFringe').textContent = (v / 100).toFixed(2)
   markCustomPreset(); invalidateAll(); scheduleProcess()
+});
+(el<HTMLSpanElement>('valKnoxFringe') as HTMLElement).title = 'Double-click to reset'
+el<HTMLSpanElement>('valKnoxFringe').addEventListener('dblclick', () => {
+  const v = getResetDefaults().knoxFringe
+  el<HTMLInputElement>('sliderKnoxFringe').value = String(Math.round(v * 100))
+  settings.knoxFringe = v
+  el<HTMLSpanElement>('valKnoxFringe').textContent = v.toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
 el<HTMLInputElement>('sliderKnoxEdge').addEventListener('input', () => {
@@ -491,10 +538,26 @@ el<HTMLInputElement>('sliderKnoxEdge').addEventListener('input', () => {
   settings.knoxEdgeSensitivity = v / 100
   el<HTMLSpanElement>('valKnoxEdge').textContent = (v / 100).toFixed(1)
   markCustomPreset(); invalidateAll(); scheduleProcess()
+});
+(el<HTMLSpanElement>('valKnoxEdge') as HTMLElement).title = 'Double-click to reset'
+el<HTMLSpanElement>('valKnoxEdge').addEventListener('dblclick', () => {
+  const v = getResetDefaults().knoxEdgeSensitivity
+  el<HTMLInputElement>('sliderKnoxEdge').value = String(Math.round(v * 100))
+  settings.knoxEdgeSensitivity = v
+  el<HTMLSpanElement>('valKnoxEdge').textContent = v.toFixed(1)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
 el<HTMLInputElement>('sliderRiemersmaQueue').addEventListener('input', () => {
   const v = parseInt(el<HTMLInputElement>('sliderRiemersmaQueue').value)
+  settings.riemersmaQueueSize = v
+  el<HTMLSpanElement>('valRiemersmaQueue').textContent = String(v)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+});
+(el<HTMLSpanElement>('valRiemersmaQueue') as HTMLElement).title = 'Double-click to reset'
+el<HTMLSpanElement>('valRiemersmaQueue').addEventListener('dblclick', () => {
+  const v = getResetDefaults().riemersmaQueueSize
+  el<HTMLInputElement>('sliderRiemersmaQueue').value = String(v)
   settings.riemersmaQueueSize = v
   el<HTMLSpanElement>('valRiemersmaQueue').textContent = String(v)
   markCustomPreset(); invalidateAll(); scheduleProcess()
@@ -504,6 +567,14 @@ el<HTMLInputElement>('sliderDizzyDiagonal').addEventListener('input', () => {
   const v = parseInt(el<HTMLInputElement>('sliderDizzyDiagonal').value)
   settings.dizzyDiagonalWeight = v / 100
   el<HTMLSpanElement>('valDizzyDiagonal').textContent = (v / 100).toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+});
+(el<HTMLSpanElement>('valDizzyDiagonal') as HTMLElement).title = 'Double-click to reset'
+el<HTMLSpanElement>('valDizzyDiagonal').addEventListener('dblclick', () => {
+  const v = getResetDefaults().dizzyDiagonalWeight
+  el<HTMLInputElement>('sliderDizzyDiagonal').value = String(Math.round(v * 100))
+  settings.dizzyDiagonalWeight = v
+  el<HTMLSpanElement>('valDizzyDiagonal').textContent = v.toFixed(2)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
