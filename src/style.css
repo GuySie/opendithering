@@ -522,3 +522,63 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .debug-table th:first-child { text-align: left; padding-left: 0; }
 .debug-muted { color: var(--text-muted); }
 .debug-loss-row { margin-top: 6px; }
+
+/* ── Cascade device select ── */
+.cascade-trigger {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  text-align: left;
+}
+.cascade-trigger:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cascade-chevron { margin-left: auto; color: var(--text-muted); font-size: 0.7rem; flex-shrink: 0; }
+.cascade-menu {
+  position: fixed;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  z-index: 200;
+  padding: 3px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+}
+.cascade-item {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  white-space: nowrap;
+  user-select: none;
+}
+.cascade-item:hover { background: var(--border); }
+.cascade-arrow { color: var(--text-muted); font-size: 0.8rem; margin-left: 0.75rem; }
+.cascade-submenu {
+  position: fixed;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  z-index: 201;
+  padding: 3px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  min-width: 180px;
+}
+.cascade-option {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.cascade-option:hover { background: var(--accent); color: #fff; }
+.cascade-option.active { color: var(--accent); }

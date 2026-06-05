@@ -29,6 +29,8 @@ const dropZone         = el<HTMLDivElement>('dropZone')
 const fileInput        = el<HTMLInputElement>('fileInput')
 const thumbnailStrip   = el<HTMLDivElement>('thumbnailStrip')
 const presetSelect     = el<HTMLSelectElement>('presetSelect')
+const presetLabel      = el<HTMLSpanElement>('presetLabel')
+const presetTrigger    = el<HTMLButtonElement>('presetTrigger')
 const customDims       = el<HTMLDivElement>('customDims')
 const dimWidth         = el<HTMLInputElement>('dimWidth')
 const dimHeight        = el<HTMLInputElement>('dimHeight')
@@ -162,11 +164,11 @@ function renderSwatches() {
 // ── Populate selects ──────────────────────────────────────────────────────
 
 function populateSelects() {
-  // Display presets
+  // Hidden select — flat options for value/change-handler compatibility
   for (const p of DISPLAY_PRESETS) {
     const opt = document.createElement('option')
     opt.value = p.id
-    opt.textContent = p.manufacturer ? `${p.manufacturer} — ${p.name}` : p.name
+    opt.textContent = p.name
     presetSelect.appendChild(opt)
   }
 
@@ -191,6 +193,114 @@ function populateSelects() {
   }
   algorithmSelect.value = settings.ditherAlgorithm
 }
+
+// ── Cascade device select ─────────────────────────────────────────────────
+
+const cascadeMenu = document.createElement('div')
+cascadeMenu.className = 'cascade-menu'
+cascadeMenu.hidden = true
+document.body.appendChild(cascadeMenu)
+
+let activeSubmenu: HTMLElement | null = null
+let hideSubTimer: ReturnType<typeof setTimeout> | null = null
+
+function showSub(item: HTMLElement, sub: HTMLElement) {
+  if (hideSubTimer) { clearTimeout(hideSubTimer); hideSubTimer = null }
+  if (activeSubmenu && activeSubmenu !== sub) activeSubmenu.hidden = true
+  const rect = item.getBoundingClientRect()
+  sub.style.top  = `${rect.top}px`
+  sub.style.left = `${rect.right + 3}px`
+  sub.hidden = false
+  activeSubmenu = sub
+}
+
+function scheduleSub() {
+  hideSubTimer = setTimeout(() => {
+    if (activeSubmenu) activeSubmenu.hidden = true
+    activeSubmenu = null
+    hideSubTimer = null
+  }, 80)
+}
+
+function closeCascade() {
+  if (hideSubTimer) { clearTimeout(hideSubTimer); hideSubTimer = null }
+  if (activeSubmenu) { activeSubmenu.hidden = true; activeSubmenu = null }
+  cascadeMenu.hidden = true
+}
+
+function updatePresetLabel() {
+  const preset = DISPLAY_PRESETS.find(p => p.id === presetSelect.value)
+  if (preset) presetLabel.textContent = preset.manufacturer
+    ? `${preset.manufacturer} — ${preset.name}`
+    : preset.name
+}
+
+function buildCascadeMenu() {
+  const groups = new Map<string, typeof DISPLAY_PRESETS>()
+  for (const p of DISPLAY_PRESETS) {
+    const key = p.manufacturer || ''
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(p)
+  }
+
+  for (const [manufacturer, presets] of groups) {
+    const item = document.createElement('div')
+    item.className = 'cascade-item'
+
+    if (!manufacturer) {
+      item.textContent = 'Custom'
+      item.addEventListener('click', e => { e.stopPropagation(); applyPreset('custom') })
+    } else {
+      const nameEl = document.createElement('span')
+      nameEl.textContent = manufacturer
+      const arrowEl = document.createElement('span')
+      arrowEl.className = 'cascade-arrow'
+      arrowEl.textContent = '›'
+      item.append(nameEl, arrowEl)
+
+      const sub = document.createElement('div')
+      sub.className = 'cascade-submenu'
+      sub.hidden = true
+      document.body.appendChild(sub)
+
+      for (const p of presets) {
+        const opt = document.createElement('div')
+        opt.className = 'cascade-option'
+        opt.textContent = p.name
+        opt.dataset.id = p.id
+        opt.addEventListener('click', e => { e.stopPropagation(); applyPreset(p.id) })
+        sub.appendChild(opt)
+      }
+
+      item.addEventListener('mouseenter', () => showSub(item, sub))
+      item.addEventListener('mouseleave', () => scheduleSub())
+      sub.addEventListener('mouseenter', () => { if (hideSubTimer) { clearTimeout(hideSubTimer); hideSubTimer = null } })
+      sub.addEventListener('mouseleave', () => scheduleSub())
+    }
+    cascadeMenu.appendChild(item)
+  }
+}
+
+function applyPreset(id: string) {
+  presetSelect.value = id
+  presetSelect.dispatchEvent(new Event('change'))
+  closeCascade()
+}
+
+presetTrigger.addEventListener('click', e => {
+  e.stopPropagation()
+  if (!cascadeMenu.hidden) { closeCascade(); return }
+  const rect = presetTrigger.getBoundingClientRect()
+  cascadeMenu.style.top      = `${rect.bottom + 3}px`
+  cascadeMenu.style.left     = `${rect.left}px`
+  cascadeMenu.style.minWidth = `${rect.width}px`
+  document.querySelectorAll<HTMLElement>('.cascade-option').forEach(opt => {
+    opt.classList.toggle('active', opt.dataset.id === presetSelect.value)
+  })
+  cascadeMenu.hidden = false
+})
+
+document.addEventListener('click', () => closeCascade())
 
 // ── Upload ─────────────────────────────────────────────────────────────────
 
@@ -417,6 +527,7 @@ function setDimsEditable(editable: boolean) {
 }
 
 presetSelect.addEventListener('change', () => {
+  updatePresetLabel()
   const preset = DISPLAY_PRESETS.find(p => p.id === presetSelect.value)!
   if (preset.id === 'custom') {
     setDimsEditable(true)
@@ -1195,5 +1306,7 @@ updatePaletteBadge()
 renderSwatches()
 
 // Set initial display preset
+buildCascadeMenu()
 presetSelect.value = 'seeed-reterminal-e1002'
+updatePresetLabel()
 setDimsEditable(false)

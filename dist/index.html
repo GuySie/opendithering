@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenDithering</title>
-  <script type="module" crossorigin src="./assets/index-COwSOiet.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DFBV3y6H.css">
+  <script type="module" crossorigin src="./assets/index-xBqspLf6.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DUHb-gZH.css">
 </head>
 <body>
   <header>
@@ -35,8 +35,13 @@
 
       <section class="section">
         <h2>2. Display</h2>
-        <label for="presetSelect">Device preset</label>
-        <select id="presetSelect"></select>
+        <label>Device preset</label>
+        <div id="presetCascade">
+          <button type="button" class="cascade-trigger" id="presetTrigger">
+            <span id="presetLabel">—</span><span class="cascade-chevron">▾</span>
+          </button>
+        </div>
+        <select id="presetSelect" hidden></select>
         <div class="custom-dims" id="customDims">
           <div class="dim-row">
             <label for="dimWidth">Width</label>
