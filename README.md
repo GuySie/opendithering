@@ -19,7 +19,7 @@ This app is an experiment to find the optimal dithering algorithm and settings f
 - **Color space control** — dither in RGB, CIELAB, or OKLab; independently choose error diffusion space and nearest-color distance space
 - **Zoom / pan** — click the preview canvas to zoom to 1:1 pixels and drag to pan the full image
 - **Export** — downloads a PNG or BMP sized exactly to the display, using ideal palette colors
-- **OpenDisplay upload** — send the dithered image directly to a compatible [OpenDisplay](https://opendisplay.org/) device over Web Bluetooth. Requires Chrome or Edge.
+- **OpenDisplay upload** — send the dithered image directly to a compatible [OpenDisplay](https://opendisplay.org/) device over Web Bluetooth. Requires Chrome or Edge. Encryption is not yet supported.
 
 ## Supported palettes
 
