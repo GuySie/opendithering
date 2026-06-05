@@ -226,7 +226,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .advanced-panel details > div { padding-top: 0.5rem; }
 
 /* ── Export ── */
-.export-row {
+.export-row, .autotune-row {
   display: flex;
   gap: 0.5rem;
 }
@@ -421,3 +421,38 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   flex: 1;
   min-height: 0;
 }
+
+/* Auto-tune debug panel */
+.debug-panel {
+  font-family: monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 8px 16px 10px;
+}
+.debug-header {
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.debug-body {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+.debug-table { border-collapse: collapse; }
+.debug-table th {
+  color: var(--text-muted);
+  font-weight: normal;
+  text-align: right;
+  padding: 0 10px 2px 0;
+  border-bottom: 1px solid var(--border);
+}
+.debug-table td {
+  text-align: right;
+  padding: 1px 10px 0 0;
+}
+.debug-table td:first-child,
+.debug-table th:first-child { text-align: left; padding-left: 0; }
+.debug-muted { color: var(--text-muted); }
+.debug-loss-row { margin-top: 6px; }
