@@ -6,7 +6,8 @@ import { getAllAlgorithms } from './dithering/index'
 import { runPipeline } from './processing/pipeline'
 import { autoTune } from './processing/autotune'
 import type { AutoTuneDebug } from './processing/autotune'
-import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
+import type { BleSession } from './ble/opendisplay'
+import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend, authenticate as bleAuthenticate } from './ble/opendisplay'
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -21,7 +22,8 @@ let calibrationVariantId = 'spectra6-aitjcize'
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let showIdealPreview = false
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
-let bleCharacteristic: BluetoothRemoteGATTCharacteristic | null = null
+let bleSession: BleSession | null = null
+let bleAbortController: AbortController | null = null
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -1022,8 +1024,10 @@ function setBleConnected(connected: boolean) {
 }
 
 function bleDisconnect() {
-  bleCharacteristic?.service.device.gatt?.disconnect()
-  bleCharacteristic = null
+  bleAbortController?.abort()
+  bleAbortController = null
+  bleSession?.characteristic.service.device.gatt?.disconnect()
+  bleSession = null
   setBleConnected(false)
 }
 
@@ -1034,14 +1038,40 @@ async function doConnect() {
   }
   bleStatusText.textContent = 'Connecting…'
   try {
-    bleCharacteristic = await bleConnect()
+    const characteristic = await bleConnect()
+
+    let sessionKeyBytes: Uint8Array | null = null
+    let sessionId: Uint8Array | null = null
+
+    const keyHex = window.prompt(
+      'Enter the 32-character hex encryption key shown on your device\n(leave blank if encryption is not enabled):',
+    )
+    if (keyHex && keyHex.trim()) {
+      bleStatusText.textContent = 'Authenticating…'
+      try {
+        const auth = await bleAuthenticate(characteristic, keyHex.trim())
+        sessionKeyBytes = auth.sessionKeyBytes
+        sessionId = auth.sessionId
+      } catch (authErr: unknown) {
+        characteristic.service.device.gatt?.disconnect()
+        const msg = authErr instanceof Error ? authErr.message : String(authErr)
+        alert(`Encryption error: ${msg}`)
+        bleSession = null
+        setBleConnected(false)
+        return
+      }
+    }
+
+    bleSession = { characteristic, sessionKeyBytes, sessionId, counter: 1 }
     setBleConnected(true)
-    bleCharacteristic.service.device.addEventListener('gattserverdisconnected', () => {
-      bleCharacteristic = null
+    characteristic.service.device.addEventListener('gattserverdisconnected', () => {
+      bleAbortController?.abort()
+      bleAbortController = null
+      bleSession = null
       setBleConnected(false)
     })
   } catch (err: unknown) {
-    bleCharacteristic = null
+    bleSession = null
     setBleConnected(false)
   }
 }
@@ -1068,18 +1098,20 @@ btnUploadDevice.addEventListener('click', async () => {
   btnUploadDeviceArrow.disabled = true
 
   try {
-    if (!bleCharacteristic || !bleCharacteristic.service.device.gatt?.connected) {
+    if (!bleSession || !bleSession.characteristic.service.device.gatt?.connected) {
       btnUploadDevice.textContent = '↑ Connecting…'
       await doConnect()
-      if (!bleCharacteristic) return
+      if (!bleSession) return
     }
 
     const imageBytes = bleEncode(img.ideal.data, img.width, img.height, paletteGroupId)
 
-    await bleSend(bleCharacteristic, imageBytes, (sent, total) => {
+    bleAbortController = new AbortController()
+    await bleSend(bleSession, imageBytes, (sent, total) => {
       const pct = Math.round((sent / total) * 100)
       btnUploadDevice.textContent = `↑ Sending ${pct}%…`
-    })
+    }, bleAbortController.signal)
+    bleAbortController = null
 
     btnUploadDevice.textContent = '✓ Sent'
     setTimeout(() => {
@@ -1087,7 +1119,8 @@ btnUploadDevice.addEventListener('click', async () => {
       updateExportButtons()
     }, 2000)
   } catch (err: unknown) {
-    bleCharacteristic = null
+    bleAbortController = null
+    bleSession = null
     setBleConnected(false)
     const msg = err instanceof Error ? err.message : String(err)
     if (!msg.toLowerCase().includes('cancel') && !msg.toLowerCase().includes('user')) {
