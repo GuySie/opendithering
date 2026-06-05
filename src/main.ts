@@ -609,11 +609,13 @@ btnAutoTune.addEventListener('click', async () => {
     },
     settings.saturation,
     settings.exposure,
+    settings.highlightCompress,
   )
   srcBitmap.close()
 
   settings.saturation = result.saturation
   settings.exposure = result.exposure
+  settings.highlightCompress = result.highlightCompress
   markCustomPreset()
   syncSlidersFromSettings()
   invalidateAll()

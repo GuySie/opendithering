@@ -226,7 +226,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .advanced-panel details > div { padding-top: 0.5rem; }
 
 /* ── Export ── */
-.export-row {
+.export-row, .autotune-row {
   display: flex;
   gap: 0.5rem;
 }
