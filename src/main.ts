@@ -6,6 +6,7 @@ import { getAllAlgorithms } from './dithering/index'
 import { runPipeline } from './processing/pipeline'
 import { autoTune } from './processing/autotune'
 import type { AutoTuneDebug } from './processing/autotune'
+import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ let calibrationVariantId = 'spectra6-aitjcize'
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let showIdealPreview = false
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
+let bleCharacteristic: BluetoothRemoteGATTCharacteristic | null = null
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -62,9 +64,39 @@ const procOverlay      = el<HTMLDivElement>('processingOverlay')
 const paletteBadge         = el<HTMLSpanElement>('paletteBadge')
 const ditheredPanelLabel   = el<HTMLSpanElement>('ditheredPanelLabel')
 const previewToggleBtns    = Array.from(document.querySelectorAll<HTMLButtonElement>('.preview-toggle-btn'))
-const btnDownloadPng   = el<HTMLButtonElement>('btnDownloadPng')
-const btnDownloadBmp   = el<HTMLButtonElement>('btnDownloadBmp')
+const btnDownloadMain  = el<HTMLButtonElement>('btnDownloadMain')
+const btnDownloadArrow = el<HTMLButtonElement>('btnDownloadArrow')
+const splitDownloadMenu = el<HTMLDivElement>('splitDownloadMenu')
 const btnDownloadZip   = el<HTMLButtonElement>('btnDownloadZip')
+const btnUploadDevice       = el<HTMLButtonElement>('btnUploadDevice')
+const btnUploadDeviceArrow  = el<HTMLButtonElement>('btnUploadDeviceArrow')
+const splitUploadMenu       = el<HTMLDivElement>('splitUploadMenu')
+const btnConnectDevice      = el<HTMLButtonElement>('btnConnectDevice')
+const btnDisconnectDevice   = el<HTMLButtonElement>('btnDisconnectDevice')
+const bleStatus             = el<HTMLParagraphElement>('bleStatus')
+const bleStatusText         = el<HTMLSpanElement>('bleStatusText')
+const bleCompatHint         = el<HTMLParagraphElement>('bleCompatHint')
+
+;(() => {
+  function browserName(): string {
+    if ((navigator as Navigator & { userAgentData?: { brands: { brand: string }[] } }).userAgentData) {
+      const brands = (navigator as Navigator & { userAgentData: { brands: { brand: string }[] } }).userAgentData.brands
+      if (brands.some(b => b.brand === 'Microsoft Edge')) return 'Edge'
+      if (brands.some(b => b.brand === 'Google Chrome')) return 'Chrome'
+      if (brands.some(b => b.brand === 'Chromium')) return 'Chromium'
+    }
+    const ua = navigator.userAgent
+    if (ua.includes('Firefox')) return 'Firefox'
+    if (ua.includes('Safari') && !ua.includes('Chrome')) return 'Safari'
+    if (ua.includes('Edg/')) return 'Edge'
+    if (ua.includes('Chrome')) return 'Chrome'
+    return 'your browser'
+  }
+  const name = browserName()
+  bleCompatHint.textContent = navigator.bluetooth
+    ? `BLE upload is supported in ${name}.`
+    : `BLE upload is not supported in ${name}. Try Chrome or Edge.`
+})()
 const checkCDR         = el<HTMLInputElement>('checkCDR')
 const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
 const debugAutoTune    = el<HTMLDivElement>('debugAutoTune')
@@ -810,29 +842,154 @@ function updatePaletteBadge() {
 
 // ── Export ────────────────────────────────────────────────────────────────
 
+let downloadFormat: 'png' | 'bmp' = 'png'
+
 function updateExportButtons() {
   const hasResult = images.some(i => i.dithered)
-  btnDownloadPng.disabled = !hasResult
-  btnDownloadBmp.disabled = !hasResult
+  btnDownloadMain.disabled = !hasResult
+  btnDownloadArrow.disabled = !hasResult
   btnDownloadZip.disabled = !hasResult || images.length < 2
+  const canUpload = hasResult && bleIsSupported(paletteGroupId)
+  btnUploadDevice.disabled = !canUpload
+  btnUploadDeviceArrow.disabled = !canUpload
+  btnUploadDevice.title = canUpload ? '' : 'This palette is not supported by OpenDisplay'
 }
 
-btnDownloadPng.addEventListener('click', async () => {
+btnDownloadMain.addEventListener('click', async () => {
   const img = images.find(i => i.id === activeId)
-  if (!img) return
-  const ideal = img.ideal
-  if (!ideal) return
-  const blob = await imageDataToBlob(ideal)
-  downloadBlob(blob, stripExt(img.name) + '_dithered.png')
+  if (!img?.ideal) return
+  if (downloadFormat === 'bmp') {
+    downloadBlob(imageDataToBmpBlob(img.ideal), stripExt(img.name) + '_dithered.bmp')
+  } else {
+    downloadBlob(await imageDataToBlob(img.ideal), stripExt(img.name) + '_dithered.png')
+  }
 })
 
-btnDownloadBmp.addEventListener('click', async () => {
+btnDownloadArrow.addEventListener('click', (e) => {
+  e.stopPropagation()
+  const open = !splitDownloadMenu.hidden
+  splitDownloadMenu.hidden = open
+  btnDownloadArrow.setAttribute('aria-expanded', String(!open))
+})
+
+splitDownloadMenu.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.split-option')
+  if (!btn) return
+  downloadFormat = btn.dataset.format as 'png' | 'bmp'
+  btnDownloadMain.textContent = `↓ ${downloadFormat.toUpperCase()}`
+  splitDownloadMenu.querySelectorAll('.split-option').forEach(o => {
+    (o as HTMLElement).dataset.active = o === btn ? '' : undefined!
+    if (o !== btn) delete (o as HTMLElement).dataset.active
+  })
+  splitDownloadMenu.hidden = true
+  btnDownloadArrow.setAttribute('aria-expanded', 'false')
+})
+
+document.addEventListener('click', () => {
+  if (!splitDownloadMenu.hidden) {
+    splitDownloadMenu.hidden = true
+    btnDownloadArrow.setAttribute('aria-expanded', 'false')
+  }
+  if (!splitUploadMenu.hidden) {
+    splitUploadMenu.hidden = true
+    btnUploadDeviceArrow.setAttribute('aria-expanded', 'false')
+  }
+})
+
+btnUploadDeviceArrow.addEventListener('click', (e) => {
+  e.stopPropagation()
+  const open = !splitUploadMenu.hidden
+  splitUploadMenu.hidden = open
+  btnUploadDeviceArrow.setAttribute('aria-expanded', String(!open))
+})
+
+function setBleConnected(connected: boolean) {
+  btnConnectDevice.classList.toggle('split-option--muted', connected)
+  btnDisconnectDevice.classList.toggle('split-option--muted', !connected)
+  bleStatus.classList.toggle('connected', connected)
+  bleStatusText.textContent = connected ? 'Connected' : 'Not connected'
+}
+
+function bleDisconnect() {
+  bleCharacteristic?.service.device.gatt?.disconnect()
+  bleCharacteristic = null
+  setBleConnected(false)
+}
+
+async function doConnect() {
+  if (!navigator.bluetooth) {
+    alert('Web Bluetooth is not available in this browser. Try Chrome or Edge.')
+    return
+  }
+  bleStatusText.textContent = 'Connecting…'
+  try {
+    bleCharacteristic = await bleConnect()
+    setBleConnected(true)
+    bleCharacteristic.service.device.addEventListener('gattserverdisconnected', () => {
+      bleCharacteristic = null
+      setBleConnected(false)
+    })
+  } catch (err: unknown) {
+    bleCharacteristic = null
+    setBleConnected(false)
+  }
+}
+
+splitUploadMenu.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.split-option')
+  if (!btn || btn.classList.contains('split-option--muted')) return
+  splitUploadMenu.hidden = true
+  btnUploadDeviceArrow.setAttribute('aria-expanded', 'false')
+  if (btn.id === 'btnConnectDevice') doConnect()
+  else if (btn.id === 'btnDisconnectDevice') bleDisconnect()
+})
+
+btnUploadDevice.addEventListener('click', async () => {
   const img = images.find(i => i.id === activeId)
-  if (!img) return
-  const ideal = img.ideal
-  if (!ideal) return
-  const blob = imageDataToBmpBlob(ideal)
-  downloadBlob(blob, stripExt(img.name) + '_dithered.bmp')
+  if (!img?.ideal) return
+  if (!navigator.bluetooth) {
+    alert('Web Bluetooth is not available in this browser. Try Chrome or Edge.')
+    return
+  }
+
+  const originalLabel = btnUploadDevice.textContent ?? '↑ OpenDisplay via BLE'
+  btnUploadDevice.disabled = true
+  btnUploadDeviceArrow.disabled = true
+
+  try {
+    if (!bleCharacteristic || !bleCharacteristic.service.device.gatt?.connected) {
+      btnUploadDevice.textContent = '↑ Connecting…'
+      await doConnect()
+      if (!bleCharacteristic) return
+    }
+
+    const imageBytes = bleEncode(img.ideal.data, img.width, img.height, paletteGroupId)
+
+    await bleSend(bleCharacteristic, imageBytes, (sent, total) => {
+      const pct = Math.round((sent / total) * 100)
+      btnUploadDevice.textContent = `↑ Sending ${pct}%…`
+    })
+
+    btnUploadDevice.textContent = '✓ Sent'
+    setTimeout(() => {
+      btnUploadDevice.textContent = originalLabel
+      updateExportButtons()
+    }, 2000)
+  } catch (err: unknown) {
+    bleCharacteristic = null
+    setBleConnected(false)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!msg.toLowerCase().includes('cancel') && !msg.toLowerCase().includes('user')) {
+      btnUploadDevice.textContent = '✗ Error'
+      setTimeout(() => {
+        btnUploadDevice.textContent = originalLabel
+        updateExportButtons()
+      }, 2500)
+    } else {
+      btnUploadDevice.textContent = originalLabel
+      updateExportButtons()
+    }
+  }
 })
 
 btnDownloadZip.addEventListener('click', async () => {

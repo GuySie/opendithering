@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenDithering</title>
-  <script type="module" crossorigin src="./assets/index-DE_-ZfbI.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-CzslvFqp.css">
+  <script type="module" crossorigin src="./assets/index-COwSOiet.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DFBV3y6H.css">
 </head>
 <body>
   <header>
@@ -68,6 +68,7 @@
           <button class="preset-btn" data-preset="vivid">Vivid</button>
           <button class="preset-btn" data-preset="soft">Soft</button>
           <button class="preset-btn" data-preset="grayscale">Grayscale</button>
+          <button class="preset-btn" data-preset="none">None</button>
           <button class="preset-btn" data-preset="custom" id="customPresetBtn">Custom</button>
         </div>
       </section>
@@ -205,12 +206,30 @@
 
       <section class="section">
         <h2>6. Export</h2>
-        <div class="export-row">
-          <button class="btn-primary" id="btnDownloadPng" disabled>↓ PNG</button>
-          <button class="btn-secondary" id="btnDownloadBmp" disabled>↓ BMP</button>
+        <p class="export-hint">Preview uses calibrated colors (realistic). Export uses ideal colors (as device expects).</p>
+        <div class="export-row" style="margin-top: 0.75rem;">
+          <div class="split-btn">
+            <button class="btn-primary split-main" id="btnDownloadMain" disabled>↓ PNG</button>
+            <button class="btn-primary split-arrow" id="btnDownloadArrow" disabled aria-haspopup="true" aria-expanded="false">▾</button>
+            <div class="split-menu" id="splitDownloadMenu" hidden>
+              <button class="split-option" data-format="png">PNG</button>
+              <button class="split-option" data-format="bmp">BMP</button>
+            </div>
+          </div>
           <button class="btn-secondary" id="btnDownloadZip" disabled>↓ ZIP (all)</button>
         </div>
-        <p class="export-hint">Preview uses calibrated colors (realistic). Export uses ideal colors (as device expects).</p>
+        <div class="export-row" style="margin-top: 0.5rem;">
+          <div class="split-btn">
+            <button class="btn-secondary split-main" id="btnUploadDevice" disabled>↑ OpenDisplay via BLE</button>
+            <button class="btn-secondary split-arrow" id="btnUploadDeviceArrow" disabled aria-haspopup="true" aria-expanded="false">▾</button>
+            <div class="split-menu" id="splitUploadMenu" hidden>
+              <button class="split-option" id="btnConnectDevice">Connect</button>
+              <button class="split-option split-option--muted" id="btnDisconnectDevice">Disconnect</button>
+            </div>
+          </div>
+        </div>
+        <p class="ble-status" id="bleStatus"><span class="ble-dot"></span><span id="bleStatusText">Not connected</span></p>
+        <p class="export-hint" id="bleCompatHint">BLE upload requires a compatible browser (Chrome or Edge). Firefox and Safari are not supported.</p>
       </section>
 
     </aside>
@@ -243,6 +262,29 @@
             <div class="processing-overlay" id="processingOverlay" hidden>Processing…</div>
           </div>
         </div>
+      </div>
+
+      <div id="debugAutoTune" class="debug-panel" hidden>
+        <div class="debug-header">Auto-tune — <span id="dbgSummary"></span></div>
+        <div class="debug-body">
+          <table class="debug-table">
+            <thead><tr><th></th><th>Target</th><th>Before</th><th>After</th></tr></thead>
+            <tbody>
+              <tr><td>Mean L</td><td id="dbgRefL"></td><td id="dbgInitL"></td><td id="dbgFinalL"></td></tr>
+              <tr><td>Mean C</td><td id="dbgRefC"></td><td id="dbgInitC"></td><td id="dbgFinalC"></td></tr>
+              <tr><td>Loss</td><td class="debug-muted">—</td><td id="dbgInitLoss"></td><td id="dbgFinalLoss"></td></tr>
+            </tbody>
+          </table>
+          <table class="debug-table">
+            <thead><tr><th></th><th>Before</th><th>After</th></tr></thead>
+            <tbody>
+              <tr><td>Saturation</td><td id="dbgSatBefore"></td><td id="dbgSatAfter"></td></tr>
+              <tr><td>Exposure</td><td id="dbgExpBefore"></td><td id="dbgExpAfter"></td></tr>
+              <tr id="dbgHCRow"><td>Highl. compress</td><td id="dbgHCBefore"></td><td id="dbgHCAfter"></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="debug-loss-row">Loss history: <span id="dbgLossHistory"></span></div>
       </div>
     </main>
   </div>

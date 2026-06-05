@@ -246,12 +246,78 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn-primary:disabled, .btn-secondary:disabled { opacity: 0.35; cursor: not-allowed; }
 
+.split-btn {
+  position: relative;
+  display: flex;
+  flex: 1;
+}
+.split-btn .split-main {
+  flex: 1;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.split-btn .split-arrow {
+  flex: none;
+  width: 1.8rem;
+  padding: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  border-left: 1px solid rgba(255,255,255,0.25);
+  font-size: 0.7rem;
+}
+.split-menu {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0;
+  min-width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.split-option {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.split-option[hidden] { display: none; }
+.split-option:hover { background: var(--surface3, var(--surface2)); color: var(--accent); }
+.split-option[data-active] { color: var(--accent); }
+.split-option--muted { color: var(--text-muted); }
+.split-option--muted:hover { background: none; color: var(--text-muted); cursor: default; }
+
 .export-hint {
   margin-top: 0.5rem;
   color: var(--text-muted);
   font-size: 0.75rem;
   line-height: 1.5;
 }
+.ble-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.ble-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.ble-status.connected { color: var(--text); }
+.ble-status.connected .ble-dot { background: #4caf50; box-shadow: 0 0 4px #4caf5088; }
 
 /* ── Preview area ── */
 .preview-area {

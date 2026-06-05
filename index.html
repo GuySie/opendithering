@@ -67,6 +67,7 @@
           <button class="preset-btn" data-preset="vivid">Vivid</button>
           <button class="preset-btn" data-preset="soft">Soft</button>
           <button class="preset-btn" data-preset="grayscale">Grayscale</button>
+          <button class="preset-btn" data-preset="none">None</button>
           <button class="preset-btn" data-preset="custom" id="customPresetBtn">Custom</button>
         </div>
       </section>
@@ -204,12 +205,30 @@
 
       <section class="section">
         <h2>6. Export</h2>
-        <div class="export-row">
-          <button class="btn-primary" id="btnDownloadPng" disabled>↓ PNG</button>
-          <button class="btn-secondary" id="btnDownloadBmp" disabled>↓ BMP</button>
+        <p class="export-hint">Preview uses calibrated colors (realistic). Export uses ideal colors (as device expects).</p>
+        <div class="export-row" style="margin-top: 0.75rem;">
+          <div class="split-btn">
+            <button class="btn-primary split-main" id="btnDownloadMain" disabled>↓ PNG</button>
+            <button class="btn-primary split-arrow" id="btnDownloadArrow" disabled aria-haspopup="true" aria-expanded="false">▾</button>
+            <div class="split-menu" id="splitDownloadMenu" hidden>
+              <button class="split-option" data-format="png">PNG</button>
+              <button class="split-option" data-format="bmp">BMP</button>
+            </div>
+          </div>
           <button class="btn-secondary" id="btnDownloadZip" disabled>↓ ZIP (all)</button>
         </div>
-        <p class="export-hint">Preview uses calibrated colors (realistic). Export uses ideal colors (as device expects).</p>
+        <div class="export-row" style="margin-top: 0.5rem;">
+          <div class="split-btn">
+            <button class="btn-secondary split-main" id="btnUploadDevice" disabled>↑ OpenDisplay via BLE</button>
+            <button class="btn-secondary split-arrow" id="btnUploadDeviceArrow" disabled aria-haspopup="true" aria-expanded="false">▾</button>
+            <div class="split-menu" id="splitUploadMenu" hidden>
+              <button class="split-option" id="btnConnectDevice">Connect</button>
+              <button class="split-option split-option--muted" id="btnDisconnectDevice">Disconnect</button>
+            </div>
+          </div>
+        </div>
+        <p class="ble-status" id="bleStatus"><span class="ble-dot"></span><span id="bleStatusText">Not connected</span></p>
+        <p class="export-hint" id="bleCompatHint">BLE upload requires a compatible browser (Chrome or Edge). Firefox and Safari are not supported.</p>
       </section>
 
     </aside>
