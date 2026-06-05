@@ -165,11 +165,36 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   dizzyDiagonalWeight: 0.1,
 }
 
-export type PresetName = 'balanced' | 'vivid' | 'soft' | 'grayscale' | 'custom'
+export const NONE_PRESET: ProcessingSettings = {
+  exposure: 1.0,
+  saturation: 1.0,
+  compressDynamicRange: false,
+  toneMode: 'contrast',
+  contrast: 1.0,
+  strength: 0.0,
+  shadowBoost: 0.0,
+  highlightCompress: 1.0,
+  midpoint: 0.5,
+  errorSpace: 'rgb',
+  distSpace: 'rgb',
+  ditherStrength: 1.0,
+  localVarianceDetection: false,
+  expandPalette: false,
+  ditherAlgorithm: 'floyd-steinberg',
+  serpentine: true,
+  knoxAlpha: 0.5,
+  knoxFringe: 0.04,
+  knoxEdgeSensitivity: 4.0,
+  riemersmaQueueSize: 16,
+  dizzyDiagonalWeight: 0.1,
+}
+
+export type PresetName = 'balanced' | 'vivid' | 'soft' | 'grayscale' | 'none' | 'custom'
 
 export const PRESETS: Record<Exclude<PresetName, 'custom'>, ProcessingSettings> = {
   balanced: BALANCED_PRESET,
   vivid: VIVID_PRESET,
   soft: SOFT_PRESET,
   grayscale: GRAYSCALE_PRESET,
+  none: NONE_PRESET,
 }

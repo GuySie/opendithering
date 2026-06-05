@@ -1,6 +1,6 @@
 # OpenDithering
 
-A browser-based image dithering tool for e-paper displays. Runs entirely client-side using the Canvas API — no server, no uploads. Download perfectly dithered PNG files, or send them directly to a compatible device over Bluetooth.
+A browser-based image dithering tool for e-paper displays. Runs entirely client-side using the Canvas API — no server, no uploads. Download perfectly dithered PNG files, or send them directly to an OpenDisplay device over Bluetooth.
 
 **[Try it live →](https://guysie.github.io/opendithering/)**
 
@@ -19,7 +19,7 @@ This app is an experiment to find the optimal dithering algorithm and settings f
 - **Color space control** — dither in RGB, CIELAB, or OKLab; independently choose error diffusion space and nearest-color distance space
 - **Zoom / pan** — click the preview canvas to zoom to 1:1 pixels and drag to pan the full image
 - **Export** — downloads a PNG or BMP sized exactly to the display, using ideal palette colors
-- **OpenDisplay BLE upload** — send the dithered image directly to a compatible [OpenDisplay](https://opendisplay.org/) device over Web Bluetooth, with connect/disconnect controls and a live connection indicator. Requires Chrome or Edge.
+- **OpenDisplay upload** — send the dithered image directly to a compatible [OpenDisplay](https://opendisplay.org/) device over Web Bluetooth. Requires Chrome or Edge.
 
 ## Supported palettes
 
@@ -40,6 +40,7 @@ EPDOptimize (Paperlesspaper): https://github.com/paperlesspaper/epdoptimize.
 aitjcize: https://github.com/aitjcize/esp32-photoframe. 
 mattcarter11: https://github.com/mattcarter11/eink-dithering-tester. 
 Liam Appelbe: https://liamappelbe.medium.com/dizzy-dithering-2ae76dbceba1. 
+OpenDisplay: https://opendisplay.org/. 
 
 ## AI Warning
 

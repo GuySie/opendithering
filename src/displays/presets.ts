@@ -27,6 +27,12 @@ export const DISPLAY_PRESETS: DisplayPreset[] = [
   { id: 'gicisky-esl-42',              name: 'ESL 4.2"',                  manufacturer: 'Gicisky',       width: 400,  height: 300,  paletteGroupId: 'bwr' },
   { id: 'gicisky-esl-75',              name: 'ESL 7.5"',                  manufacturer: 'Gicisky',       width: 800,  height: 480,  paletteGroupId: 'bwr' },
   { id: 'gicisky-esl-102',             name: 'ESL 10.2"',                 manufacturer: 'Gicisky',       width: 960,  height: 640,  paletteGroupId: 'bwr' },
+  { id: 'solum-m3-16-bwr',             name: 'M3 1.6" BWR',               manufacturer: 'Solum',         width: 200,  height: 200,  paletteGroupId: 'bwr' },
+  { id: 'solum-m3-27-bwr',             name: 'M3 2.7" BWR',               manufacturer: 'Solum',         width: 200,  height: 300,  paletteGroupId: 'bwr' },
+  { id: 'solum-m3-29-bwr',             name: 'M3 2.9" BWR',               manufacturer: 'Solum',         width: 168,  height: 384,  paletteGroupId: 'bwr' },
+  { id: 'solum-m3-26-bwry',            name: 'M3 2.6" BWRY',              manufacturer: 'Solum',         width: 184,  height: 360,  paletteGroupId: 'bwry' },
+  { id: 'solum-m3-35-bwry',            name: 'M3 3.5" BWRY',              manufacturer: 'Solum',         width: 184,  height: 384,  paletteGroupId: 'bwry' },
+  { id: 'solum-m3-42-bwry',            name: 'M3 4.2" BWRY',              manufacturer: 'Solum',         width: 400,  height: 300,  paletteGroupId: 'bwry' },
   { id: 'custom',                     name: 'Custom',                    manufacturer: '',              width: 800, height: 480, paletteGroupId: 'spectra6' },
 ]
 
