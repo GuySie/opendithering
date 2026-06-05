@@ -3,13 +3,39 @@ import { runPipeline } from './pipeline'
 import { resizeImage } from './resize'
 import { rgbToOklab } from './colorspace'
 
+export interface AutoTuneDebug {
+  iterationsRun: number
+  converged: boolean
+  refStats: { meanL: number; meanC: number; highlightFraction: number }
+  initialStats: { meanL: number; meanC: number }
+  finalStats: { meanL: number; meanC: number }
+  initialLoss: number
+  finalLoss: number
+  /** Loss after each committed (improving) iteration, with baseline at index 0. */
+  lossHistory: number[]
+  initialSaturation: number
+  finalSaturation: number
+  initialExposure: number
+  finalExposure: number
+  initialHighlightCompress: number
+  finalHighlightCompress: number
+  toneMode: string
+}
+
+export interface AutoTuneResult {
+  saturation: number
+  exposure: number
+  highlightCompress: number
+  debug: AutoTuneDebug
+}
+
 export function autoTune(
   input: PipelineInput,
   initialSaturation: number,
   initialExposure: number,
   initialHighlightCompress: number,
   iterations = 8,
-): { saturation: number; exposure: number; highlightCompress: number } {
+): AutoTuneResult {
   const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, palette, settings } = input
 
   // Never switch tone mode — respect whatever mode the user has chosen.
@@ -41,6 +67,10 @@ export function autoTune(
   )
   let prevLoss = loss(refStats, prevStats)
   let best = { saturation, exposure, highlightCompress }
+
+  const lossHistory: number[] = [prevLoss]
+  const initialStats = { meanL: prevStats.meanL, meanC: prevStats.meanC }
+  let converged = true
 
   for (let i = 0; i < iterations; i++) {
     // Compute candidate adjustments from the previous iteration's output stats.
@@ -90,9 +120,31 @@ export function autoTune(
     saturation = nextSat
     exposure = nextExp
     highlightCompress = nextHC
+    lossHistory.push(newLoss)
+
+    if (i === iterations - 1) converged = false
   }
 
-  return best
+  return {
+    ...best,
+    debug: {
+      iterationsRun: lossHistory.length - 1,
+      converged,
+      refStats,
+      initialStats,
+      finalStats: { meanL: prevStats.meanL, meanC: prevStats.meanC },
+      initialLoss: lossHistory[0],
+      finalLoss: prevLoss,
+      lossHistory,
+      initialSaturation,
+      finalSaturation: best.saturation,
+      initialExposure,
+      finalExposure: best.exposure,
+      initialHighlightCompress,
+      finalHighlightCompress: best.highlightCompress,
+      toneMode,
+    },
+  }
 }
 
 function loss(ref: ImageStats, cur: ImageStats): number {

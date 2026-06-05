@@ -5,6 +5,7 @@ import { getAllPaletteGroups, getPaletteGroup, getPaletteVariant } from './palet
 import { getAllAlgorithms } from './dithering/index'
 import { runPipeline } from './processing/pipeline'
 import { autoTune } from './processing/autotune'
+import type { AutoTuneDebug } from './processing/autotune'
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,24 @@ const btnDownloadBmp   = el<HTMLButtonElement>('btnDownloadBmp')
 const btnDownloadZip   = el<HTMLButtonElement>('btnDownloadZip')
 const checkCDR         = el<HTMLInputElement>('checkCDR')
 const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
+const debugAutoTune    = el<HTMLDivElement>('debugAutoTune')
+const dbgSummary       = el<HTMLSpanElement>('dbgSummary')
+const dbgRefL          = el<HTMLTableCellElement>('dbgRefL')
+const dbgRefC          = el<HTMLTableCellElement>('dbgRefC')
+const dbgInitL         = el<HTMLTableCellElement>('dbgInitL')
+const dbgInitC         = el<HTMLTableCellElement>('dbgInitC')
+const dbgFinalL        = el<HTMLTableCellElement>('dbgFinalL')
+const dbgFinalC        = el<HTMLTableCellElement>('dbgFinalC')
+const dbgInitLoss      = el<HTMLTableCellElement>('dbgInitLoss')
+const dbgFinalLoss     = el<HTMLTableCellElement>('dbgFinalLoss')
+const dbgSatBefore     = el<HTMLTableCellElement>('dbgSatBefore')
+const dbgSatAfter      = el<HTMLTableCellElement>('dbgSatAfter')
+const dbgExpBefore     = el<HTMLTableCellElement>('dbgExpBefore')
+const dbgExpAfter      = el<HTMLTableCellElement>('dbgExpAfter')
+const dbgHCRow         = el<HTMLTableRowElement>('dbgHCRow')
+const dbgHCBefore      = el<HTMLTableCellElement>('dbgHCBefore')
+const dbgHCAfter       = el<HTMLTableCellElement>('dbgHCAfter')
+const dbgLossHistory   = el<HTMLSpanElement>('dbgLossHistory')
 
 function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T
@@ -620,6 +639,7 @@ btnAutoTune.addEventListener('click', async () => {
   syncSlidersFromSettings()
   invalidateAll()
   scheduleProcess()
+  showAutoTuneDebug(result.debug)
 
   btnAutoTune.disabled = false
   btnAutoTune.textContent = 'Auto-tune'
@@ -739,6 +759,41 @@ function setSlider(sliderId: string, valId: string, sliderVal: number, displayVa
 
 function invalidateAll() {
   for (const img of images) img.dithered = null
+}
+
+// ── Auto-tune debug panel ─────────────────────────────────────────────────
+
+function showAutoTuneDebug(d: AutoTuneDebug) {
+  const f3 = (n: number) => n.toFixed(3)
+  const f2 = (n: number) => n.toFixed(2)
+
+  const iters = d.iterationsRun
+  const statusLabel = iters === 0
+    ? 'no change (already optimal)'
+    : `${iters} iteration${iters !== 1 ? 's' : ''} · ${d.converged ? 'converged' : 'hit limit'}`
+  dbgSummary.textContent = statusLabel
+
+  dbgRefL.textContent   = f3(d.refStats.meanL)
+  dbgRefC.textContent   = f3(d.refStats.meanC)
+  dbgInitL.textContent  = f3(d.initialStats.meanL)
+  dbgInitC.textContent  = f3(d.initialStats.meanC)
+  dbgFinalL.textContent = f3(d.finalStats.meanL)
+  dbgFinalC.textContent = f3(d.finalStats.meanC)
+  dbgInitLoss.textContent  = f3(d.initialLoss)
+  dbgFinalLoss.textContent = f3(d.finalLoss)
+
+  dbgSatBefore.textContent = f2(d.initialSaturation)
+  dbgSatAfter.textContent  = f2(d.finalSaturation)
+  dbgExpBefore.textContent = f2(d.initialExposure)
+  dbgExpAfter.textContent  = f2(d.finalExposure)
+
+  dbgHCRow.hidden = d.toneMode !== 'scurve'
+  dbgHCBefore.textContent = f2(d.initialHighlightCompress)
+  dbgHCAfter.textContent  = f2(d.finalHighlightCompress)
+
+  dbgLossHistory.textContent = d.lossHistory.map(f3).join(' → ')
+
+  debugAutoTune.hidden = false
 }
 
 // ── Palette badge ─────────────────────────────────────────────────────────
