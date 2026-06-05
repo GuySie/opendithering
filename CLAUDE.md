@@ -84,7 +84,10 @@ src/
 │   ├── colorspace.ts          # sRGB↔linear, RGB→L*a*b*, RGB→OKLab, deltaE_rgb/lab/oklab, rec709Luminance
 │   ├── tone.ts                # compressDynamicRange, applyToneMapping, applySaturation, applyExposure
 │   ├── resize.ts              # resizeImage (cover/contain/stretch/none)
-│   └── pipeline.ts            # runPipeline() — orchestrates all steps, returns {measured, ideal}
+│   ├── pipeline.ts            # runPipeline() — orchestrates all steps, returns {measured, ideal}
+│   └── autotune.ts            # autoTune() — convergence-checked optimizer for saturation/exposure/highlightCompress
+├── ble/
+│   └── opendisplay.ts         # OpenDisplay BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
 ├── main.ts                    # All UI logic, state, event wiring
 └── style.css
 ```
@@ -137,6 +140,53 @@ The UI exposes five named presets via a "Color matching" dropdown: RGB (full), C
 ### Palette color values
 
 The `ideal` values are the nominal RGB codes the firmware expects (e.g. pure `[255,0,0]` for red). The `measured` values vary by variant — see variant sources listed under "Palette groups and calibration variants" above. When adding real device measurements, add a new named variant rather than overwriting an existing one.
+
+### Auto-tune
+
+Implemented in `src/processing/autotune.ts`. `autoTune()` adjusts `saturation`, `exposure`, and (in s-curve mode) `highlightCompress` to make the dithered output match the source image as closely as possible, measured by L1 distance in Oklab L+C (`|ΔmeanL| + |ΔmeanC|`).
+
+**Algorithm:**
+1. Resize the source to the display dimensions and compute reference stats (`refStats`: meanL, meanC, highlightFraction).
+2. Run the pipeline once with the current settings to establish a baseline loss.
+3. Each iteration: compute ratio-based candidate adjustments (50% damping on saturation, 30% on exposure, both with ±15% per-run caps relative to the initial values), run the pipeline with the candidate settings, compute the new loss. If `newLoss >= prevLoss`, revert to the last best and stop. Otherwise commit and continue.
+4. Maximum 8 iterations; early termination via the convergence check is the normal stopping condition.
+
+**Idempotency:** pressing Auto-tune a second time runs the baseline pass and tries one candidate — if the candidate doesn't improve, it breaks immediately and returns unchanged settings. This means repeated clicks are a no-op once the algorithm has converged.
+
+**Saturation and the discrete-palette floor:** the dithered output's mean chroma will always be ≤ the source's, because palette quantization clips the range. The ±15% per-run saturation cap prevents unbounded drift; the convergence check catches the point where further increases no longer improve the dithered output.
+
+**Return value:** `AutoTuneResult` — `{ saturation, exposure, highlightCompress, debug: AutoTuneDebug }`. The `AutoTuneDebug` struct carries `iterationsRun`, `converged`, `refStats`, `initialStats`, `finalStats`, `initialLoss`, `finalLoss`, `lossHistory` (baseline + loss after each committed iteration), and the before/after values for all three parameters. The debug panel in the UI (`#debugAutoTune`) renders this after each run.
+
+### OpenDisplay BLE upload
+
+Implemented in `src/ble/opendisplay.ts`. Sends the already-dithered `ideal` ImageData directly to an OpenDisplay-compatible e-paper device over Web Bluetooth. Requires Chrome or Edge (Web Bluetooth is not supported in Firefox or Safari).
+
+**Protocol** (OpenDisplay direct-write, service/characteristic UUID `0x2446`, device name prefix `OD`):
+1. `navigator.bluetooth.requestDevice()` → connect GATT → get characteristic → `startNotifications()`
+2. Send `[0x00, 0x70]` (start direct write, no payload — device reads its own dimensions/color-scheme from firmware config)
+3. Receive `[0x00, 0x70]` ack → send `[0x00, 0x71, ...chunk]` chunks of up to 230 bytes, one at a time
+4. Receive `[0x00, 0x71]` ack per chunk → send next chunk
+5. After all chunks: send `[0x00, 0x72]` (end / full refresh)
+6. Receive `[0x00, 0x73]` → refresh complete, Promise resolves
+
+**Palette → OpenDisplay color scheme mapping:**
+
+| Palette group | Scheme | Encoding |
+|---|---|---|
+| `bw` | 0 | 1 bit/pixel, 8 px/byte, MSB first |
+| `bwr` | 1 | 2 bitplanes (plane1 then plane2), 1 bit/pixel each |
+| `bwry` | 3 | 2 bits/pixel, 4 px/byte, MSB first |
+| `spectra6` | 4 | 4 bits/pixel nibble-packed (black=0, white=1, yellow=2, red=3, blue=5, green=6) |
+| `acep` | — | **Unsupported** — 7-color has no matching scheme; upload button disabled |
+| `grayscale4` | 5 | 2 bits/pixel, 4 px/byte, MSB first |
+| `grayscale8` | 6 | 4 bits/pixel nibble-packed, Rec.709 luminance → 0–15 |
+| `grayscale16` | 6 | 4 bits/pixel nibble-packed, Rec.709 luminance → 0–15 |
+
+Because the `ideal` ImageData already contains exact palette RGB values, `encodeImage()` uses direct colour matching rather than nearest-colour search. The BLE connection is maintained between uploads (`bleCharacteristic` module-level state in `main.ts`) and reused on subsequent sends. The `gattserverdisconnected` device event clears it if the device drops the link.
+
+The Export section UI provides: an **↑ OpenDisplay via BLE** button (disabled for `acep`), a **▾** dropdown with **Connect** and **Disconnect** items (Connect muted when already connected, Disconnect muted when not), a connection status indicator with a green dot when live, and a browser-compatibility hint that detects and names the current browser at runtime.
+
+**Types dependency:** `@types/web-bluetooth` (dev dependency); `tsconfig.json` includes `"types": ["web-bluetooth"]`.
 
 ### Auto-orientation
 

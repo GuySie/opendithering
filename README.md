@@ -1,12 +1,12 @@
 # OpenDithering
 
-A browser-based image dithering tool for e-paper displays. Runs entirely client-side using the Canvas API — no server, no uploads. Download perfectly dithered PNG files to display on your e-paper devices.
+A browser-based image dithering tool for e-paper displays. Runs entirely client-side using the Canvas API — no server, no uploads. Download perfectly dithered PNG files, or send them directly to a compatible device over Bluetooth.
 
 **[Try it live →](https://guysie.github.io/opendithering/)**
 
 ## Experimental
 
-This app is an experiment to find the optimal dithering engine and settings for different e-paper displays. It is permanently work in progress, can change features at any moment, and is not meant to be relied on for production use. It's a sandbox to play around in.
+This app is an experiment to find the optimal dithering algorithm and settings for different e-paper displays. It is permanently work in progress, can change features at any moment, and is not meant to be relied on for production use. It's a sandbox for me to play around in.
 
 ## Features
 
@@ -15,9 +15,11 @@ This app is an experiment to find the optimal dithering engine and settings for 
 - **Calibration variants** — choose from different color profiles per panel type, based on estimations or measurements
 - **Multiple display presets** — Seeed reTerminal, TRMNL, Waveshare PhotoPainter, Pimoroni Inky Impression, Soldered Inkplate, Gicisky ESL, or custom dimensions and panels
 - **Image adjustments** — tone mapping, saturation, exposure, dynamic range compression
+- **Auto-tune** — one-click optimizer that adjusts saturation and exposure to match the dithered output as closely as possible to the source image
 - **Color space control** — dither in RGB, CIELAB, or OKLab; independently choose error diffusion space and nearest-color distance space
 - **Zoom / pan** — click the preview canvas to zoom to 1:1 pixels and drag to pan the full image
 - **Export** — downloads a PNG or BMP sized exactly to the display, using ideal palette colors
+- **OpenDisplay BLE upload** — send the dithered image directly to a compatible [OpenDisplay](https://opendisplay.org/) device over Web Bluetooth, with connect/disconnect controls and a live connection indicator. Requires Chrome or Edge.
 
 ## Supported palettes
 
