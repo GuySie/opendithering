@@ -78,6 +78,7 @@ const btnDisconnectDevice   = el<HTMLButtonElement>('btnDisconnectDevice')
 const bleStatus             = el<HTMLParagraphElement>('bleStatus')
 const bleStatusText         = el<HTMLSpanElement>('bleStatusText')
 const bleCompatHint         = el<HTMLParagraphElement>('bleCompatHint')
+const bleRotation           = el<HTMLSelectElement>('bleRotation')
 
 ;(() => {
   function browserName(): string {
@@ -401,8 +402,39 @@ function autoOrientDisplay(imgW: number, imgH: number) {
     ;[displayWidth, displayHeight] = [displayHeight, displayWidth]
     dimWidth.value  = String(displayWidth)
     dimHeight.value = String(displayHeight)
+    bleRotation.value = '270'
     invalidateAll()
+  } else {
+    bleRotation.value = '0'
   }
+}
+
+function rotatePixels(
+  pixels: Uint8ClampedArray, width: number, height: number, degrees: number
+): { data: Uint8ClampedArray; width: number; height: number } {
+  if (degrees === 0) return { data: pixels, width, height }
+  const out = new Uint8ClampedArray(pixels.length)
+  if (degrees === 180) {
+    const total = width * height
+    for (let i = 0; i < total; i++) {
+      const src = (total - 1 - i) * 4
+      const dst = i * 4
+      out[dst] = pixels[src]; out[dst+1] = pixels[src+1]; out[dst+2] = pixels[src+2]; out[dst+3] = pixels[src+3]
+    }
+    return { data: out, width, height }
+  }
+  // 90° or 270° CW: output dims are swapped
+  for (let oy = 0; oy < width; oy++) {
+    for (let ox = 0; ox < height; ox++) {
+      const srcIdx = degrees === 90
+        ? ((height - 1 - ox) * width + oy) * 4
+        : (ox * width + (width - 1 - oy)) * 4
+      const dstIdx = (oy * height + ox) * 4
+      out[dstIdx] = pixels[srcIdx]; out[dstIdx+1] = pixels[srcIdx+1]
+      out[dstIdx+2] = pixels[srcIdx+2]; out[dstIdx+3] = pixels[srcIdx+3]
+    }
+  }
+  return { data: out, width: height, height: width }
 }
 
 // ── Canvas rendering ───────────────────────────────────────────────────────
@@ -1074,7 +1106,8 @@ btnUploadDevice.addEventListener('click', async () => {
       if (!bleCharacteristic) return
     }
 
-    const imageBytes = bleEncode(img.ideal.data, img.width, img.height, paletteGroupId)
+    const toEncode = rotatePixels(img.ideal.data, img.width, img.height, parseInt(bleRotation.value))
+    const imageBytes = bleEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId)
 
     await bleSend(bleCharacteristic, imageBytes, (sent, total) => {
       const pct = Math.round((sent / total) * 100)
