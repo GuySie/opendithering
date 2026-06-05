@@ -8,7 +8,7 @@ export function autoTune(
   initialSaturation: number,
   initialExposure: number,
   initialHighlightCompress: number,
-  iterations = 3,
+  iterations = 8,
 ): { saturation: number; exposure: number; highlightCompress: number } {
   const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, palette, settings } = input
 
@@ -28,50 +28,75 @@ export function autoTune(
   const refStats = imageStats(reference, (_, __, ___, L) => L >= thresholdL)
   const refHighlight = Math.max(refStats.highlightFraction, 0.02)
 
+  const isWhite = (r: number, g: number, b: number) => ((r << 16) | (g << 8) | b) === whiteKey
+
   let saturation = initialSaturation
   let exposure = initialExposure
   let highlightCompress = initialHighlightCompress
 
-  for (let i = 0; i < iterations; i++) {
-    const result = runPipeline({
-      ...input,
-      settings: { ...settings, saturation, exposure, highlightCompress },
-    })
-    const stats = imageStats(result.measured, (r, g, b) =>
-      ((r << 16) | (g << 8) | b) === whiteKey
-    )
+  // Establish baseline loss with current settings before making any changes.
+  let prevStats = imageStats(
+    runPipeline({ ...input, settings: { ...settings, saturation, exposure, highlightCompress } }).measured,
+    isWhite,
+  )
+  let prevLoss = loss(refStats, prevStats)
+  let best = { saturation, exposure, highlightCompress }
 
-    // Saturation: 50% damping prevents over-correction from white pixels pulling
-    // mean chroma down.
-    if (stats.meanC > 0.001) {
-      saturation = clamp(
-        saturation * (1 + (refStats.meanC / stats.meanC - 1) * 0.5),
+  for (let i = 0; i < iterations; i++) {
+    // Compute candidate adjustments from the previous iteration's output stats.
+
+    // Saturation: 50% damping + ±15% per-run cap (mirrors the exposure cap).
+    let nextSat = saturation
+    if (prevStats.meanC > 0.001) {
+      nextSat = clamp(
+        clamp(
+          saturation * (1 + (refStats.meanC / prevStats.meanC - 1) * 0.5),
+          initialSaturation * 0.85, initialSaturation * 1.15,
+        ),
         0.0, 2.0,
       )
     }
 
-    // Exposure: 30% damping + ±15% hard cap. The cap is the main guard against
-    // auto-tune introducing blowout that wasn't in the original settings.
-    if (stats.meanL > 0.001) {
-      const adj = 1 + (refStats.meanL / stats.meanL - 1) * 0.3
-      exposure = clamp(
+    // Exposure: 30% damping + ±15% hard cap.
+    let nextExp = exposure
+    if (prevStats.meanL > 0.001) {
+      const adj = 1 + (refStats.meanL / prevStats.meanL - 1) * 0.3
+      nextExp = clamp(
         clamp(exposure * adj, initialExposure * 0.85, initialExposure * 1.15),
         0.5, 2.0,
       )
     }
 
-    // highlightCompress: only when the user is already in s-curve mode.
-    // Conservative per-iteration range [0.75, 1.35] so it can't overshoot in 3 passes.
+    // highlightCompress: only in s-curve mode.
+    let nextHC = highlightCompress
     if (toneMode === 'scurve') {
-      const ratio = stats.highlightFraction / refHighlight
-      highlightCompress = clamp(
-        highlightCompress * clamp(ratio, 0.75, 1.35),
-        0.5, 5.0,
-      )
+      const ratio = prevStats.highlightFraction / refHighlight
+      nextHC = clamp(highlightCompress * clamp(ratio, 0.75, 1.35), 0.5, 5.0)
     }
+
+    const result = runPipeline({
+      ...input,
+      settings: { ...settings, saturation: nextSat, exposure: nextExp, highlightCompress: nextHC },
+    })
+    const stats = imageStats(result.measured, isWhite)
+    const newLoss = loss(refStats, stats)
+
+    // If loss didn't improve, we've overshot or plateaued — revert and stop.
+    if (newLoss >= prevLoss) break
+
+    best = { saturation: nextSat, exposure: nextExp, highlightCompress: nextHC }
+    prevLoss = newLoss
+    prevStats = stats
+    saturation = nextSat
+    exposure = nextExp
+    highlightCompress = nextHC
   }
 
-  return { saturation, exposure, highlightCompress }
+  return best
+}
+
+function loss(ref: ImageStats, cur: ImageStats): number {
+  return Math.abs(ref.meanL - cur.meanL) + Math.abs(ref.meanC - cur.meanC)
 }
 
 interface ImageStats { meanL: number; meanC: number; highlightFraction: number }
