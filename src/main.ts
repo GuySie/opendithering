@@ -7,7 +7,7 @@ import { runPipeline } from './processing/pipeline'
 import { autoTune } from './processing/autotune'
 import type { AutoTuneDebug } from './processing/autotune'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
-import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend } from './ble/gicisky'
+import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -1092,7 +1092,7 @@ async function doConnect() {
         setBleConnected(false)
       })
     } else {
-      const conn = await giciskyConnect()
+      const conn = await giciskyConnect(giciskyDeviceInfo(presetSelect.value))
       bleState = { protocol: 'gicisky', conn }
       setBleConnected(true)
       conn.device.addEventListener('gattserverdisconnected', () => {
@@ -1168,6 +1168,11 @@ btnUploadDevice.addEventListener('click', async () => {
       await gickySend(bleState.conn, imageBytes, (sent, total) => {
         btnUploadDevice.textContent = `↑ Sending ${Math.round((sent / total) * 100)}%…`
       })
+      // Gicisky devices only start the display refresh after the BLE connection is dropped.
+      // Match the eigger HA integration behaviour: stop notifications then disconnect.
+      try { await bleState.conn.cmdChar.stopNotifications() } catch { /* ignore */ }
+      bleState.conn.device.gatt?.disconnect()
+      bleState = null
     }
 
     btnUploadDevice.textContent = '✓ Sent'

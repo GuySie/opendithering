@@ -24,6 +24,8 @@ export interface GiciskyDeviceInfo {
   deviceId: number
   compression: 'none' | 'mode1' | 'mode2'
   invertLuminance: boolean
+  rotation: boolean  // true → column-major pixel packing (x outer, y inner)
+  mirror: boolean    // true → flip image vertically before packing
 }
 
 export interface GiciskyConnection {
@@ -33,28 +35,25 @@ export interface GiciskyConnection {
   deviceInfo: GiciskyDeviceInfo
 }
 
-// ── Device table ──────────────────────────────────────────────────────────────
-// Source: eigger/hass-gicisky devices.py
+// ── Preset → device info ──────────────────────────────────────────────────────
+// Maps display preset IDs (from src/displays/presets.ts) to the encoding
+// parameters required by that physical device.  Source: eigger/hass-gicisky devices.py.
 
-const DEVICE_TABLE: Record<number, { compression: 'none' | 'mode1' | 'mode2'; invertLuminance: boolean }> = {
-  0x022B: { compression: 'mode1', invertLuminance: false },  // EPD 3.7" BWR
-  0x022E: { compression: 'none',  invertLuminance: false },  // EPD 3.7" BWRY
-  0x0228: { compression: 'none',  invertLuminance: false },  // EPD 3.7" BW
-  0x012B: { compression: 'mode2', invertLuminance: true  },  // EPD 7.5" BWR
-  0x012E: { compression: 'none',  invertLuminance: false },  // EPD 7.5" BWRY
-  0x012C: { compression: 'none',  invertLuminance: false },  // EPD 7.5" BW
-  0x013B: { compression: 'mode2', invertLuminance: true  },  // EPD 7.5" BWR ZP
-  0x013E: { compression: 'none',  invertLuminance: false },  // EPD 7.5" BWRY ZP
-  0x0136: { compression: 'none',  invertLuminance: false },  // EPD 7.5" BWRY_1
-  0x008B: { compression: 'mode2', invertLuminance: false },  // EPD 10.2" BWR
-  0x008E: { compression: 'none',  invertLuminance: false },  // EPD 10.2" BWRY
-  0x0088: { compression: 'none',  invertLuminance: false },  // EPD 10.2" BW
-  0x009B: { compression: 'mode2', invertLuminance: false },  // EPD 10.2" BWR ZP
+// Source: eigger/eigger.github.io Gicisky_Image_Uploader_en.html DISPLAY_MODELS array.
+const PRESET_INFO: Record<string, Omit<GiciskyDeviceInfo, 'deviceId'>> = {
+  'gicisky-esl-21':      { compression: 'none',  invertLuminance: false, rotation: false, mirror: false },
+  'gicisky-esl-29':      { compression: 'none',  invertLuminance: false, rotation: false, mirror: true  },
+  'gicisky-esl-29-bwry': { compression: 'none',  invertLuminance: false, rotation: false, mirror: false },
+  'gicisky-esl-37':      { compression: 'mode1', invertLuminance: false, rotation: true,  mirror: true  },
+  'gicisky-esl-42':      { compression: 'none',  invertLuminance: false, rotation: true,  mirror: false },
+  'gicisky-esl-42-bwry': { compression: 'none',  invertLuminance: false, rotation: false, mirror: false },
+  'gicisky-esl-75':      { compression: 'mode1', invertLuminance: true,  rotation: true,  mirror: true  },
+  'gicisky-esl-102':     { compression: 'mode1', invertLuminance: false, rotation: true,  mirror: false },
 }
 
-function getDeviceInfo(deviceId: number): GiciskyDeviceInfo {
-  const entry = DEVICE_TABLE[deviceId] ?? { compression: 'none' as const, invertLuminance: false }
-  return { deviceId, ...entry }
+export function getDeviceInfoForPreset(presetId: string): GiciskyDeviceInfo {
+  const entry = PRESET_INFO[presetId] ?? { compression: 'none' as const, invertLuminance: false, rotation: false, mirror: false }
+  return { deviceId: 0, ...entry }
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────
@@ -95,20 +94,33 @@ export function encodeImage(
 
   } else if (paletteGroupId === 'bwr') {
     // Dual 1-bit planes: BW plane then Red plane, 8 pixels/byte MSB-first.
-    // BW plane: 1 = white (or, if invertLuminance, 1 = non-white)
-    // Red plane: 1 = red
+    // Outer loop: x (columns), inner loop: y (rows) — same structure as eigger web uploader.
+    // mirror=true  → pre-flip image vertically (same as canvas vflip in web uploader)
+    // rotation=true  → pixel index formula (x*height+y) instead of (y*width+x)
+    const { rotation, mirror, invertLuminance } = deviceInfo
+    // Pre-flip vertically when mirror is requested
+    const src: Uint8ClampedArray = mirror ? (() => {
+      const tmp = new Uint8ClampedArray(pixels.length)
+      for (let y = 0; y < height; y++)
+        tmp.set(pixels.subarray((height - 1 - y) * width * 4, (height - y) * width * 4), y * width * 4)
+      return tmp
+    })() : pixels
     const planeBw: number[] = []
     const planeRed: number[] = []
     let b1 = 0, b2 = 0, bit = 7
-    for (let i = 0; i < total; i++) {
-      const p = i * 4
-      const r = pixels[p], g = pixels[p + 1], b = pixels[p + 2]
-      const isWhite = r > 200 && g > 200 && b > 200
-      const isRed   = r > 200 && g < 50  && b < 50
-      const bwBit   = deviceInfo.invertLuminance ? !isWhite : isWhite
-      if (bwBit)  b1 |= (1 << bit)
-      if (isRed)  b2 |= (1 << bit)
-      if (--bit < 0) { planeBw.push(b1); planeRed.push(b2); b1 = 0; b2 = 0; bit = 7 }
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        // rotation=true:  (x*height+y) — web uploader formula for column-scanning devices
+        // rotation=false: (y*width+x)  — standard column-major
+        const p = (rotation ? x * height + y : y * width + x) * 4
+        const r = src[p], g = src[p + 1], b = src[p + 2]
+        const isWhite = r > 200 && g > 200 && b > 200
+        const isRed   = r > 200 && g < 50  && b < 50
+        const bwBit   = invertLuminance ? !isWhite : isWhite
+        if (bwBit) b1 |= (1 << bit)
+        if (isRed) b2 |= (1 << bit)
+        if (--bit < 0) { planeBw.push(b1); planeRed.push(b2); b1 = 0; b2 = 0; bit = 7 }
+      }
     }
     if (bit !== 7) { planeBw.push(b1); planeRed.push(b2) }
     return applyCompression(new Uint8Array(planeBw), new Uint8Array(planeRed), height, deviceInfo)
@@ -129,7 +141,7 @@ export function encodeImage(
   }
 }
 
-export async function connectDevice(): Promise<GiciskyConnection> {
+export async function connectDevice(deviceInfo: GiciskyDeviceInfo): Promise<GiciskyConnection> {
   if (!navigator.bluetooth) throw new Error('Web Bluetooth not available')
 
   const device = await navigator.bluetooth.requestDevice({
@@ -141,9 +153,6 @@ export async function connectDevice(): Promise<GiciskyConnection> {
   const service = await server.getPrimaryService(SERVICE_UUID)
   const cmdChar = await service.getCharacteristic(CMD_UUID)
   const imgChar = await service.getCharacteristic(IMG_UUID)
-
-  // Try to read device ID from advertisement data to determine compression mode.
-  const deviceInfo = await readDeviceInfo(device)
 
   await cmdChar.startNotifications()
   await delay(NOTIFY_DELAY_MS)
@@ -157,7 +166,7 @@ export function sendImage(
   onProgress?: (sent: number, total: number) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const { cmdChar, imgChar, deviceInfo } = conn
+    const { cmdChar, imgChar } = conn
     const packetSize = imageBytes.length
 
     // Block size is reported by the device in the start ack as a 2-byte LE value.
@@ -200,13 +209,6 @@ export function sendImage(
 
     const makeCmdPacket = (cmd: number): Uint8Array<ArrayBuffer> => {
       if (cmd === 0x02) {
-        if (deviceInfo.compression === 'mode2') {
-          const pkt = new Uint8Array(new ArrayBuffer(6))
-          pkt[0] = 0x02
-          new DataView(pkt.buffer).setUint32(1, packetSize, true)
-          pkt[5] = 0x01
-          return pkt
-        }
         const pkt = new Uint8Array(new ArrayBuffer(8))
         pkt[0] = 0x02
         new DataView(pkt.buffer).setUint32(1, packetSize, true)
@@ -347,76 +349,134 @@ function compressMode1(bwData: Uint8Array, redData: Uint8Array | null, height: n
 }
 
 // Split-half chunked format used by 7.5" and 10.2" EPD (compression2=True in HA).
-// Data is split in half; each half is wrapped in 64-byte uncompressed chunks.
-// The HA integration currently uses force_raw=True (no QuickLZ) — we do the same.
+// Data is split in half; each half is wrapped in 64-byte QuickLZ L1 chunks (0x75),
+// falling back to raw (0x74) for chunks that don't compress.
 function compressMode2(bwData: Uint8Array, redData: Uint8Array | null): Uint8Array {
   const rawLen = bwData.length + (redData?.length ?? 0)
   const raw = new Uint8Array(rawLen)
   raw.set(bwData)
   if (redData) raw.set(redData, bwData.length)
 
-  const split  = Math.floor(rawLen / 2)
-  const part1  = raw.slice(0, split)
-  const part2  = raw.slice(split)
-  const cp1    = chunkUncompressed(part1)
-  const cp2    = chunkUncompressed(part2)
+  const split = Math.floor(rawLen / 2)
+  const cp1   = chunkData(raw.slice(0, split))
+  const cp2   = chunkData(raw.slice(split))
 
-  // [4B LE part2 original length] + compressed_part1 + compressed_part2
+  // [4B LE part2 original length] + chunked_part1 + chunked_part2
   const out = new Uint8Array(4 + cp1.length + cp2.length)
-  new DataView(out.buffer).setUint32(0, part2.length, true)
+  new DataView(out.buffer).setUint32(0, rawLen / 2, true)
   out.set(cp1, 4)
   out.set(cp2, 4 + cp1.length)
   return out
 }
 
-// Wrap data in 64-byte uncompressed chunks: [0x74][total_len][n][...data]
-function chunkUncompressed(data: Uint8Array): Uint8Array {
-  const chunks: number[] = []
+// Wrap data in 64-byte QuickLZ L1 chunks (0x75 compressed, 0x74 raw fallback).
+// Format: [magic][total_len][uncompressed_n][...data]
+function chunkData(data: Uint8Array): Uint8Array {
+  const out: number[] = []
   for (let i = 0; i < data.length; i += QLZ_CHUNK) {
     const slice = data.slice(i, i + QLZ_CHUNK)
     const n = slice.length
-    chunks.push(0x74, 3 + n, n, ...slice)
-  }
-  return new Uint8Array(chunks)
-}
-
-// ── Advertisement → device info ───────────────────────────────────────────────
-
-// Reads Gicisky manufacturer advertisement data to identify the device model.
-// Returns a fallback (compression=none) if the advertisement cannot be read.
-async function readDeviceInfo(device: BluetoothDevice): Promise<GiciskyDeviceInfo> {
-  if (typeof device.watchAdvertisements !== 'function') {
-    return { deviceId: 0, compression: 'none', invertLuminance: false }
-  }
-  return new Promise(resolve => {
-    const fallback = { deviceId: 0, compression: 'none' as const, invertLuminance: false }
-    const tid = setTimeout(() => {
-      device.removeEventListener('advertisementreceived', handler as EventListener)
-      resolve(fallback)
-    }, 3000)
-
-    const handler = (event: Event) => {
-      clearTimeout(tid)
-      device.removeEventListener('advertisementreceived', handler as EventListener)
-      try {
-        const mfr = (event as BluetoothAdvertisingEvent).manufacturerData?.get(MANUFACTURER_ID)
-        if (!mfr || mfr.byteLength < 5) { resolve(fallback); return }
-        const data = new Uint8Array(mfr.buffer, mfr.byteOffset, mfr.byteLength)
-        const deviceId = ((data[4] << 8) | data[0]) & 0x3FFF
-        resolve(getDeviceInfo(deviceId))
-      } catch {
-        resolve(fallback)
-      }
+    const compressed = (n === QLZ_CHUNK) ? qlzCompress(slice) : null
+    if (compressed !== null && compressed.length >= 3) {
+      out.push(0x75, 3 + compressed.length, n)
+      for (let j = 0; j < compressed.length; j++) out.push(compressed[j])
+    } else {
+      out.push(0x74, 3 + n, n)
+      for (let j = 0; j < n; j++) out.push(slice[j])
     }
-
-    device.addEventListener('advertisementreceived', handler as EventListener)
-    device.watchAdvertisements().catch(() => {
-      clearTimeout(tid)
-      device.removeEventListener('advertisementreceived', handler as EventListener)
-      resolve(fallback)
-    })
-  })
+  }
+  return new Uint8Array(out)
 }
+
+// QuickLZ Level 1 compression — port of eigger/hass-gicisky compression.py.
+// Returns compressed bytes, or null if compression offers no benefit.
+function qlzCompress(source: Uint8Array): Uint8Array | null {
+  const HASH_VALUES = 4096
+  const CWORD_LEN   = 4
+  const MINOFFSET   = 2
+  const UNCOND_LEN  = 12
+  const UNCOMP_END  = 4
+
+  const size         = source.length
+  const lastByteIdx  = size - 1
+  const lastMatch    = lastByteIdx - UNCOND_LEN - UNCOMP_END
+  if (lastMatch < 0) return null
+
+  const out  = new Uint8Array(size * 2 + 400)
+  const dv   = new DataView(out.buffer)
+  const hOff = new Int32Array(HASH_VALUES)   // hash → source offset (0 = unused)
+  const hCac = new Int32Array(HASH_VALUES)   // hash → cached 3-byte fetch
+
+  let cwordPtr = 0
+  let dst      = CWORD_LEN
+  let cv       = (1 << 31) >>> 0   // 0x80000000, unsigned
+  let src      = 0
+  let lits     = 0
+
+  const read3   = (p: number) => source[p] | (source[p+1] << 8) | (source[p+2] << 16)
+  const hashOf  = (f: number) => (((f >>> 12) ^ f) & (HASH_VALUES - 1)) >>> 0
+  const allSame = (p: number, n: number): boolean => {
+    if (p < 0 || p + n >= size) return false
+    const v = source[p]
+    for (let i = 1; i <= n; i++) if (source[p + i] !== v) return false
+    return true
+  }
+  const flushCword = () => {
+    dv.setUint32(cwordPtr, ((cv >>> 1) | ((1 << 31) >>> 0)) >>> 0, true)
+    cwordPtr = dst; dst += CWORD_LEN
+    cv = (1 << 31) >>> 0
+  }
+
+  // Main match/literal loop
+  while (src <= lastMatch) {
+    if ((cv & 1) === 1) {
+      if (src > (size >> 1) && dst > src - (src >> 5)) return null
+      flushCword()
+    }
+    const fetch = read3(src)
+    const h     = hashOf(fetch)
+    const diff  = (fetch ^ hCac[h]) >>> 0
+    hCac[h] = fetch
+    const o     = hOff[h]
+    hOff[h]  = src
+    const dist  = src - o
+
+    if ((diff & 0xFFFFFF) === 0 && o !== 0 &&
+        (dist > MINOFFSET || (src === o + 1 && lits >= 3 && src > 3 && allSame(src - 3, 6)))) {
+      let ml = 3
+      const cap = Math.min(255, lastByteIdx - UNCOMP_END - src + 1)
+      while (ml < cap && source[src + ml] === source[o + ml]) ml++
+      cv = ((cv >>> 1) | ((1 << 31) >>> 0)) >>> 0
+      if (ml < 18) {
+        const val = (ml - 2) | (h << 4)
+        out[dst++] = val & 0xFF; out[dst++] = (val >> 8) & 0xFF
+      } else {
+        const hs = h << 4
+        out[dst++] = hs & 0xFF; out[dst++] = (hs >> 8) & 0xFF; out[dst++] = ml & 0xFF
+      }
+      src += ml; lits = 0
+    } else {
+      out[dst++] = source[src++]
+      cv = (cv >>> 1) >>> 0
+      lits++
+    }
+  }
+
+  // Remaining bytes as literals
+  while (src <= lastByteIdx) {
+    if ((cv & 1) === 1) flushCword()
+    if (src <= lastByteIdx - 2) { const f = read3(src); const hh = hashOf(f); hCac[hh] = f; hOff[hh] = src }
+    out[dst++] = source[src++]
+    cv = (cv >>> 1) >>> 0
+  }
+
+  // Final cword: shift sentinel to bit 0, then write
+  while ((cv & 1) !== 1) cv = (cv >>> 1) >>> 0
+  dv.setUint32(cwordPtr, ((cv >>> 1) | ((1 << 31) >>> 0)) >>> 0, true)
+
+  return dst < size ? out.slice(0, dst) : null
+}
+
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))

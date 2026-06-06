@@ -226,9 +226,7 @@ Each step has a 5-second timeout. Notifications are always received on CMD; imag
 |---|---|---|
 | `none` | Most small devices (2.1", 2.9", 4.2") | Raw plane bytes concatenated |
 | `mode1` | 3.7" EPD (device ID `0x022B`) | `[4B LE total_len]` + per-column chunks: `[0x75][bytePerLine+7][bytePerLine][0x00×4][...column bytes]` |
-| `mode2` | 7.5" (`0x012B`), 10.2" (`0x008B`) | BW+Red planes concatenated, split in half, each half wrapped in 64-byte uncompressed chunks: `[4B LE part2_len][0x74][total_len][n][...data] ...` |
-
-`mode2` currently uses force-raw (no QuickLZ) matching the current HA integration behaviour.
+| `mode2` | 7.5" (`0x012B`), 10.2" (`0x008B`) | BW+Red planes concatenated, split in half, each half wrapped in 64-byte QuickLZ L1 chunks (0x75), with raw fallback (0x74): `[4B LE half_raw_len][0x75/0x74][total_len][n][...data] ...` |
 
 ### Auto-orientation
 
