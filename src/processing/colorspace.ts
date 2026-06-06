@@ -44,6 +44,29 @@ export function rgbToLab(r: number, g: number, b: number): [number, number, numb
   return [L, a, bStar]
 }
 
+// --- XYZ -> linear RGB ---
+
+function xyzToLinear(x: number, y: number, z: number): [number, number, number] {
+  return [
+     3.2404542 * x - 1.5371385 * y - 0.4985314 * z,
+    -0.9692660 * x + 1.8760108 * y + 0.0415560 * z,
+     0.0556434 * x - 0.2040259 * y + 1.0572252 * z,
+  ]
+}
+
+// --- L*a*b* -> sRGB ---
+
+function fInv(t: number): number {
+  return t > 0.206897 ? t * t * t : (t - 16 / 116) / 7.787
+}
+
+export function labToRgb(L: number, a: number, b: number): [number, number, number] {
+  const fy = (L + 16) / 116
+  const [x, y, z] = [D65[0] * fInv(a / 500 + fy), D65[1] * fInv(fy), D65[2] * fInv(fy - b / 200)]
+  const [lr, lg, lb] = xyzToLinear(x, y, z)
+  return [linearToSrgb(Math.max(0, lr)), linearToSrgb(Math.max(0, lg)), linearToSrgb(Math.max(0, lb))]
+}
+
 // --- linear RGB -> OKLab ---
 
 export function rgbToOklab(r: number, g: number, b: number): [number, number, number] {
@@ -59,6 +82,21 @@ export function rgbToOklab(r: number, g: number, b: number): [number, number, nu
     1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
     0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
   ]
+}
+
+// --- OKLab -> sRGB ---
+
+export function oklabToRgb(L: number, a: number, b: number): [number, number, number] {
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b
+  const l = l_ * l_ * l_
+  const m = m_ * m_ * m_
+  const s = s_ * s_ * s_
+  const lr =  4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
+  const lg = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
+  const lb = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+  return [linearToSrgb(Math.max(0, lr)), linearToSrgb(Math.max(0, lg)), linearToSrgb(Math.max(0, lb))]
 }
 
 // --- Color distance ---

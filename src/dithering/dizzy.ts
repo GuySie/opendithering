@@ -10,9 +10,12 @@ function toSpace(r: number, g: number, b: number, space: ColorSpace): Triple {
   return [r, g, b]
 }
 
-function spaceDist(p: Triple, c: Triple, space: ColorSpace): number {
+const WAB2 = 2.25
+
+function spaceDist(p: Triple, c: Triple, space: ColorSpace, weighted = false): number {
   const d0 = p[0] - c[0], d1 = p[1] - c[1], d2 = p[2] - c[2]
   if (space === 'cielab') return 2 * d0 * d0 + d1 * d1 + d2 * d2
+  if (space === 'oklab' && weighted) return d0 * d0 + WAB2 * (d1 * d1 + d2 * d2)
   return d0 * d0 + d1 * d1 + d2 * d2
 }
 
@@ -21,6 +24,7 @@ export const dizzy: DitheringAlgorithm = {
   name: 'Dizzy',
   dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
     const diagWeight = Math.max(0, Math.min(1, extraParams?.dizzyDiagonalWeight ?? 0.1))
+    const oklabWeighted = !!extraParams?.oklabWeighted
     // [dx, dy, weight]: orthogonal neighbours always weight 1, diagonal weight is configurable
     const DIRS: [number, number, number][] = [
       [-1, 0, 1], [1, 0, 1], [0, -1, 1], [0, 1, 1],
@@ -87,7 +91,7 @@ export const dizzy: DitheringAlgorithm = {
 
       let bestIdx = 0, bestDist = Infinity
       for (let ci = 0; ci < distPalette.length; ci++) {
-        const d = spaceDist(dp, distPalette[ci], distSpace)
+        const d = spaceDist(dp, distPalette[ci], distSpace, oklabWeighted)
         if (d < bestDist) { bestDist = d; bestIdx = ci }
       }
 

@@ -23,6 +23,6 @@ export const stucki: DitheringAlgorithm = {
   id: 'stucki',
   name: 'Stucki',
   dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
-    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 42, localVariance, extraParams?.serpentine !== 0)
+    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 42, localVariance, extraParams?.serpentine !== 0, !!extraParams?.oklabWeighted)
   },
 }

@@ -32,6 +32,7 @@ export const knoxDithering: DitheringAlgorithm = {
     const fringeMagnitude = Math.max(0,   Math.min(0.5, extraParams?.knoxFringe         ?? 0.04))
     const edgeSensitivity = Math.max(0.5, Math.min(16,  extraParams?.knoxEdgeSensitivity ?? 4.0))
     const serpentine      = extraParams?.serpentine !== 0
+    const oklabWeighted   = !!extraParams?.oklabWeighted
     const w = src.width, h = src.height
 
     // Convert source pixels to OKLab once
@@ -84,12 +85,13 @@ export const knoxDithering: DitheringAlgorithm = {
         // Apply fringe-field threshold raise to L channel
         cL = Math.min(1, cL + fringeBuf[y * w + x])
 
-        // Nearest palette color in OKLab (Euclidean)
+        // Nearest palette color in OKLab
+        const WAB2 = 2.25
         let bestIdx = 0, bestDist = Infinity
         for (let ci = 0; ci < palOklab.length; ci++) {
           const [pL, pa, pb] = palOklab[ci]
           const dL = cL - pL, da = ca - pa, db = cb - pb
-          const d = dL * dL + da * da + db * db
+          const d = oklabWeighted ? dL * dL + WAB2 * (da * da + db * db) : dL * dL + da * da + db * db
           if (d < bestDist) { bestDist = d; bestIdx = ci }
         }
 

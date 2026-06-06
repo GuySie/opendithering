@@ -1,5 +1,5 @@
 import type { DitheringAlgorithm, Palette, ColorSpace } from '../types'
-import { deltaE_rgb, deltaE_lab, deltaE_oklab, rec709Luminance } from '../processing/colorspace'
+import { deltaE_rgb, deltaE_lab, deltaE_oklab, rgbToOklab, rec709Luminance } from '../processing/colorspace'
 
 const BAYER8: number[][] = [
   [ 0, 32,  8, 40,  2, 34, 10, 42],
@@ -12,13 +12,22 @@ const BAYER8: number[][] = [
   [63, 31, 55, 23, 61, 29, 53, 21],
 ]
 
+const WAB2 = 2.25
+
 function deltaE(
   r1: number, g1: number, b1: number,
   r2: number, g2: number, b2: number,
   space: ColorSpace,
+  weighted = false,
 ): number {
   if (space === 'cielab') return deltaE_lab(r1, g1, b1, r2, g2, b2)
-  if (space === 'oklab')  return deltaE_oklab(r1, g1, b1, r2, g2, b2)
+  if (space === 'oklab') {
+    if (!weighted) return deltaE_oklab(r1, g1, b1, r2, g2, b2)
+    const [oL1, oa1, ob1] = rgbToOklab(r1, g1, b1)
+    const [oL2, oa2, ob2] = rgbToOklab(r2, g2, b2)
+    const dL = oL1 - oL2, da = oa1 - oa2, db = ob1 - ob2
+    return dL * dL + WAB2 * (da * da + db * db)
+  }
   return deltaE_rgb(r1, g1, b1, r2, g2, b2)
 }
 
@@ -26,6 +35,7 @@ function buildCandidateList(
   tr: number, tg: number, tb: number,
   palette: Palette,
   distSpace: ColorSpace,
+  oklabWeighted = false,
 ): number[] {
   const colors = palette.colors
   const n = colors.length
@@ -42,7 +52,7 @@ function buildCandidateList(
       const avgR = (sumR + mr) / denom
       const avgG = (sumG + mg) / denom
       const avgB = (sumB + mb) / denom
-      const d = deltaE(tr, tg, tb, avgR, avgG, avgB, distSpace)
+      const d = deltaE(tr, tg, tb, avgR, avgG, avgB, distSpace, oklabWeighted)
       if (d < bestDist) { bestDist = d; best = p }
     }
 
@@ -65,7 +75,7 @@ function ign(x: number, y: number): number {
   return (52.9829189 * ((0.06711056 * x + 0.00583715 * y) % 1)) % 1
 }
 
-function yliluoma2Dither(src: ImageData, palette: Palette, distSpace: ColorSpace): ImageData {
+function yliluoma2Dither(src: ImageData, palette: Palette, distSpace: ColorSpace, oklabWeighted = false): ImageData {
   const { width: w, height: h } = src
   const out = new ImageData(w, h)
   const cache = new Map<string, number[]>()
@@ -80,7 +90,7 @@ function yliluoma2Dither(src: ImageData, palette: Palette, distSpace: ColorSpace
       const key = `${r >> 2},${g >> 2},${b >> 2}`
       let candidates = cache.get(key)
       if (!candidates) {
-        candidates = buildCandidateList(r, g, b, palette, distSpace)
+        candidates = buildCandidateList(r, g, b, palette, distSpace, oklabWeighted)
         cache.set(key, candidates)
       }
 
@@ -96,7 +106,7 @@ function yliluoma2Dither(src: ImageData, palette: Palette, distSpace: ColorSpace
   return out
 }
 
-function yliluoma2BlueNoiseDither(src: ImageData, palette: Palette, distSpace: ColorSpace): ImageData {
+function yliluoma2BlueNoiseDither(src: ImageData, palette: Palette, distSpace: ColorSpace, oklabWeighted = false): ImageData {
   const { width: w, height: h } = src
   const out = new ImageData(w, h)
   const cache = new Map<string, number[]>()
@@ -111,7 +121,7 @@ function yliluoma2BlueNoiseDither(src: ImageData, palette: Palette, distSpace: C
       const key = `${r >> 2},${g >> 2},${b >> 2}`
       let candidates = cache.get(key)
       if (!candidates) {
-        candidates = buildCandidateList(r, g, b, palette, distSpace)
+        candidates = buildCandidateList(r, g, b, palette, distSpace, oklabWeighted)
         cache.set(key, candidates)
       }
 
@@ -130,15 +140,15 @@ function yliluoma2BlueNoiseDither(src: ImageData, palette: Palette, distSpace: C
 export const yliluoma2: DitheringAlgorithm = {
   id: 'yliluoma2',
   name: 'Yliluoma 2',
-  dither(src, palette, _errorSpace, distSpace, _strength, _localVariance) {
-    return yliluoma2Dither(src, palette, distSpace)
+  dither(src, palette, _errorSpace, distSpace, _strength, _localVariance, extraParams) {
+    return yliluoma2Dither(src, palette, distSpace, !!extraParams?.oklabWeighted)
   },
 }
 
 export const yliluoma2BlueNoise: DitheringAlgorithm = {
   id: 'yliluoma2-blue-noise',
   name: 'Yliluoma 2 + Blue Noise',
-  dither(src, palette, _errorSpace, distSpace, _strength, _localVariance) {
-    return yliluoma2BlueNoiseDither(src, palette, distSpace)
+  dither(src, palette, _errorSpace, distSpace, _strength, _localVariance, extraParams) {
+    return yliluoma2BlueNoiseDither(src, palette, distSpace, !!extraParams?.oklabWeighted)
   },
 }

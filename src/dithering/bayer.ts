@@ -26,6 +26,7 @@ function orderedDither(
   matrix: number[][],
   matrixSize: number,
   levels: number,
+  oklabWeighted = false,
 ): ImageData {
   const { width: w, height: h } = src
   const out = new ImageData(w, h)
@@ -39,7 +40,7 @@ function orderedDither(
       const g = Math.min(255, Math.max(0, src.data[idx + 1] + threshold))
       const b = Math.min(255, Math.max(0, src.data[idx + 2] + threshold))
 
-      const colorIdx = findNearestColor(Math.round(r), Math.round(g), Math.round(b), palette, distSpace)
+      const colorIdx = findNearestColor(Math.round(r), Math.round(g), Math.round(b), palette, distSpace, oklabWeighted)
       const [mr, mg, mb] = palette.colors[colorIdx].measured
       out.data[idx]     = mr
       out.data[idx + 1] = mg
@@ -53,15 +54,15 @@ function orderedDither(
 export const bayer4: DitheringAlgorithm = {
   id: 'bayer4',
   name: 'Bayer 4×4 (Ordered)',
-  dither(src, palette, _errorSpace, distSpace, _strength, _localVariance) {
-    return orderedDither(src, palette, distSpace, BAYER4, 4, palette.colors.length)
+  dither(src, palette, _errorSpace, distSpace, _strength, _localVariance, extraParams) {
+    return orderedDither(src, palette, distSpace, BAYER4, 4, palette.colors.length, !!extraParams?.oklabWeighted)
   },
 }
 
 export const bayer8: DitheringAlgorithm = {
   id: 'bayer8',
   name: 'Bayer 8×8 (Ordered)',
-  dither(src, palette, _errorSpace, distSpace, _strength, _localVariance) {
-    return orderedDither(src, palette, distSpace, BAYER8, 8, palette.colors.length)
+  dither(src, palette, _errorSpace, distSpace, _strength, _localVariance, extraParams) {
+    return orderedDither(src, palette, distSpace, BAYER8, 8, palette.colors.length, !!extraParams?.oklabWeighted)
   },
 }

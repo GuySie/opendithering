@@ -10,9 +10,12 @@ function toSpace(r: number, g: number, b: number, space: ColorSpace): Triple {
   return [r, g, b]
 }
 
-function spaceDist(p: Triple, c: Triple, space: ColorSpace): number {
+const WAB2 = 2.25
+
+function spaceDist(p: Triple, c: Triple, space: ColorSpace, weighted = false): number {
   const d0 = p[0] - c[0], d1 = p[1] - c[1], d2 = p[2] - c[2]
   if (space === 'cielab') return 2 * d0 * d0 + d1 * d1 + d2 * d2
+  if (space === 'oklab' && weighted) return d0 * d0 + WAB2 * (d1 * d1 + d2 * d2)
   return d0 * d0 + d1 * d1 + d2 * d2
 }
 
@@ -44,6 +47,7 @@ export const riemersma: DitheringAlgorithm = {
   name: 'Riemersma',
   dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
     const QUEUE_SIZE = Math.max(2, Math.round(extraParams?.riemersmaQueueSize ?? 16))
+    const oklabWeighted = !!extraParams?.oklabWeighted
     const WEIGHTS = buildWeights(QUEUE_SIZE)
     const w = src.width, h = src.height
 
@@ -114,7 +118,7 @@ export const riemersma: DitheringAlgorithm = {
 
       let bestIdx = 0, bestDist = Infinity
       for (let ci = 0; ci < distPalette.length; ci++) {
-        const d2 = spaceDist(dp, distPalette[ci], distSpace)
+        const d2 = spaceDist(dp, distPalette[ci], distSpace, oklabWeighted)
         if (d2 < bestDist) { bestDist = d2; bestIdx = ci }
       }
 

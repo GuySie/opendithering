@@ -51,6 +51,8 @@ export interface ProcessingSettings {
   knoxEdgeSensitivity: number    // 0.5–8.0, cross-edge suppression sensitivity for Eschbach & Knox
   riemersmaQueueSize: number     // 4–64, error history queue length for Riemersma
   dizzyDiagonalWeight: number    // 0.0–1.0, diagonal neighbour weight for Dizzy
+  oklabWeighted: boolean          // boost chroma axes by WAB=1.5 in OKLab distance (reduces achromatic-attractor bias)
+  gamutCompress: number           // 0–1, pull out-of-gamut pixels toward palette hull before dithering
 }
 
 export interface DitheringAlgorithm {
@@ -91,6 +93,8 @@ export const BALANCED_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  oklabWeighted: false,
+  gamutCompress: 0,
 }
 
 export const VIVID_PRESET: ProcessingSettings = {
@@ -115,6 +119,8 @@ export const VIVID_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  oklabWeighted: false,
+  gamutCompress: 0,
 }
 
 export const SOFT_PRESET: ProcessingSettings = {
@@ -139,6 +145,8 @@ export const SOFT_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  oklabWeighted: false,
+  gamutCompress: 0,
 }
 
 export const GRAYSCALE_PRESET: ProcessingSettings = {
@@ -163,6 +171,8 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  oklabWeighted: false,
+  gamutCompress: 0,
 }
 
 export const NONE_PRESET: ProcessingSettings = {
@@ -187,6 +197,8 @@ export const NONE_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  oklabWeighted: false,
+  gamutCompress: 0,
 }
 
 export type PresetName = 'balanced' | 'vivid' | 'soft' | 'grayscale' | 'none' | 'custom'

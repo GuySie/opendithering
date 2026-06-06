@@ -11,7 +11,7 @@ function ign(x: number, y: number): number {
 export const blueNoise: DitheringAlgorithm = {
   id: 'blue-noise',
   name: 'Blue Noise',
-  dither(src: ImageData, palette: Palette, _errorSpace: ColorSpace, distSpace: ColorSpace): ImageData {
+  dither(src: ImageData, palette: Palette, _errorSpace: ColorSpace, distSpace: ColorSpace, _strength?: number, _localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
     const { width: w, height: h } = src
     const out = new ImageData(w, h)
     const levels = palette.colors.length
@@ -25,7 +25,7 @@ export const blueNoise: DitheringAlgorithm = {
         const g = Math.min(255, Math.max(0, src.data[idx + 1] + threshold))
         const b = Math.min(255, Math.max(0, src.data[idx + 2] + threshold))
 
-        const colorIdx = findNearestColor(Math.round(r), Math.round(g), Math.round(b), palette, distSpace)
+        const colorIdx = findNearestColor(Math.round(r), Math.round(g), Math.round(b), palette, distSpace, !!extraParams?.oklabWeighted)
         const [mr, mg, mb] = palette.colors[colorIdx].measured
         out.data[idx]     = mr
         out.data[idx + 1] = mg

@@ -1,6 +1,6 @@
 import type { ProcessingSettings, Palette, ResizeMode } from '../types'
 import { resizeImage } from './resize'
-import { compressDynamicRange, applyToneMapping, applySaturation, applyExposure } from './tone'
+import { compressDynamicRange, applyToneMapping, applySaturation, applyExposure, gamutCompress } from './tone'
 import { getAlgorithm } from '../dithering/index'
 
 export interface PipelineInput {
@@ -32,6 +32,11 @@ export function runPipeline(input: PipelineInput): PipelineResult {
     compressDynamicRange(resized.data, palette)
   }
 
+  // 2.5. Gamut compression
+  if (settings.gamutCompress > 0) {
+    gamutCompress(resized.data, palette, settings.distSpace, settings.gamutCompress)
+  }
+
   // 3. Tone mapping
   applyToneMapping(resized.data, settings)
 
@@ -57,6 +62,7 @@ export function runPipeline(input: PipelineInput): PipelineResult {
     knoxEdgeSensitivity: settings.knoxEdgeSensitivity  ?? 4.0,
     riemersmaQueueSize:  settings.riemersmaQueueSize   ?? 16,
     dizzyDiagonalWeight: settings.dizzyDiagonalWeight  ?? 0.1,
+    oklabWeighted:       settings.oklabWeighted        ? 1 : 0,
   })
 
   if (workingPalette !== palette) {

@@ -36,25 +36,29 @@ function convertToSpace(r: number, g: number, b: number, space: ColorSpace): Tri
   return [r, g, b]
 }
 
-function distanceInSpace(p: Triple, c: Triple, space: ColorSpace): number {
+// WAB = 1.5: boosts chroma axes in OKLab to reduce the achromatic-attractor bias
+// where saturated colors (e.g. purple) get pulled to black/white due to lightness dominating.
+const WAB2 = 2.25 // 1.5²
+
+function distanceInSpace(p: Triple, c: Triple, space: ColorSpace, weighted = false): number {
   const d0 = p[0] - c[0], d1 = p[1] - c[1], d2 = p[2] - c[2]
-  // Weight L channel double for CIELAB to compensate for its non-linearity
   if (space === 'cielab') return 2 * d0 * d0 + d1 * d1 + d2 * d2
+  if (space === 'oklab' && weighted) return d0 * d0 + WAB2 * (d1 * d1 + d2 * d2)
   return d0 * d0 + d1 * d1 + d2 * d2
 }
 
-// Used by bayer.ts: takes raw RGB and a distSpace, converts internally
 export function findNearestColor(
   r: number, g: number, b: number,
   palette: Palette,
   distSpace: ColorSpace,
+  oklabWeighted = false,
 ): number {
   const pixel = convertToSpace(r, g, b, distSpace)
   let bestIdx = 0, bestDist = Infinity
   for (let i = 0; i < palette.colors.length; i++) {
     const [mr, mg, mb] = palette.colors[i].measured
     const c = convertToSpace(mr, mg, mb, distSpace)
-    const d = distanceInSpace(pixel, c, distSpace)
+    const d = distanceInSpace(pixel, c, distSpace, oklabWeighted)
     if (d < bestDist) { bestDist = d; bestIdx = i }
   }
   return bestIdx
@@ -70,6 +74,7 @@ export function errorDiffuse(
   divisor: number,
   localVariance?: boolean,
   serpentine = true,
+  oklabWeighted = false,
 ): ImageData {
   const w = src.width, h = src.height
 
@@ -135,7 +140,7 @@ export function errorDiffuse(
       // Find nearest palette color
       let bestIdx = 0, bestDist = Infinity
       for (let i = 0; i < distPalette.length; i++) {
-        const d = distanceInSpace(dp, distPalette[i], distSpace)
+        const d = distanceInSpace(dp, distPalette[i], distSpace, oklabWeighted)
         if (d < bestDist) { bestDist = d; bestIdx = i }
       }
 

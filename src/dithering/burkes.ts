@@ -17,6 +17,6 @@ export const burkes: DitheringAlgorithm = {
   id: 'burkes',
   name: 'Burkes',
   dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
-    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 32, localVariance, extraParams?.serpentine !== 0)
+    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 32, localVariance, extraParams?.serpentine !== 0, !!extraParams?.oklabWeighted)
   },
 }

@@ -17,6 +17,6 @@ export const atkinson: DitheringAlgorithm = {
   id: 'atkinson',
   name: 'Atkinson',
   dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
-    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 8, localVariance, extraParams?.serpentine !== 0)
+    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 8, localVariance, extraParams?.serpentine !== 0, !!extraParams?.oklabWeighted)
   },
 }

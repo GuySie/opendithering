@@ -54,6 +54,8 @@ const colorPresetSel      = el<HTMLSelectElement>('colorPreset')
 const errorSpaceSel       = el<HTMLSpanElement>('errorSpaceSel')
 const distSpaceSel        = el<HTMLSpanElement>('distSpaceSel')
 const colorSpaceLabel: Record<string, string> = { rgb: 'RGB', cielab: 'CIELAB', oklab: 'OKLab' }
+const panelOklabWeighted  = el<HTMLDivElement>('panelOklabWeighted')
+const oklabWeightedCheck  = el<HTMLInputElement>('oklabWeighted')
 const localVarianceCheck  = el<HTMLInputElement>('localVarianceDetection')
 const expandPaletteCheck  = el<HTMLInputElement>('expandPalette')
 const canvasOrig       = el<HTMLCanvasElement>('canvasOriginal')
@@ -779,6 +781,13 @@ checkCDR.addEventListener('change', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
+el<HTMLInputElement>('sliderGamutCompress').addEventListener('input', () => {
+  const pct = parseInt(el<HTMLInputElement>('sliderGamutCompress').value)
+  settings.gamutCompress = pct / 100
+  el<HTMLSpanElement>('valGamutCompress').textContent = pct + '%'
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+
 btnAutoTune.addEventListener('click', async () => {
   if (!activeId) return
   const img = images.find(i => i.id === activeId)
@@ -847,10 +856,16 @@ function applyColorPreset(value: string) {
   settings.distSpace  = distSpace
   errorSpaceSel.textContent = colorSpaceLabel[errSpace]
   distSpaceSel.textContent  = colorSpaceLabel[distSpace]
+  panelOklabWeighted.hidden = distSpace !== 'oklab'
 }
 
 colorPresetSel.addEventListener('change', () => {
   applyColorPreset(colorPresetSel.value)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+
+oklabWeightedCheck.addEventListener('change', () => {
+  settings.oklabWeighted = oklabWeightedCheck.checked
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -886,6 +901,9 @@ function syncSlidersFromSettings() {
   setSlider('sliderHighlightCompress', 'valHighlightCompress', settings.highlightCompress * 100, settings.highlightCompress)
   setSlider('sliderMidpoint', 'valMidpoint', settings.midpoint * 100, settings.midpoint)
   checkCDR.checked = settings.compressDynamicRange
+  const gcPct = Math.round(settings.gamutCompress * 100)
+  el<HTMLInputElement>('sliderGamutCompress').value = String(gcPct)
+  el<HTMLSpanElement>('valGamutCompress').textContent = gcPct + '%'
   toneModeSelect.value = settings.toneMode
   panelContrast.hidden = settings.toneMode !== 'contrast'
   panelScurve.hidden   = settings.toneMode !== 'scurve'
@@ -921,6 +939,8 @@ function syncSlidersFromSettings() {
   errorSpaceSel.textContent = colorSpaceLabel[settings.errorSpace]
   distSpaceSel.textContent  = colorSpaceLabel[settings.distSpace]
   colorPresetSel.value = `${settings.errorSpace}_${settings.distSpace}`
+  panelOklabWeighted.hidden = settings.distSpace !== 'oklab'
+  oklabWeightedCheck.checked = settings.oklabWeighted
   localVarianceCheck.checked = settings.localVarianceDetection
   expandPaletteCheck.checked = settings.expandPalette
 }

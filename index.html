@@ -97,6 +97,11 @@
           <input type="checkbox" id="checkCDR" checked />
           Compress dynamic range
         </label>
+        <div class="slider-row">
+          <label for="sliderGamutCompress">Gamut compression</label>
+          <input type="range" id="sliderGamutCompress" min="0" max="100" value="0" step="1" />
+          <span class="slider-val" id="valGamutCompress">0%</span>
+        </div>
 
         <div class="tone-mode-row">
           <label for="toneMode">Tone mode</label>
@@ -200,6 +205,9 @@
             <span id="distSpaceSel"></span>
             <label>Diffuse error in</label>
             <span id="errorSpaceSel"></span>
+          </div>
+          <div id="panelOklabWeighted">
+            <label class="checkbox-label"><input type="checkbox" id="oklabWeighted" /> Weighted chroma (WAB = 1.5, reduces achromatic pull)</label>
           </div>
         </div>
         <div id="panelLocalVariance">

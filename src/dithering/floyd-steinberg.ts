@@ -14,6 +14,6 @@ export const floydSteinberg: DitheringAlgorithm = {
   id: 'floyd-steinberg',
   name: 'Floyd-Steinberg',
   dither(src: ImageData, palette: Palette, errorSpace: ColorSpace, distSpace: ColorSpace, strength: number, localVariance?: boolean, extraParams?: Record<string, number>): ImageData {
-    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 16, localVariance, extraParams?.serpentine !== 0)
+    return errorDiffuse(src, palette, errorSpace, distSpace, strength, KERNEL, 16, localVariance, extraParams?.serpentine !== 0, !!extraParams?.oklabWeighted)
   },
 }

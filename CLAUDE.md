@@ -44,6 +44,7 @@ Implemented in `src/processing/pipeline.ts`:
 
 1. **Resize** — cover / contain / stretch / none (`src/processing/resize.ts`)
 2. **Dynamic range compression** — maps luminance into the display's actual `[black_Y, white_Y]` range using Rec. 709 coefficients and sRGB↔linear conversion
+2.5. **Gamut compression** (`gamutCompress: number`, 0–1) — pulls out-of-gamut pixels toward the nearest point on any palette edge in the active `distSpace`. Thresholds are 15%/45% of the palette's gamut diameter in that space, so the same strength value works across OKLab, CIELAB, and RGB. Reduces color mud from vivid colors that exceed the palette's achievable gamut.
 3. **Tone mapping** — contrast mode (scale around midpoint) or S-curve (strength / shadowBoost / highlightCompress / midpoint)
 4. **Saturation** — HSL-space channel scaling
 5. **Exposure** — linear multiply + clamp
@@ -109,6 +110,7 @@ src/
 | `knoxEdgeSensitivity` | Eschbach & Knox | 4.0 | gradient scale for cross-edge suppression |
 | `riemersmaQueueSize` | Riemersma | 16 | error history queue length (4–64) |
 | `dizzyDiagonalWeight` | Dizzy | 0.1 | diagonal neighbour weight relative to orthogonal (0–1) |
+| `oklabWeighted` | all algorithms | 0 | 1 = boost chroma axes by WAB=1.5 in OKLab distance (`dL²+2.25·(da²+db²)`); reduces achromatic-attractor pull on saturated colors |
 
 To add a new algorithm-specific UI control: add a slider to `index.html` (inside a hidden `<div id="panelXxx">`), add the field to `ProcessingSettings` in `src/types.ts` (with a default in `BALANCED_PRESET`), wire the slider listener and show/hide logic in `src/main.ts` (`algorithmSelect` change handler + `syncSlidersFromSettings`), and pass the value in the `extraParams` object in `src/processing/pipeline.ts`.
 
@@ -124,6 +126,8 @@ To add a new algorithm-specific UI control: add a slider to `index.html` (inside
 `ColorSpace` is `'rgb' | 'cielab' | 'oklab'`. For Bayer (ordered) dithering only `distSpace` applies — there is no error buffer.
 
 The UI exposes five named presets via a "Color matching" dropdown: RGB (full), CIELAB distance, CIELAB (full), OKLab distance, OKLab (full). Below the dropdown, two read-only text fields show the active spaces — "Find color using" (`distSpace`) and "Diffuse error in" (`errorSpace`) — and update automatically when the preset changes. There is no manual/advanced mode; all valid combinations are covered by the presets. `deltaE_lab` uses `2·dL² + da² + db²` (L weighted double) for CIELAB distance; `deltaE_oklab` uses plain Euclidean.
+
+When an OKLab preset is active, a **"Weighted chroma (WAB = 1.5)"** checkbox appears. When enabled, OKLab distance becomes `dL² + 2.25·(da² + db²)`, boosting the chroma axes to reduce the achromatic-attractor bias where saturated colors (e.g. vivid purple) get pulled to black or white because lightness dominates. Applies to all algorithms including Knox (which always uses OKLab). Sourced from `OpenDisplay/epaper-dithering` where it was validated against regression fixtures.
 
 **Expand palette** (`expandPalette: boolean`): before dithering, six pure primaries (`[0,0,0]`, `[255,255,255]`, `[255,0,0]`, `[0,255,0]`, `[0,0,255]`, `[255,255,0]`) are appended to the working palette as extra snap-points. After dithering, `remapToOriginalPalette()` replaces any pixel that landed on a primary with the nearest original measured color, so the preview and export are unaffected.
 
