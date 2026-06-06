@@ -228,10 +228,39 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .export-row, .autotune-row {
   display: flex;
   gap: 0.5rem;
+  align-items: center;
 }
 .autotune-row { margin-bottom: 0.25rem; }
 .export-row { margin-top: 0.75rem; }
 .export-row:first-of-type { margin-top: 0.875rem; }
+.ble-rotation-group {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-left: auto;
+}
+.ble-rotation-group label {
+  padding: 0 0.55rem;
+  background: var(--surface2);
+  border-right: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  margin: 0;
+  cursor: default;
+}
+.ble-rotation-group select {
+  width: auto;
+  border: none;
+  border-radius: 0;
+  padding: 0 0.5rem;
+  font-size: 0.85rem;
+  background: var(--surface2);
+}
 .btn-primary, .btn-secondary {
   flex: 1;
   padding: 0.55rem 0.5rem;

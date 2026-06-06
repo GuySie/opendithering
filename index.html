@@ -224,21 +224,23 @@
         </div>
         <div class="export-row">
           <div class="split-btn">
-            <button class="btn-secondary split-main" id="btnUploadDevice" disabled>↑ OpenDisplay via BLE</button>
+            <button class="btn-secondary split-main" id="btnUploadDevice" disabled>↑ OpenDisplay BLE</button>
             <button class="btn-secondary split-arrow" id="btnUploadDeviceArrow" disabled aria-haspopup="true" aria-expanded="false">▾</button>
             <div class="split-menu" id="splitUploadMenu" hidden>
               <button class="split-option" id="btnConnectDevice">Connect</button>
               <button class="split-option split-option--muted" id="btnDisconnectDevice">Disconnect</button>
             </div>
           </div>
+          <div class="ble-rotation-group">
+            <label for="bleRotation">Rotation</label>
+            <select id="bleRotation">
+              <option value="0">0°</option>
+              <option value="90">90°</option>
+              <option value="180">180°</option>
+              <option value="270">270°</option>
+            </select>
+          </div>
         </div>
-        <label for="bleRotation">Rotation</label>
-        <select id="bleRotation">
-          <option value="0">0°</option>
-          <option value="90">90°</option>
-          <option value="180">180°</option>
-          <option value="270">270°</option>
-        </select>
         <p class="ble-status" id="bleStatus"><span class="ble-dot"></span><span id="bleStatusText">Not connected</span></p>
         <p class="export-hint" id="bleCompatHint">BLE upload requires a compatible browser (Chrome or Edge). Firefox and Safari are not supported.</p>
       </section>
