@@ -30,9 +30,10 @@ The UI shows a **Calibration** dropdown (always visible) and a row of **color sw
 **Variant naming convention:** use the source name as the variant name (e.g. `EPDOptimize`, `aitjcize`). If the origin is unknown, use `Estimated`. The auto-generated variant is always named `Ideal`. Do not use "Default".
 
 **Current variant sources:**
-- `spectra6` — **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`spectra6` entry); **aitjcize**: `aitjcize/esp32-photoframe` `main/color_palette.c` (`color_palette_get_defaults`); **Wenting**: `mattcarter11/eink-dithering-tester` `src/config.js` (`wenting` const); **EPDOptimize (Legacy)**: independently confirmed by Rayman, Parallax forums post 177818 (2026-01-11), `SPECTRA6_REAL_WORD_RGB`
+- `spectra6` — **OpenDisplay**: `OpenDisplay/epaper-dithering` `measured_palettes.rs` (`SPECTRA_7_3_6COLOR_V2`), iPhone 15 Pro Max ProRAW + Affinity v3, A4 paper white reference, 2026-03-15, 7.3" panel; **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`spectra6` entry); **aitjcize**: `aitjcize/esp32-photoframe` `main/color_palette.c` (`color_palette_get_defaults`); **Wenting**: `mattcarter11/eink-dithering-tester` `src/config.js` (`wenting` const); **EPDOptimize (Legacy)**: independently confirmed by Rayman, Parallax forums post 177818 (2026-01-11), `SPECTRA6_REAL_WORD_RGB`
 - `acep` — **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`acep` entry)
-- `bw`, `bwr`, `bwry`, `grayscale4`, `grayscale8` — **Estimated**: origin unknown; do not label as calibrated
+- `bw`, `bwr`, `grayscale4`, `grayscale8` — **Estimated**: origin unknown; do not label as calibrated
+- `bwry` — **OpenDisplay**: `OpenDisplay/epaper-dithering` `measured_palettes.rs` (`BWRY_3_97`), iPhone RAW, paper reference, 2026-03-06, EP397YR 3.97" 800×480 panel; **Estimated**: origin unknown; do not label as calibrated
 - `grayscale16` — **Estimated**: origin unknown; **Measured**: photographed from a physical Seeed reTerminal E1003 panel (guysie)
 
 To add a calibration variant to an existing palette, add another `Palette` entry to its `variants` array in the palette file. The registry picks it up automatically.

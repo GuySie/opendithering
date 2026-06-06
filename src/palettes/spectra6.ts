@@ -29,6 +29,18 @@ export const spectra6Group: PaletteGroup = {
       ],
     },
     {
+      id: 'spectra6-opendisplay',
+      name: 'OpenDisplay',
+      colors: [
+        { name: 'black',  measured: [31, 24, 41],    ideal: [0, 0, 0] },
+        { name: 'white',  measured: [168, 180, 182],  ideal: [255, 255, 255] },
+        { name: 'green',  measured: [50, 84, 60],     ideal: [0, 255, 0] },
+        { name: 'blue',   measured: [36, 70, 139],    ideal: [0, 0, 255] },
+        { name: 'red',    measured: [113, 24, 19],    ideal: [255, 0, 0] },
+        { name: 'yellow', measured: [180, 173, 0],    ideal: [255, 255, 0] },
+      ],
+    },
+    {
       id: 'spectra6-epdoptimize',
       name: 'EPDOptimize',
       colors: [

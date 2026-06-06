@@ -5,6 +5,16 @@ export const bwryGroup: PaletteGroup = {
   name: 'Black, White, Red & Yellow',
   variants: [
     {
+      id: 'bwry-opendisplay',
+      name: 'OpenDisplay',
+      colors: [
+        { name: 'black',  measured: [10, 7, 14],      ideal: [0, 0, 0] },
+        { name: 'white',  measured: [173, 178, 174],   ideal: [255, 255, 255] },
+        { name: 'red',    measured: [85, 24, 14],      ideal: [255, 0, 0] },
+        { name: 'yellow', measured: [172, 128, 0],     ideal: [255, 255, 0] },
+      ],
+    },
+    {
       id: 'bwry-default',
       name: 'Estimated',
       colors: [
