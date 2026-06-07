@@ -21,6 +21,8 @@ This app is an experiment to find the optimal dithering algorithm and settings f
 - **Export** — downloads a PNG or BMP sized exactly to the display, using ideal palette colors; rotation is applied before export
 - **OpenDisplay upload** — send the dithered image directly to an [OpenDisplay](https://opendisplay.org/) device over Web Bluetooth. Requires Chrome or Edge. Preliminary support for Gicisky/Picksmart ESL also added (but only tested on 7.5" tag)
 
+Read the blog for more information: https://style.oversubstance.net/2026/06/dithering-is-obsolete-except-when-it-isnt-creating-opendithering/
+
 ## Supported palettes
 
 | Panel type | Colors |
