@@ -228,9 +228,17 @@ Each step has a 5-second timeout. Notifications are always received on CMD; imag
 | `mode1` | 3.7" EPD (device ID `0x022B`) | `[4B LE total_len]` + per-column chunks: `[0x75][bytePerLine+7][bytePerLine][0x00×4][...column bytes]` |
 | `mode2` | 7.5" (`0x012B`), 10.2" (`0x008B`) | BW+Red planes concatenated, split in half, each half wrapped in 64-byte QuickLZ L1 chunks (0x75), with raw fallback (0x74): `[4B LE half_raw_len][0x75/0x74][total_len][n][...data] ...` |
 
+### Rotation
+
+A **Rotation** dropdown (0°/90°/180°/270°) lives in the Display section's dim-row alongside Width and Height. The selected rotation is applied to the `ideal` ImageData before BLE upload **and** before PNG, BMP, and zip export — `applyRotationToImageData()` wraps `rotatePixels()` for the download paths; the BLE upload path calls `rotatePixels()` directly.
+
+When a non-custom device preset is active, the UI shows a warning if the chosen rotation would produce output dimensions that don't match the preset's native dimensions (e.g. rotating 90° when the display is already portrait-native). The check in `checkRotationConflict()` compares the rotated output size against `preset.width × preset.height` and shows `#rotationWarn` if they differ.
+
+The rotation select is excluded from the `dims-readonly` CSS rule so it remains interactive even when a preset locks the width/height fields.
+
 ### Auto-orientation
 
-When an image is activated or a display preset is changed, `autoOrientDisplay()` compares the image's aspect ratio to the display's aspect ratio. If they don't match (one is portrait, the other landscape), it swaps `displayWidth` and `displayHeight` automatically and updates the dimension inputs.
+When an image is activated or a display preset is changed, `autoOrientDisplay()` compares the image's aspect ratio to the display's aspect ratio. If they don't match (one is portrait, the other landscape), it swaps `displayWidth` and `displayHeight` internally and sets the Rotation dropdown to 270°. The width/height input fields are intentionally **not** updated — showing both swapped dims and a non-zero rotation would be confusing.
 
 ### Zoom / pan
 
