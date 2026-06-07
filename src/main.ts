@@ -88,6 +88,7 @@ const bleStatus             = el<HTMLParagraphElement>('bleStatus')
 const bleStatusText         = el<HTMLSpanElement>('bleStatusText')
 const bleCompatHint         = el<HTMLParagraphElement>('bleCompatHint')
 const bleRotation           = el<HTMLSelectElement>('bleRotation')
+const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
 
 ;(() => {
   function browserName(): string {
@@ -404,18 +405,31 @@ function activateImage(id: string) {
   previewPanels.hidden = false
 }
 
+function checkRotationConflict() {
+  const preset = DISPLAY_PRESETS.find(p => p.id === presetSelect.value)
+  if (!preset || preset.id === 'custom') { rotationWarn.hidden = true; return }
+  const deg = parseInt(bleRotation.value)
+  const outW = (deg === 90 || deg === 270) ? displayHeight : displayWidth
+  const outH = (deg === 90 || deg === 270) ? displayWidth  : displayHeight
+  if (outW === preset.width && outH === preset.height) {
+    rotationWarn.hidden = true
+  } else {
+    rotationWarn.textContent = `Rotation outputs ${outW}×${outH} px but device expects ${preset.width}×${preset.height}`
+    rotationWarn.hidden = false
+  }
+}
+
 function autoOrientDisplay(imgW: number, imgH: number) {
   const imgPortrait  = imgH > imgW
   const dispPortrait = displayHeight > displayWidth
   if (imgPortrait !== dispPortrait) {
     ;[displayWidth, displayHeight] = [displayHeight, displayWidth]
-    dimWidth.value  = String(displayWidth)
-    dimHeight.value = String(displayHeight)
     bleRotation.value = '270'
     invalidateAll()
   } else {
     bleRotation.value = '0'
   }
+  checkRotationConflict()
 }
 
 function rotatePixels(
@@ -587,17 +601,22 @@ presetSelect.addEventListener('change', () => {
     // Re-apply orientation for the currently active image
     const activeImg = images.find(i => i.id === activeId)
     if (activeImg) autoOrientDisplay(activeImg.original.width, activeImg.original.height)
+    else checkRotationConflict()
   }
   invalidateAll()
   scheduleProcess()
 })
 
+bleRotation.addEventListener('change', () => checkRotationConflict())
+
 dimWidth.addEventListener('input', () => {
   displayWidth = parseInt(dimWidth.value) || 800
+  checkRotationConflict()
   invalidateAll(); scheduleProcess()
 })
 dimHeight.addEventListener('input', () => {
   displayHeight = parseInt(dimHeight.value) || 480
+  checkRotationConflict()
   invalidateAll(); scheduleProcess()
 })
 paletteSelect.addEventListener('change', () => {
@@ -1014,10 +1033,11 @@ function updateExportButtons() {
 btnDownloadMain.addEventListener('click', async () => {
   const img = images.find(i => i.id === activeId)
   if (!img?.ideal) return
+  const rotated = applyRotationToImageData(img.ideal)
   if (downloadFormat === 'bmp') {
-    downloadBlob(imageDataToBmpBlob(img.ideal), stripExt(img.name) + '_dithered.bmp')
+    downloadBlob(imageDataToBmpBlob(rotated), stripExt(img.name) + '_dithered.bmp')
   } else {
-    downloadBlob(await imageDataToBlob(img.ideal), stripExt(img.name) + '_dithered.png')
+    downloadBlob(await imageDataToBlob(rotated), stripExt(img.name) + '_dithered.png')
   }
 })
 
@@ -1153,7 +1173,11 @@ btnUploadDevice.addEventListener('click', async () => {
     if (!bleState || !isConnected()) {
       btnUploadDevice.textContent = '↑ Connecting…'
       await doConnect()
-      if (!bleState) return
+      if (!bleState) {
+        btnUploadDevice.textContent = originalLabel
+        updateExportButtons()
+        return
+      }
     }
 
     const toEncode = rotatePixels(img.ideal.data, img.width, img.height, parseInt(bleRotation.value))
@@ -1169,10 +1193,8 @@ btnUploadDevice.addEventListener('click', async () => {
         btnUploadDevice.textContent = `↑ Sending ${Math.round((sent / total) * 100)}%…`
       })
       // Gicisky devices only start the display refresh after the BLE connection is dropped.
-      // Match the eigger HA integration behaviour: stop notifications then disconnect.
-      try { await bleState.conn.cmdChar.stopNotifications() } catch { /* ignore */ }
+      // gattserverdisconnected will fire once the physical link drops and update the UI.
       bleState.conn.device.gatt?.disconnect()
-      bleState = null
     }
 
     btnUploadDevice.textContent = '✓ Sent'
@@ -1222,7 +1244,7 @@ btnDownloadZip.addEventListener('click', async () => {
     }
     const ideal = img.ideal
     if (!ideal) continue
-    const blob = await imageDataToBlob(ideal)
+    const blob = await imageDataToBlob(applyRotationToImageData(ideal))
     zip.file(stripExt(img.name) + '_dithered.png', blob)
   }
 
@@ -1269,6 +1291,15 @@ function imageDataToBmpBlob(data: ImageData): Blob {
   }
 
   return new Blob([buf], { type: 'image/bmp' })
+}
+
+function applyRotationToImageData(data: ImageData): ImageData {
+  const deg = parseInt(bleRotation.value)
+  if (deg === 0) return data
+  const r = rotatePixels(data.data, data.width, data.height, deg)
+  const copy = new Uint8ClampedArray(r.data.length)
+  copy.set(r.data)
+  return new ImageData(copy, r.width, r.height)
 }
 
 function imageDataToBlob(data: ImageData): Promise<Blob> {

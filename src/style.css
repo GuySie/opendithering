@@ -96,7 +96,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 
 .dim-row {
   display: grid;
-  grid-template-columns: auto 1fr auto 1fr;
+  grid-template-columns: auto 1fr auto 1fr auto auto;
   gap: 0.4rem;
   align-items: center;
   margin-top: 0.75rem;
@@ -233,34 +233,6 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .autotune-row { margin-bottom: 0.25rem; }
 .export-row { margin-top: 0.75rem; }
 .export-row:first-of-type { margin-top: 0.875rem; }
-.ble-rotation-group {
-  display: flex;
-  align-items: stretch;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  margin-left: auto;
-}
-.ble-rotation-group label {
-  padding: 0 0.55rem;
-  background: var(--surface2);
-  border-right: 1px solid var(--border);
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  white-space: nowrap;
-  margin: 0;
-  cursor: default;
-}
-.ble-rotation-group select {
-  width: auto;
-  border: none;
-  border-radius: 0;
-  padding: 0 0.5rem;
-  font-size: 0.85rem;
-  background: var(--surface2);
-}
 .btn-primary, .btn-secondary {
   flex: 1;
   padding: 0.55rem 0.5rem;
@@ -324,6 +296,12 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .split-option--muted { color: var(--text-muted); }
 .split-option--muted:hover { background: none; color: var(--text-muted); cursor: default; }
 
+.rotation-warn {
+  margin-top: 0.4rem;
+  color: var(--amber, #c8881a);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
 .export-hint {
   margin-top: 0.75rem;
   color: var(--text-muted);
@@ -490,7 +468,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 /* ── Display dims / panel type ── */
 .custom-dims { margin-top: 0.5rem; }
 .dims-readonly input[type="number"],
-.dims-readonly select { opacity: 0.55; cursor: default; pointer-events: none; }
+.dims-readonly select:not(#bleRotation) { opacity: 0.55; cursor: default; pointer-events: none; }
 
 /* ── Palette swatches ── */
 .palette-swatches {
