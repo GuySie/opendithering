@@ -7,6 +7,8 @@ import { runPipeline } from './processing/pipeline'
 import { autoTune } from './processing/autotune'
 import type { AutoTuneDebug } from './processing/autotune'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
+import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
+import type { GiciskyConnection } from './ble/gicisky'
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -21,7 +23,12 @@ let calibrationVariantId = 'spectra6-aitjcize'
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let showIdealPreview = false
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
-let bleCharacteristic: BluetoothRemoteGATTCharacteristic | null = null
+let bleProtocol: 'opendisplay' | 'gicisky' = 'opendisplay'
+type BleState =
+  | { protocol: 'opendisplay'; char: BluetoothRemoteGATTCharacteristic }
+  | { protocol: 'gicisky';     conn: GiciskyConnection }
+  | null
+let bleState: BleState = null
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -73,12 +80,15 @@ const btnDownloadZip   = el<HTMLButtonElement>('btnDownloadZip')
 const btnUploadDevice       = el<HTMLButtonElement>('btnUploadDevice')
 const btnUploadDeviceArrow  = el<HTMLButtonElement>('btnUploadDeviceArrow')
 const splitUploadMenu       = el<HTMLDivElement>('splitUploadMenu')
-const btnConnectDevice      = el<HTMLButtonElement>('btnConnectDevice')
-const btnDisconnectDevice   = el<HTMLButtonElement>('btnDisconnectDevice')
+const btnConnectDevice        = el<HTMLButtonElement>('btnConnectDevice')
+const btnDisconnectDevice     = el<HTMLButtonElement>('btnDisconnectDevice')
+const btnProtocolOpenDisplay  = el<HTMLButtonElement>('btnProtocolOpenDisplay')
+const btnProtocolGicisky      = el<HTMLButtonElement>('btnProtocolGicisky')
 const bleStatus             = el<HTMLParagraphElement>('bleStatus')
 const bleStatusText         = el<HTMLSpanElement>('bleStatusText')
 const bleCompatHint         = el<HTMLParagraphElement>('bleCompatHint')
 const bleRotation           = el<HTMLSelectElement>('bleRotation')
+const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
 
 ;(() => {
   function browserName(): string {
@@ -395,18 +405,31 @@ function activateImage(id: string) {
   previewPanels.hidden = false
 }
 
+function checkRotationConflict() {
+  const preset = DISPLAY_PRESETS.find(p => p.id === presetSelect.value)
+  if (!preset || preset.id === 'custom') { rotationWarn.hidden = true; return }
+  const deg = parseInt(bleRotation.value)
+  const outW = (deg === 90 || deg === 270) ? displayHeight : displayWidth
+  const outH = (deg === 90 || deg === 270) ? displayWidth  : displayHeight
+  if (outW === preset.width && outH === preset.height) {
+    rotationWarn.hidden = true
+  } else {
+    rotationWarn.textContent = `Rotation outputs ${outW}×${outH} px but device expects ${preset.width}×${preset.height}`
+    rotationWarn.hidden = false
+  }
+}
+
 function autoOrientDisplay(imgW: number, imgH: number) {
   const imgPortrait  = imgH > imgW
   const dispPortrait = displayHeight > displayWidth
   if (imgPortrait !== dispPortrait) {
     ;[displayWidth, displayHeight] = [displayHeight, displayWidth]
-    dimWidth.value  = String(displayWidth)
-    dimHeight.value = String(displayHeight)
     bleRotation.value = '270'
     invalidateAll()
   } else {
     bleRotation.value = '0'
   }
+  checkRotationConflict()
 }
 
 function rotatePixels(
@@ -578,17 +601,22 @@ presetSelect.addEventListener('change', () => {
     // Re-apply orientation for the currently active image
     const activeImg = images.find(i => i.id === activeId)
     if (activeImg) autoOrientDisplay(activeImg.original.width, activeImg.original.height)
+    else checkRotationConflict()
   }
   invalidateAll()
   scheduleProcess()
 })
 
+bleRotation.addEventListener('change', () => checkRotationConflict())
+
 dimWidth.addEventListener('input', () => {
   displayWidth = parseInt(dimWidth.value) || 800
+  checkRotationConflict()
   invalidateAll(); scheduleProcess()
 })
 dimHeight.addEventListener('input', () => {
   displayHeight = parseInt(dimHeight.value) || 480
+  checkRotationConflict()
   invalidateAll(); scheduleProcess()
 })
 paletteSelect.addEventListener('change', () => {
@@ -992,19 +1020,24 @@ function updateExportButtons() {
   btnDownloadMain.disabled = !hasResult
   btnDownloadArrow.disabled = !hasResult
   btnDownloadZip.disabled = !hasResult || images.length < 2
-  const canUpload = hasResult && bleIsSupported(paletteGroupId)
+  const supported = bleProtocol === 'opendisplay'
+    ? bleIsSupported(paletteGroupId)
+    : giciskyIsSupported(paletteGroupId)
+  const canUpload = hasResult && supported
   btnUploadDevice.disabled = !canUpload
   btnUploadDeviceArrow.disabled = !canUpload
-  btnUploadDevice.title = canUpload ? '' : 'This palette is not supported by OpenDisplay'
+  const protocolName = bleProtocol === 'opendisplay' ? 'OpenDisplay' : 'Gicisky'
+  btnUploadDevice.title = canUpload ? '' : `This palette is not supported by ${protocolName}`
 }
 
 btnDownloadMain.addEventListener('click', async () => {
   const img = images.find(i => i.id === activeId)
   if (!img?.ideal) return
+  const rotated = applyRotationToImageData(img.ideal)
   if (downloadFormat === 'bmp') {
-    downloadBlob(imageDataToBmpBlob(img.ideal), stripExt(img.name) + '_dithered.bmp')
+    downloadBlob(imageDataToBmpBlob(rotated), stripExt(img.name) + '_dithered.bmp')
   } else {
-    downloadBlob(await imageDataToBlob(img.ideal), stripExt(img.name) + '_dithered.png')
+    downloadBlob(await imageDataToBlob(rotated), stripExt(img.name) + '_dithered.png')
   }
 })
 
@@ -1054,8 +1087,12 @@ function setBleConnected(connected: boolean) {
 }
 
 function bleDisconnect() {
-  bleCharacteristic?.service.device.gatt?.disconnect()
-  bleCharacteristic = null
+  if (bleState?.protocol === 'opendisplay') {
+    bleState.char.service.device.gatt?.disconnect()
+  } else if (bleState?.protocol === 'gicisky') {
+    bleState.conn.device.gatt?.disconnect()
+  }
+  bleState = null
   setBleConnected(false)
 }
 
@@ -1066,14 +1103,25 @@ async function doConnect() {
   }
   bleStatusText.textContent = 'Connecting…'
   try {
-    bleCharacteristic = await bleConnect()
-    setBleConnected(true)
-    bleCharacteristic.service.device.addEventListener('gattserverdisconnected', () => {
-      bleCharacteristic = null
-      setBleConnected(false)
-    })
+    if (bleProtocol === 'opendisplay') {
+      const char = await bleConnect()
+      bleState = { protocol: 'opendisplay', char }
+      setBleConnected(true)
+      char.service.device.addEventListener('gattserverdisconnected', () => {
+        bleState = null
+        setBleConnected(false)
+      })
+    } else {
+      const conn = await giciskyConnect(giciskyDeviceInfo(presetSelect.value))
+      bleState = { protocol: 'gicisky', conn }
+      setBleConnected(true)
+      conn.device.addEventListener('gattserverdisconnected', () => {
+        bleState = null
+        setBleConnected(false)
+      })
+    }
   } catch (err: unknown) {
-    bleCharacteristic = null
+    bleState = null
     setBleConnected(false)
   }
 }
@@ -1083,8 +1131,24 @@ splitUploadMenu.addEventListener('click', (e) => {
   if (!btn || btn.classList.contains('split-option--muted')) return
   splitUploadMenu.hidden = true
   btnUploadDeviceArrow.setAttribute('aria-expanded', 'false')
-  if (btn.id === 'btnConnectDevice') doConnect()
-  else if (btn.id === 'btnDisconnectDevice') bleDisconnect()
+
+  const proto = btn.dataset.protocol as 'opendisplay' | 'gicisky' | undefined
+  if (proto) {
+    if (proto !== bleProtocol) {
+      bleDisconnect()
+      bleProtocol = proto
+      const label = proto === 'opendisplay' ? '↑ OpenDisplay BLE' : '↑ Gicisky BLE'
+      btnUploadDevice.textContent = label
+      delete btnProtocolOpenDisplay.dataset.active
+      delete btnProtocolGicisky.dataset.active
+      ;(proto === 'opendisplay' ? btnProtocolOpenDisplay : btnProtocolGicisky).dataset.active = ''
+      updateExportButtons()
+    }
+  } else if (btn.id === 'btnConnectDevice') {
+    doConnect()
+  } else if (btn.id === 'btnDisconnectDevice') {
+    bleDisconnect()
+  }
 })
 
 btnUploadDevice.addEventListener('click', async () => {
@@ -1095,24 +1159,43 @@ btnUploadDevice.addEventListener('click', async () => {
     return
   }
 
-  const originalLabel = btnUploadDevice.textContent ?? '↑ OpenDisplay via BLE'
+  const originalLabel = btnUploadDevice.textContent ?? '↑ OpenDisplay BLE'
   btnUploadDevice.disabled = true
   btnUploadDeviceArrow.disabled = true
 
+  const isConnected = () => bleState?.protocol === 'opendisplay'
+    ? bleState.char.service.device.gatt?.connected ?? false
+    : bleState?.protocol === 'gicisky'
+      ? bleState.conn.device.gatt?.connected ?? false
+      : false
+
   try {
-    if (!bleCharacteristic || !bleCharacteristic.service.device.gatt?.connected) {
+    if (!bleState || !isConnected()) {
       btnUploadDevice.textContent = '↑ Connecting…'
       await doConnect()
-      if (!bleCharacteristic) return
+      if (!bleState) {
+        btnUploadDevice.textContent = originalLabel
+        updateExportButtons()
+        return
+      }
     }
 
     const toEncode = rotatePixels(img.ideal.data, img.width, img.height, parseInt(bleRotation.value))
-    const imageBytes = bleEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId)
 
-    await bleSend(bleCharacteristic, imageBytes, (sent, total) => {
-      const pct = Math.round((sent / total) * 100)
-      btnUploadDevice.textContent = `↑ Sending ${pct}%…`
-    })
+    if (bleState.protocol === 'opendisplay') {
+      const imageBytes = bleEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId)
+      await bleSend(bleState.char, imageBytes, (sent, total) => {
+        btnUploadDevice.textContent = `↑ Sending ${Math.round((sent / total) * 100)}%…`
+      })
+    } else {
+      const imageBytes = giciskyEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId, bleState.conn.deviceInfo)
+      await gickySend(bleState.conn, imageBytes, (sent, total) => {
+        btnUploadDevice.textContent = `↑ Sending ${Math.round((sent / total) * 100)}%…`
+      })
+      // Gicisky devices only start the display refresh after the BLE connection is dropped.
+      // gattserverdisconnected will fire once the physical link drops and update the UI.
+      bleState.conn.device.gatt?.disconnect()
+    }
 
     btnUploadDevice.textContent = '✓ Sent'
     setTimeout(() => {
@@ -1120,7 +1203,7 @@ btnUploadDevice.addEventListener('click', async () => {
       updateExportButtons()
     }, 2000)
   } catch (err: unknown) {
-    bleCharacteristic = null
+    bleState = null
     setBleConnected(false)
     const msg = err instanceof Error ? err.message : String(err)
     if (!msg.toLowerCase().includes('cancel') && !msg.toLowerCase().includes('user')) {
@@ -1161,7 +1244,7 @@ btnDownloadZip.addEventListener('click', async () => {
     }
     const ideal = img.ideal
     if (!ideal) continue
-    const blob = await imageDataToBlob(ideal)
+    const blob = await imageDataToBlob(applyRotationToImageData(ideal))
     zip.file(stripExt(img.name) + '_dithered.png', blob)
   }
 
@@ -1208,6 +1291,15 @@ function imageDataToBmpBlob(data: ImageData): Blob {
   }
 
   return new Blob([buf], { type: 'image/bmp' })
+}
+
+function applyRotationToImageData(data: ImageData): ImageData {
+  const deg = parseInt(bleRotation.value)
+  if (deg === 0) return data
+  const r = rotatePixels(data.data, data.width, data.height, deg)
+  const copy = new Uint8ClampedArray(r.data.length)
+  copy.set(r.data)
+  return new ImageData(copy, r.width, r.height)
 }
 
 function imageDataToBlob(data: ImageData): Promise<Blob> {

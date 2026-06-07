@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenDithering</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -47,7 +48,15 @@
             <input type="number" id="dimWidth" min="1" max="7680" value="800" />
             <label for="dimHeight">Height</label>
             <input type="number" id="dimHeight" min="1" max="4320" value="480" />
+            <label for="bleRotation">Rotation</label>
+            <select id="bleRotation">
+              <option value="0">0°</option>
+              <option value="90">90°</option>
+              <option value="180">180°</option>
+              <option value="270">270°</option>
+            </select>
           </div>
+          <p class="rotation-warn" id="rotationWarn" hidden></p>
           <label for="paletteSelect">Panel type</label>
           <select id="paletteSelect"></select>
         </div>
@@ -227,18 +236,11 @@
             <button class="btn-secondary split-main" id="btnUploadDevice" disabled>↑ OpenDisplay BLE</button>
             <button class="btn-secondary split-arrow" id="btnUploadDeviceArrow" disabled aria-haspopup="true" aria-expanded="false">▾</button>
             <div class="split-menu" id="splitUploadMenu" hidden>
+              <button class="split-option" id="btnProtocolOpenDisplay" data-protocol="opendisplay" data-active>OpenDisplay</button>
+              <button class="split-option" id="btnProtocolGicisky" data-protocol="gicisky">Gicisky</button>
               <button class="split-option" id="btnConnectDevice">Connect</button>
               <button class="split-option split-option--muted" id="btnDisconnectDevice">Disconnect</button>
             </div>
-          </div>
-          <div class="ble-rotation-group">
-            <label for="bleRotation">Rotation</label>
-            <select id="bleRotation">
-              <option value="0">0°</option>
-              <option value="90">90°</option>
-              <option value="180">180°</option>
-              <option value="270">270°</option>
-            </select>
           </div>
         </div>
         <p class="ble-status" id="bleStatus"><span class="ble-dot"></span><span id="bleStatusText">Not connected</span></p>

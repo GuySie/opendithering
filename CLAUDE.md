@@ -88,7 +88,8 @@ src/
 │   ├── pipeline.ts            # runPipeline() — orchestrates all steps, returns {measured, ideal}
 │   └── autotune.ts            # autoTune() — convergence-checked optimizer for saturation/exposure/highlightCompress
 ├── ble/
-│   └── opendisplay.ts         # OpenDisplay BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
+│   ├── opendisplay.ts         # OpenDisplay BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
+│   └── gicisky.ts             # Gicisky BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
 ├── main.ts                    # All UI logic, state, event wiring
 └── style.css
 ```
@@ -183,15 +184,62 @@ Implemented in `src/ble/opendisplay.ts`. Sends the already-dithered `ideal` Imag
 | `grayscale8` | 6 | 4 bits/pixel nibble-packed, Rec.709 luminance → 0–15 |
 | `grayscale16` | 6 | 4 bits/pixel nibble-packed, Rec.709 luminance → 0–15 |
 
-Because the `ideal` ImageData already contains exact palette RGB values, `encodeImage()` uses direct colour matching rather than nearest-colour search. The BLE connection is maintained between uploads (`bleCharacteristic` module-level state in `main.ts`) and reused on subsequent sends. The `gattserverdisconnected` device event clears it if the device drops the link.
+Because the `ideal` ImageData already contains exact palette RGB values, `encodeImage()` uses direct colour matching rather than nearest-colour search. The BLE connection is maintained between uploads and reused on subsequent sends. The `gattserverdisconnected` device event clears it if the device drops the link.
 
-The Export section UI provides: an **↑ OpenDisplay via BLE** button (disabled for `acep`), a **▾** dropdown with **Connect** and **Disconnect** items (Connect muted when already connected, Disconnect muted when not), a connection status indicator with a green dot when live, and a browser-compatibility hint that detects and names the current browser at runtime.
+The Export section UI provides: an **↑ OpenDisplay BLE** / **↑ Gicisky BLE** split button (label reflects the active protocol), a **▾** dropdown with **OpenDisplay** / **Gicisky** protocol switchers plus **Connect** and **Disconnect** items, a shared connection status indicator, and a browser-compatibility hint. Switching protocol auto-disconnects the current connection. The active protocol is tracked in `bleProtocol` (`'opendisplay' | 'gicisky'`) and the connection in `bleState` (a discriminated union typed by protocol) in `main.ts`.
 
 **Types dependency:** `@types/web-bluetooth` (dev dependency); `tsconfig.json` includes `"types": ["web-bluetooth"]`.
 
+### Gicisky BLE upload
+
+Implemented in `src/ble/gicisky.ts`. Sends the already-dithered `ideal` ImageData to Gicisky / Picksmart ESL badge devices over Web Bluetooth. Requires Chrome or Edge.
+
+**BLE identifiers** (confirmed via `eigger/hass-gicisky` and `atc1441/ATC_GICISKY_ESL`):
+- Manufacturer ID: `0x5053` (used as device filter)
+- Service UUID: `0xFEF0`
+- CMD characteristic: `0xFEF1` — commands out, notifications in
+- IMG characteristic: `0xFEF2` — image data out
+
+These UUIDs are consistent across all known Gicisky/Picksmart ESL models.
+
+**Protocol** (4-step state machine, references: `eigger/hass-gicisky`, `fpoli/gicisky-tag`):
+1. Write `[0x01]` to CMD → ack `[0x01, lo, hi]` where bytes 1–2 are the device's preferred block size (LE; typically `0xF4 0x00` = 244, giving a 240-byte payload after the 4-byte part-index header)
+2. Write `[0x02, size LE4B, 0x00 0x00 0x00]` to CMD (8 bytes; or `[0x02, size LE4B, 0x01]` 6 bytes for mode2 devices) → ack `[0x02, ...]`
+3. Write `[0x03]` to CMD → ack `[0x05, 0x00, ...]`
+4. Loop: write `[partIdx LE4B, ...≤240B chunk]` to IMG → ack `[0x05, 0x00, nextPartIdx LE4B]` on CMD; `status != 0x00` signals completion. Stall guard: 3× identical part index → error.
+
+Each step has a 5-second timeout. Notifications are always received on CMD; image data is always written to IMG.
+
+**Device detection and compression:** After connecting, `connectDevice()` uses `watchAdvertisements()` (Chrome 87+) to read manufacturer data bytes 0 and 4, computing `deviceId = ((data[4] << 8) | data[0]) & 0x3FFF`. This is looked up in `DEVICE_TABLE` to determine compression mode and `invertLuminance`. Falls back to `compression: 'none'` if advertisement data is unavailable.
+
+**Palette → Gicisky encoding:**
+
+| Palette | Format | Notes |
+|---|---|---|
+| `bw` | 1 bit/pixel, 8 px/byte MSB-first | bit=1 for white; inverted if `invertLuminance` |
+| `bwr` | 2 separate 1-bit planes (BW then Red) | BW plane: 1=white (or 1=non-white if `invertLuminance`); Red plane: 1=red |
+| `bwry` | 2 bits/pixel, 4 px/byte MSB-first | black=00, white=01, yellow=10, red=11 |
+| `spectra6`, `acep`, `grayscale*` | **Unsupported** | upload button disabled |
+
+**Compression modes** (device-dependent, from `DEVICE_TABLE`):
+
+| Mode | Devices | Format |
+|---|---|---|
+| `none` | Most small devices (2.1", 2.9", 4.2") | Raw plane bytes concatenated |
+| `mode1` | 3.7" EPD (device ID `0x022B`) | `[4B LE total_len]` + per-column chunks: `[0x75][bytePerLine+7][bytePerLine][0x00×4][...column bytes]` |
+| `mode2` | 7.5" (`0x012B`), 10.2" (`0x008B`) | BW+Red planes concatenated, split in half, each half wrapped in 64-byte QuickLZ L1 chunks (0x75), with raw fallback (0x74): `[4B LE half_raw_len][0x75/0x74][total_len][n][...data] ...` |
+
+### Rotation
+
+A **Rotation** dropdown (0°/90°/180°/270°) lives in the Display section's dim-row alongside Width and Height. The selected rotation is applied to the `ideal` ImageData before BLE upload **and** before PNG, BMP, and zip export — `applyRotationToImageData()` wraps `rotatePixels()` for the download paths; the BLE upload path calls `rotatePixels()` directly.
+
+When a non-custom device preset is active, the UI shows a warning if the chosen rotation would produce output dimensions that don't match the preset's native dimensions (e.g. rotating 90° when the display is already portrait-native). The check in `checkRotationConflict()` compares the rotated output size against `preset.width × preset.height` and shows `#rotationWarn` if they differ.
+
+The rotation select is excluded from the `dims-readonly` CSS rule so it remains interactive even when a preset locks the width/height fields.
+
 ### Auto-orientation
 
-When an image is activated or a display preset is changed, `autoOrientDisplay()` compares the image's aspect ratio to the display's aspect ratio. If they don't match (one is portrait, the other landscape), it swaps `displayWidth` and `displayHeight` automatically and updates the dimension inputs.
+When an image is activated or a display preset is changed, `autoOrientDisplay()` compares the image's aspect ratio to the display's aspect ratio. If they don't match (one is portrait, the other landscape), it swaps `displayWidth` and `displayHeight` internally and sets the Rotation dropdown to 270°. The width/height input fields are intentionally **not** updated — showing both swapped dims and a non-zero rotation would be confusing.
 
 ### Zoom / pan
 
