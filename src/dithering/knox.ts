@@ -49,13 +49,18 @@ export const knoxDithering: DitheringAlgorithm = {
       rgbToOklab(c.measured[0], c.measured[1], c.measured[2]))
 
     // Gradient map: g = clamp((|dL/dx| + |dL/dy|) * edgeSensitivity, 0, 1)
+    // Centered differences in the interior; one-sided at image boundaries.
     const gradMap = new Float32Array(w * h)
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        const L  = srcOklab[(y * w + x) * 3]
-        const Lx = x + 1 < w ? srcOklab[(y * w + x + 1) * 3] : L
-        const Ly = y + 1 < h ? srcOklab[((y + 1) * w + x) * 3] : L
-        gradMap[y * w + x] = Math.min(1, (Math.abs(Lx - L) + Math.abs(Ly - L)) * edgeSensitivity)
+        const L   = srcOklab[(y * w + x) * 3]
+        const Lxp = x + 1 < w ? srcOklab[(y * w + x + 1) * 3] : L
+        const Lxn = x > 0     ? srcOklab[(y * w + x - 1) * 3] : L
+        const Lyp = y + 1 < h ? srcOklab[((y + 1) * w + x) * 3] : L
+        const Lyn = y > 0     ? srcOklab[((y - 1) * w + x) * 3] : L
+        const gx = (Lxp - Lxn) / (x > 0 && x + 1 < w ? 2 : 1)
+        const gy = (Lyp - Lyn) / (y > 0 && y + 1 < h ? 2 : 1)
+        gradMap[y * w + x] = Math.min(1, (Math.abs(gx) + Math.abs(gy)) * edgeSensitivity)
       }
     }
 

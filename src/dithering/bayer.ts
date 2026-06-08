@@ -33,7 +33,7 @@ function orderedDither(
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const idx = (y * w + x) * 4
-      const threshold = (matrix[y % matrixSize][x % matrixSize] / (matrixSize * matrixSize) - 0.5) * (255 / levels)
+      const threshold = ((matrix[y % matrixSize][x % matrixSize] + 0.5) / (matrixSize * matrixSize) - 0.5) * (255 / levels)
 
       const r = Math.min(255, Math.max(0, src.data[idx]     + threshold))
       const g = Math.min(255, Math.max(0, src.data[idx + 1] + threshold))
