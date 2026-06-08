@@ -78,6 +78,8 @@ src/
 │   ├── burkes.ts              # 2-row kernel (simplified Stucki), divisor 32
 │   ├── sierra.ts
 │   ├── bayer.ts               # Ordered dithering: bayer4 (4×4) and bayer8 (8×8) — registered but hidden from UI dropdown
+│   ├── blue-noise.ts          # Blue Noise: Interleaved Gradient Noise (Jimenez 2014) threshold dithering (standalone)
+│   ├── yliluoma2.ts           # Yliluoma 2 + Yliluoma 2 + Blue Noise: greedy 64-candidate list indexed by Bayer 8×8 or IGN (standalone)
 │   ├── riemersma.ts           # Hilbert-curve traversal + exponential error queue (standalone)
 │   ├── dizzy.ts               # Dizzy (2024, Liam Appelbe): Fisher-Yates random-order traversal, proportional error to orthogonal (w=1) + diagonal (configurable, default 0.1) unprocessed neighbours (standalone)
 │   └── knox.ts                # Eschbach & Knox: tone-dependent error diffusion in OKLab with fringe-field and cross-edge suppression (standalone)
@@ -133,7 +135,7 @@ The UI exposes five named presets via a "Color matching" dropdown: RGB (full), C
 **Eschbach & Knox parameters** (Eschbach & Knox only — `errorSpace`/`distSpace` ignored, always OKLab):
 - `knoxAlpha` (0–1, default 0.5): tone-dependency strength. At α=0 diffusion is uniform; at α=1 the full Knox `4t(1−t)` curve applies — midtones get full diffusion, highlights and shadows get none.
 - `knoxFringe` (0–0.15, default 0.04): OKLab L-threshold raise applied to unprocessed 4-connected neighbours after each pixel fires. Models physical ink bleed (fringe field effect); tune per device.
-- `knoxEdgeSensitivity` (0.5–8, default 4.0): scales the gradient magnitude used for cross-edge suppression. At 4.0 a ΔL of 0.25/px gives full suppression; lower values require steeper edges to suppress, higher values suppress at gentler gradients.
+- `knoxEdgeSensitivity` (0.5–8, default 4.0): scales the gradient magnitude used for cross-edge suppression. The gradient is computed with centred differences in the interior and one-sided differences at image boundaries. At 4.0 a centred gradient of 0.25 (i.e. L changes by 0.5 across 2 pixels) gives full suppression; lower values require steeper edges to suppress, higher values suppress at gentler gradients.
 
 **Riemersma queue size** (`riemersmaQueueSize: number`, 4–64, default 16): length of the exponential error-history queue traversed along the Hilbert curve. Longer queues spread error over more pixels (smoother gradients, less grain); shorter queues are more local.
 
