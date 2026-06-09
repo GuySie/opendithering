@@ -78,38 +78,26 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
 
   let { saturation, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset, bOffset } = initial
 
-  // Establish baseline loss with current settings before making any changes.
+  // Establish baseline with current settings before making any changes.
   let prevStats = imageStats(
     runPipeline({ ...input, settings: { ...settings, saturation, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset, bOffset } }).measured,
     isWhite,
   )
-  let prevLoss = loss(refStats, prevStats)
+  let prevLossL = lossL(refStats, prevStats)
+  let prevLossC = lossC(refStats, prevStats)
   let best = { saturation, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset, bOffset }
 
-  const lossHistory: number[] = [prevLoss]
+  const lossHistory: number[] = [loss(refStats, prevStats)]
   const initialStats = { meanL: prevStats.meanL, meanC: prevStats.meanC, stddevL: prevStats.stddevL, meanA: prevStats.meanA, meanBv: prevStats.meanBv }
   let converged = true
 
   for (let i = 0; i < iterations; i++) {
-    // Single-pass OKLab-native adjustments.
-    // Parameters are orthogonal in OKLab: aOffset/bOffset don't affect L;
-    // saturation doesn't affect L; exposure only affects L.
+    // Two sequential sub-passes per iteration: L then C.
+    // Each pass is accepted/rejected against its own partial loss so a
+    // near-converged C pass cannot block an L pass that still has headroom.
+    // C pass runs after L so it corrects any chroma drift L introduced.
 
-    // Color balance: direct additive correction from meanA/meanBv mismatch.
-    const nextAOffset = clamp(aOffset + (refStats.meanA  - prevStats.meanA)  * 0.3, -0.15, 0.15)
-    const nextBOffset = clamp(bOffset + (refStats.meanBv - prevStats.meanBv) * 0.3, -0.15, 0.15)
-
-    // Saturation: 50% damping + ±15% per-run cap.
-    let nextSat = saturation
-    if (prevStats.meanC > 0.001) {
-      nextSat = clamp(
-        clamp(
-          saturation * (1 + (refStats.meanC / prevStats.meanC - 1) * 0.5),
-          initial.saturation * 0.85, initial.saturation * 1.15,
-        ),
-        0.0, 2.0,
-      )
-    }
+    // ── L sub-pass: exposure, contrast/strength, shadowBoost, highlightCompress ──
 
     // Exposure: 30% damping + ±15% hard cap.
     let nextExp = exposure
@@ -157,29 +145,57 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
       nextHC = clamp(highlightCompress * clamp(ratio, 0.75, 1.35), 0.5, 5.0)
     }
 
-    const result = runPipeline({
+    const lResult = runPipeline({
       ...input,
-      settings: { ...settings, saturation: nextSat, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC, aOffset: nextAOffset, bOffset: nextBOffset },
+      settings: { ...settings, saturation, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC, aOffset, bOffset },
     })
-    const stats = imageStats(result.measured, isWhite)
-    const newLoss = loss(refStats, stats)
+    const statsAfterL = imageStats(lResult.measured, isWhite)
+    const newLossL = lossL(refStats, statsAfterL)
+    const lImproved = newLossL < prevLossL
+    if (lImproved) {
+      exposure = nextExp; contrast = nextContrast; strength = nextStrength
+      shadowBoost = nextShadowBoost; highlightCompress = nextHC
+      prevLossL = newLossL
+      prevStats = statsAfterL
+      best = { saturation, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset, bOffset }
+    }
 
-    // If loss didn't improve, we've overshot or plateaued — revert and stop.
-    if (newLoss >= prevLoss) break
+    // ── C sub-pass: saturation, aOffset, bOffset ──
+    // Uses prevStats from L pass (if committed) so chroma corrects against post-L output.
 
-    best = { saturation: nextSat, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC, aOffset: nextAOffset, bOffset: nextBOffset }
-    prevLoss = newLoss
-    prevStats = stats
-    saturation = nextSat
-    exposure = nextExp
-    contrast = nextContrast
-    strength = nextStrength
-    shadowBoost = nextShadowBoost
-    highlightCompress = nextHC
-    aOffset = nextAOffset
-    bOffset = nextBOffset
-    lossHistory.push(newLoss)
+    // Saturation: 50% damping + ±15% per-run cap.
+    let nextSat = saturation
+    if (prevStats.meanC > 0.001) {
+      nextSat = clamp(
+        clamp(
+          saturation * (1 + (refStats.meanC / prevStats.meanC - 1) * 0.5),
+          initial.saturation * 0.85, initial.saturation * 1.15,
+        ),
+        0.0, 2.0,
+      )
+    }
 
+    // Color balance: direct additive correction from meanA/meanBv mismatch.
+    const nextAOffset = clamp(aOffset + (refStats.meanA  - prevStats.meanA)  * 0.3, -0.15, 0.15)
+    const nextBOffset = clamp(bOffset + (refStats.meanBv - prevStats.meanBv) * 0.3, -0.15, 0.15)
+
+    const cResult = runPipeline({
+      ...input,
+      settings: { ...settings, saturation: nextSat, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset: nextAOffset, bOffset: nextBOffset },
+    })
+    const statsAfterC = imageStats(cResult.measured, isWhite)
+    const newLossC = lossC(refStats, statsAfterC)
+    const cImproved = newLossC < prevLossC
+    if (cImproved) {
+      saturation = nextSat; aOffset = nextAOffset; bOffset = nextBOffset
+      prevLossC = newLossC
+      prevStats = statsAfterC
+      best = { saturation, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset, bOffset }
+    }
+
+    if (!lImproved && !cImproved) break
+
+    lossHistory.push(loss(refStats, prevStats))
     if (i === iterations - 1) converged = false
   }
 
@@ -192,7 +208,7 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
       initialStats,
       finalStats: { meanL: prevStats.meanL, meanC: prevStats.meanC, stddevL: prevStats.stddevL, meanA: prevStats.meanA, meanBv: prevStats.meanBv },
       initialLoss: lossHistory[0],
-      finalLoss: prevLoss,
+      finalLoss: lossHistory[lossHistory.length - 1],
       lossHistory,
       initialSaturation: initial.saturation,
       finalSaturation: best.saturation,
@@ -223,6 +239,14 @@ function loss(ref: ImageStats, cur: ImageStats): number {
     Math.abs(ref.meanA   - cur.meanA)   +
     Math.abs(ref.meanBv  - cur.meanBv)
   )
+}
+
+function lossL(ref: ImageStats, cur: ImageStats): number {
+  return Math.abs(ref.meanL - cur.meanL) + Math.abs(ref.stddevL - cur.stddevL)
+}
+
+function lossC(ref: ImageStats, cur: ImageStats): number {
+  return Math.abs(ref.meanC - cur.meanC) + Math.abs(ref.meanA - cur.meanA) + Math.abs(ref.meanBv - cur.meanBv)
 }
 
 interface ImageStats {
