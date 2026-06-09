@@ -116,16 +116,28 @@ const debugAutoTune    = el<HTMLDivElement>('debugAutoTune')
 const dbgSummary       = el<HTMLSpanElement>('dbgSummary')
 const dbgRefL          = el<HTMLTableCellElement>('dbgRefL')
 const dbgRefC          = el<HTMLTableCellElement>('dbgRefC')
+const dbgRefStdL       = el<HTMLTableCellElement>('dbgRefStdL')
 const dbgInitL         = el<HTMLTableCellElement>('dbgInitL')
 const dbgInitC         = el<HTMLTableCellElement>('dbgInitC')
+const dbgInitStdL      = el<HTMLTableCellElement>('dbgInitStdL')
 const dbgFinalL        = el<HTMLTableCellElement>('dbgFinalL')
 const dbgFinalC        = el<HTMLTableCellElement>('dbgFinalC')
+const dbgFinalStdL     = el<HTMLTableCellElement>('dbgFinalStdL')
 const dbgInitLoss      = el<HTMLTableCellElement>('dbgInitLoss')
 const dbgFinalLoss     = el<HTMLTableCellElement>('dbgFinalLoss')
 const dbgSatBefore     = el<HTMLTableCellElement>('dbgSatBefore')
 const dbgSatAfter      = el<HTMLTableCellElement>('dbgSatAfter')
 const dbgExpBefore     = el<HTMLTableCellElement>('dbgExpBefore')
 const dbgExpAfter      = el<HTMLTableCellElement>('dbgExpAfter')
+const dbgContrastRow   = el<HTMLTableRowElement>('dbgContrastRow')
+const dbgContrastBefore = el<HTMLTableCellElement>('dbgContrastBefore')
+const dbgContrastAfter  = el<HTMLTableCellElement>('dbgContrastAfter')
+const dbgStrengthRow   = el<HTMLTableRowElement>('dbgStrengthRow')
+const dbgStrengthBefore = el<HTMLTableCellElement>('dbgStrengthBefore')
+const dbgStrengthAfter  = el<HTMLTableCellElement>('dbgStrengthAfter')
+const dbgShadowBoostRow   = el<HTMLTableRowElement>('dbgShadowBoostRow')
+const dbgShadowBoostBefore = el<HTMLTableCellElement>('dbgShadowBoostBefore')
+const dbgShadowBoostAfter  = el<HTMLTableCellElement>('dbgShadowBoostAfter')
 const dbgHCRow         = el<HTMLTableRowElement>('dbgHCRow')
 const dbgHCBefore      = el<HTMLTableCellElement>('dbgHCBefore')
 const dbgHCAfter       = el<HTMLTableCellElement>('dbgHCAfter')
@@ -682,7 +694,7 @@ function sliderSetup(
   valId: string,
   scale: number,
   key: keyof ProcessingSettings,
-  decimals = 1,
+  decimals = 2,
 ) {
   const slider = el<HTMLInputElement>(sliderId)
   const valEl = el<HTMLSpanElement>(valId)
@@ -818,25 +830,23 @@ btnAutoTune.addEventListener('click', async () => {
 
   const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
   const srcBitmap = await createImageBitmap(img.original)
-  const result = autoTune(
-    {
-      source: srcBitmap,
-      srcWidth: img.original.width,
-      srcHeight: img.original.height,
-      dstWidth: displayWidth,
-      dstHeight: displayHeight,
-      resizeMode,
-      palette,
-      settings,
-    },
-    settings.saturation,
-    settings.exposure,
-    settings.highlightCompress,
-  )
+  const result = autoTune({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
   srcBitmap.close()
 
   settings.saturation = result.saturation
   settings.exposure = result.exposure
+  settings.contrast = result.contrast
+  settings.strength = result.strength
+  settings.shadowBoost = result.shadowBoost
   settings.highlightCompress = result.highlightCompress
   markCustomPreset()
   syncSlidersFromSettings()
@@ -955,7 +965,7 @@ function syncSlidersFromSettings() {
 
 function setSlider(sliderId: string, valId: string, sliderVal: number, displayVal: number) {
   el<HTMLInputElement>(sliderId).value = String(Math.round(sliderVal))
-  el<HTMLSpanElement>(valId).textContent = displayVal.toFixed(1)
+  el<HTMLSpanElement>(valId).textContent = displayVal.toFixed(2)
 }
 
 // ── Invalidation ──────────────────────────────────────────────────────────
@@ -976,12 +986,15 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
     : `${iters} iteration${iters !== 1 ? 's' : ''} · ${d.converged ? 'converged' : 'hit limit'}`
   dbgSummary.textContent = statusLabel
 
-  dbgRefL.textContent   = f3(d.refStats.meanL)
-  dbgRefC.textContent   = f3(d.refStats.meanC)
-  dbgInitL.textContent  = f3(d.initialStats.meanL)
-  dbgInitC.textContent  = f3(d.initialStats.meanC)
-  dbgFinalL.textContent = f3(d.finalStats.meanL)
-  dbgFinalC.textContent = f3(d.finalStats.meanC)
+  dbgRefL.textContent    = f3(d.refStats.meanL)
+  dbgRefC.textContent    = f3(d.refStats.meanC)
+  dbgRefStdL.textContent = f3(d.refStats.stddevL)
+  dbgInitL.textContent   = f3(d.initialStats.meanL)
+  dbgInitC.textContent   = f3(d.initialStats.meanC)
+  dbgInitStdL.textContent = f3(d.initialStats.stddevL)
+  dbgFinalL.textContent  = f3(d.finalStats.meanL)
+  dbgFinalC.textContent  = f3(d.finalStats.meanC)
+  dbgFinalStdL.textContent = f3(d.finalStats.stddevL)
   dbgInitLoss.textContent  = f3(d.initialLoss)
   dbgFinalLoss.textContent = f3(d.finalLoss)
 
@@ -989,6 +1002,18 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
   dbgSatAfter.textContent  = f2(d.finalSaturation)
   dbgExpBefore.textContent = f2(d.initialExposure)
   dbgExpAfter.textContent  = f2(d.finalExposure)
+
+  dbgContrastRow.hidden = d.toneMode !== 'contrast'
+  dbgContrastBefore.textContent = f2(d.initialContrast)
+  dbgContrastAfter.textContent  = f2(d.finalContrast)
+
+  dbgStrengthRow.hidden = d.toneMode !== 'scurve'
+  dbgStrengthBefore.textContent = f2(d.initialStrength)
+  dbgStrengthAfter.textContent  = f2(d.finalStrength)
+
+  dbgShadowBoostRow.hidden = d.toneMode !== 'scurve'
+  dbgShadowBoostBefore.textContent = f2(d.initialShadowBoost)
+  dbgShadowBoostAfter.textContent  = f2(d.finalShadowBoost)
 
   dbgHCRow.hidden = d.toneMode !== 'scurve'
   dbgHCBefore.textContent = f2(d.initialHighlightCompress)

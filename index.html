@@ -110,8 +110,8 @@
         <div class="tone-mode-row">
           <label for="toneMode">Tone mode</label>
           <select id="toneMode">
-            <option value="scurve">S-curve</option>
             <option value="contrast">Contrast</option>
+            <option value="scurve">S-curve</option>
           </select>
         </div>
 
@@ -291,6 +291,7 @@
             <tbody>
               <tr><td>Mean L</td><td id="dbgRefL"></td><td id="dbgInitL"></td><td id="dbgFinalL"></td></tr>
               <tr><td>Mean C</td><td id="dbgRefC"></td><td id="dbgInitC"></td><td id="dbgFinalC"></td></tr>
+              <tr><td>Std dev L</td><td id="dbgRefStdL"></td><td id="dbgInitStdL"></td><td id="dbgFinalStdL"></td></tr>
               <tr><td>Loss</td><td class="debug-muted">—</td><td id="dbgInitLoss"></td><td id="dbgFinalLoss"></td></tr>
             </tbody>
           </table>
@@ -299,6 +300,9 @@
             <tbody>
               <tr><td>Saturation</td><td id="dbgSatBefore"></td><td id="dbgSatAfter"></td></tr>
               <tr><td>Exposure</td><td id="dbgExpBefore"></td><td id="dbgExpAfter"></td></tr>
+              <tr id="dbgContrastRow"><td>Contrast</td><td id="dbgContrastBefore"></td><td id="dbgContrastAfter"></td></tr>
+              <tr id="dbgStrengthRow"><td>Strength</td><td id="dbgStrengthBefore"></td><td id="dbgStrengthAfter"></td></tr>
+              <tr id="dbgShadowBoostRow"><td>Shadow boost</td><td id="dbgShadowBoostBefore"></td><td id="dbgShadowBoostAfter"></td></tr>
               <tr id="dbgHCRow"><td>Highl. compress</td><td id="dbgHCBefore"></td><td id="dbgHCAfter"></td></tr>
             </tbody>
           </table>

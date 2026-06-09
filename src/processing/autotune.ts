@@ -6,9 +6,9 @@ import { rgbToOklab } from './colorspace'
 export interface AutoTuneDebug {
   iterationsRun: number
   converged: boolean
-  refStats: { meanL: number; meanC: number; highlightFraction: number }
-  initialStats: { meanL: number; meanC: number }
-  finalStats: { meanL: number; meanC: number }
+  refStats: { meanL: number; meanC: number; stddevL: number; highlightFraction: number }
+  initialStats: { meanL: number; meanC: number; stddevL: number }
+  finalStats: { meanL: number; meanC: number; stddevL: number }
   initialLoss: number
   finalLoss: number
   /** Loss after each committed (improving) iteration, with baseline at index 0. */
@@ -17,6 +17,12 @@ export interface AutoTuneDebug {
   finalSaturation: number
   initialExposure: number
   finalExposure: number
+  initialContrast: number
+  finalContrast: number
+  initialStrength: number
+  finalStrength: number
+  initialShadowBoost: number
+  finalShadowBoost: number
   initialHighlightCompress: number
   finalHighlightCompress: number
   toneMode: string
@@ -25,21 +31,17 @@ export interface AutoTuneDebug {
 export interface AutoTuneResult {
   saturation: number
   exposure: number
+  contrast: number
+  strength: number
+  shadowBoost: number
   highlightCompress: number
   debug: AutoTuneDebug
 }
 
-export function autoTune(
-  input: PipelineInput,
-  initialSaturation: number,
-  initialExposure: number,
-  initialHighlightCompress: number,
-  iterations = 8,
-): AutoTuneResult {
+export function autoTune(input: PipelineInput, iterations = 8): AutoTuneResult {
   const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, palette, settings } = input
 
   // Never switch tone mode — respect whatever mode the user has chosen.
-  // If they want s-curve highlight protection they switch to it first, then auto-tune.
   const toneMode = settings.toneMode
 
   // Palette-based highlight threshold and white key (for s-curve path only)
@@ -56,32 +58,40 @@ export function autoTune(
 
   const isWhite = (r: number, g: number, b: number) => ((r << 16) | (g << 8) | b) === whiteKey
 
-  let saturation = initialSaturation
-  let exposure = initialExposure
-  let highlightCompress = initialHighlightCompress
+  // Read all initial values from settings.
+  const initial = {
+    saturation: settings.saturation,
+    exposure: settings.exposure,
+    contrast: settings.contrast,
+    strength: settings.strength,
+    shadowBoost: settings.shadowBoost,
+    highlightCompress: settings.highlightCompress,
+  }
+
+  let { saturation, exposure, contrast, strength, shadowBoost, highlightCompress } = initial
 
   // Establish baseline loss with current settings before making any changes.
   let prevStats = imageStats(
-    runPipeline({ ...input, settings: { ...settings, saturation, exposure, highlightCompress } }).measured,
+    runPipeline({ ...input, settings: { ...settings, saturation, exposure, contrast, strength, shadowBoost, highlightCompress } }).measured,
     isWhite,
   )
   let prevLoss = loss(refStats, prevStats)
-  let best = { saturation, exposure, highlightCompress }
+  let best = { saturation, exposure, contrast, strength, shadowBoost, highlightCompress }
 
   const lossHistory: number[] = [prevLoss]
-  const initialStats = { meanL: prevStats.meanL, meanC: prevStats.meanC }
+  const initialStats = { meanL: prevStats.meanL, meanC: prevStats.meanC, stddevL: prevStats.stddevL }
   let converged = true
 
   for (let i = 0; i < iterations; i++) {
     // Compute candidate adjustments from the previous iteration's output stats.
 
-    // Saturation: 50% damping + ±15% per-run cap (mirrors the exposure cap).
+    // Saturation: 50% damping + ±15% per-run cap.
     let nextSat = saturation
     if (prevStats.meanC > 0.001) {
       nextSat = clamp(
         clamp(
           saturation * (1 + (refStats.meanC / prevStats.meanC - 1) * 0.5),
-          initialSaturation * 0.85, initialSaturation * 1.15,
+          initial.saturation * 0.85, initial.saturation * 1.15,
         ),
         0.0, 2.0,
       )
@@ -92,12 +102,46 @@ export function autoTune(
     if (prevStats.meanL > 0.001) {
       const adj = 1 + (refStats.meanL / prevStats.meanL - 1) * 0.3
       nextExp = clamp(
-        clamp(exposure * adj, initialExposure * 0.85, initialExposure * 1.15),
+        clamp(exposure * adj, initial.exposure * 0.85, initial.exposure * 1.15),
         0.5, 2.0,
       )
     }
 
-    // highlightCompress: only in s-curve mode.
+    // Contrast (contrast mode only): driven by stddevL ratio, 30% damping.
+    let nextContrast = contrast
+    if (toneMode === 'contrast' && prevStats.stddevL > 0.001) {
+      const adj = 1 + (refStats.stddevL / prevStats.stddevL - 1) * 0.3
+      nextContrast = clamp(
+        clamp(contrast * adj, initial.contrast * 0.85, initial.contrast * 1.15),
+        0.5, 2.0,
+      )
+    }
+
+    // Strength (s-curve mode only): driven by stddevL ratio, 30% damping.
+    // Uses additive delta when strength is zero to avoid 0 * adj = 0 deadlock.
+    let nextStrength = strength
+    if (toneMode === 'scurve' && prevStats.stddevL > 0.001) {
+      const lo = initial.strength > 0.001 ? initial.strength * 0.85 : 0
+      const hi = initial.strength > 0.001 ? initial.strength * 1.15 : 0.15
+      const candidate = strength > 0.001
+        ? strength * (1 + (refStats.stddevL / prevStats.stddevL - 1) * 0.3)
+        : (refStats.stddevL - prevStats.stddevL) * 0.3
+      nextStrength = clamp(clamp(candidate, lo, hi), 0.0, 1.0)
+    }
+
+    // ShadowBoost (s-curve mode only): driven by shadowMeanL ratio, 30% damping.
+    // Uses additive delta when shadowBoost is zero to avoid 0 * adj = 0 deadlock.
+    let nextShadowBoost = shadowBoost
+    if (toneMode === 'scurve' && prevStats.shadowMeanL > 0.001) {
+      const lo = initial.shadowBoost > 0.001 ? initial.shadowBoost * 0.85 : 0
+      const hi = initial.shadowBoost > 0.001 ? initial.shadowBoost * 1.15 : 0.15
+      const candidate = shadowBoost > 0.001
+        ? shadowBoost * (1 + (refStats.shadowMeanL / prevStats.shadowMeanL - 1) * 0.3)
+        : (refStats.shadowMeanL - prevStats.shadowMeanL) * 0.3
+      nextShadowBoost = clamp(clamp(candidate, lo, hi), 0.0, 1.0)
+    }
+
+    // highlightCompress (s-curve mode only).
     let nextHC = highlightCompress
     if (toneMode === 'scurve') {
       const ratio = prevStats.highlightFraction / refHighlight
@@ -106,7 +150,7 @@ export function autoTune(
 
     const result = runPipeline({
       ...input,
-      settings: { ...settings, saturation: nextSat, exposure: nextExp, highlightCompress: nextHC },
+      settings: { ...settings, saturation: nextSat, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC },
     })
     const stats = imageStats(result.measured, isWhite)
     const newLoss = loss(refStats, stats)
@@ -114,11 +158,14 @@ export function autoTune(
     // If loss didn't improve, we've overshot or plateaued — revert and stop.
     if (newLoss >= prevLoss) break
 
-    best = { saturation: nextSat, exposure: nextExp, highlightCompress: nextHC }
+    best = { saturation: nextSat, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC }
     prevLoss = newLoss
     prevStats = stats
     saturation = nextSat
     exposure = nextExp
+    contrast = nextContrast
+    strength = nextStrength
+    shadowBoost = nextShadowBoost
     highlightCompress = nextHC
     lossHistory.push(newLoss)
 
@@ -132,15 +179,21 @@ export function autoTune(
       converged,
       refStats,
       initialStats,
-      finalStats: { meanL: prevStats.meanL, meanC: prevStats.meanC },
+      finalStats: { meanL: prevStats.meanL, meanC: prevStats.meanC, stddevL: prevStats.stddevL },
       initialLoss: lossHistory[0],
       finalLoss: prevLoss,
       lossHistory,
-      initialSaturation,
+      initialSaturation: initial.saturation,
       finalSaturation: best.saturation,
-      initialExposure,
+      initialExposure: initial.exposure,
       finalExposure: best.exposure,
-      initialHighlightCompress,
+      initialContrast: initial.contrast,
+      finalContrast: best.contrast,
+      initialStrength: initial.strength,
+      finalStrength: best.strength,
+      initialShadowBoost: initial.shadowBoost,
+      finalShadowBoost: best.shadowBoost,
+      initialHighlightCompress: initial.highlightCompress,
       finalHighlightCompress: best.highlightCompress,
       toneMode,
     },
@@ -148,10 +201,10 @@ export function autoTune(
 }
 
 function loss(ref: ImageStats, cur: ImageStats): number {
-  return Math.abs(ref.meanL - cur.meanL) + Math.abs(ref.meanC - cur.meanC)
+  return Math.abs(ref.meanL - cur.meanL) + Math.abs(ref.meanC - cur.meanC) + Math.abs(ref.stddevL - cur.stddevL)
 }
 
-interface ImageStats { meanL: number; meanC: number; highlightFraction: number }
+interface ImageStats { meanL: number; meanC: number; highlightFraction: number; stddevL: number; shadowMeanL: number }
 
 function imageStats(
   img: ImageData,
@@ -159,17 +212,28 @@ function imageStats(
 ): ImageStats {
   const data = img.data
   const n = data.length / 4
-  let sumL = 0, sumC = 0, highlightCount = 0
+  const SHADOW_THRESH = 0.4
+  let sumL = 0, sumL2 = 0, sumC = 0, highlightCount = 0
+  let sumShadowL = 0, shadowCount = 0
 
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i], g = data[i + 1], b = data[i + 2]
     const [L, a, bv] = rgbToOklab(r, g, b)
     sumL += L
+    sumL2 += L * L
     sumC += Math.sqrt(a * a + bv * bv)
     if (isHighlight(r, g, b, L)) highlightCount++
+    if (L < SHADOW_THRESH) { sumShadowL += L; shadowCount++ }
   }
 
-  return { meanL: sumL / n, meanC: sumC / n, highlightFraction: highlightCount / n }
+  const meanL = sumL / n
+  return {
+    meanL,
+    meanC: sumC / n,
+    highlightFraction: highlightCount / n,
+    stddevL: Math.sqrt(Math.max(0, sumL2 / n - meanL * meanL)),
+    shadowMeanL: shadowCount > 0 ? sumShadowL / shadowCount : 0,
+  }
 }
 
 function clamp(v: number, lo: number, hi: number): number {

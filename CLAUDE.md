@@ -88,7 +88,7 @@ src/
 │   ├── tone.ts                # compressDynamicRange, applyToneMapping, applySaturation, applyExposure
 │   ├── resize.ts              # resizeImage (cover/contain/stretch/none)
 │   ├── pipeline.ts            # runPipeline() — orchestrates all steps, returns {measured, ideal}
-│   └── autotune.ts            # autoTune() — convergence-checked optimizer for saturation/exposure/highlightCompress
+│   └── autotune.ts            # autoTune() — convergence-checked optimizer for tone params (saturation, exposure, contrast/strength/shadowBoost/highlightCompress)
 ├── ble/
 │   ├── opendisplay.ts         # OpenDisplay BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
 │   └── gicisky.ts             # Gicisky BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
@@ -147,19 +147,26 @@ The `ideal` values are the nominal RGB codes the firmware expects (e.g. pure `[2
 
 ### Auto-tune
 
-Implemented in `src/processing/autotune.ts`. `autoTune()` adjusts `saturation`, `exposure`, and (in s-curve mode) `highlightCompress` to make the dithered output match the source image as closely as possible, measured by L1 distance in Oklab L+C (`|ΔmeanL| + |ΔmeanC|`).
+Implemented in `src/processing/autotune.ts`. `autoTune()` adjusts tone and colour parameters to make the dithered output match the source image as closely as possible, measured by L1 distance in Oklab L+C+stddev(L): `|ΔmeanL| + |ΔmeanC| + |ΔstddevL|`.
+
+**Parameters tuned per mode:**
+- **Both modes:** `saturation`, `exposure`
+- **Contrast mode:** `contrast` (driven by stddevL ratio)
+- **S-curve mode:** `strength` (driven by stddevL ratio), `shadowBoost` (driven by shadow-zone meanL ratio), `highlightCompress` (driven by highlight-pixel fraction)
 
 **Algorithm:**
-1. Resize the source to the display dimensions and compute reference stats (`refStats`: meanL, meanC, highlightFraction).
+1. Resize the source to the display dimensions and compute reference stats (`refStats`: meanL, meanC, stddevL, highlightFraction, shadowMeanL).
 2. Run the pipeline once with the current settings to establish a baseline loss.
-3. Each iteration: compute ratio-based candidate adjustments (50% damping on saturation, 30% on exposure, both with ±15% per-run caps relative to the initial values), run the pipeline with the candidate settings, compute the new loss. If `newLoss >= prevLoss`, revert to the last best and stop. Otherwise commit and continue.
+3. Each iteration: compute ratio-based candidate adjustments (50% damping on saturation, 30% on all others, ±15% per-run caps relative to the initial values), run the pipeline with the candidate settings, compute the new loss. If `newLoss >= prevLoss`, revert to the last best and stop. Otherwise commit and continue.
 4. Maximum 8 iterations; early termination via the convergence check is the normal stopping condition.
+
+**Zero-initial guard:** for `shadowBoost` and `strength`, when the initial value is ≤ 0.001, the per-run cap falls back to an absolute `[0, 0.15]` range instead of a relative one, so the optimizer can bootstrap from zero.
 
 **Idempotency:** pressing Auto-tune a second time runs the baseline pass and tries one candidate — if the candidate doesn't improve, it breaks immediately and returns unchanged settings. This means repeated clicks are a no-op once the algorithm has converged.
 
 **Saturation and the discrete-palette floor:** the dithered output's mean chroma will always be ≤ the source's, because palette quantization clips the range. The ±15% per-run saturation cap prevents unbounded drift; the convergence check catches the point where further increases no longer improve the dithered output.
 
-**Return value:** `AutoTuneResult` — `{ saturation, exposure, highlightCompress, debug: AutoTuneDebug }`. The `AutoTuneDebug` struct carries `iterationsRun`, `converged`, `refStats`, `initialStats`, `finalStats`, `initialLoss`, `finalLoss`, `lossHistory` (baseline + loss after each committed iteration), and the before/after values for all three parameters. The debug panel in the UI (`#debugAutoTune`) renders this after each run.
+**Return value:** `AutoTuneResult` — `{ saturation, exposure, contrast, strength, shadowBoost, highlightCompress, debug: AutoTuneDebug }`. The `AutoTuneDebug` struct carries `iterationsRun`, `converged`, `refStats`, `initialStats`, `finalStats` (each with meanL/meanC/stddevL), `initialLoss`, `finalLoss`, `lossHistory` (baseline + loss after each committed iteration), and the before/after values for all six parameters. The debug panel in the UI (`#debugAutoTune`) renders this after each run; tone-mode-specific rows are hidden when not applicable.
 
 ### OpenDisplay BLE upload
 
