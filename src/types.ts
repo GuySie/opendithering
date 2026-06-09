@@ -82,7 +82,7 @@ export const BALANCED_PRESET: ProcessingSettings = {
   shadowBoost: 0.0,
   highlightCompress: 1.5,
   midpoint: 0.5,
-  errorSpace: 'rgb',
+  errorSpace: 'oklab',
   distSpace: 'oklab',
   ditherStrength: 1.0,
   localVarianceDetection: false,

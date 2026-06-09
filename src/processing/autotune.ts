@@ -1,7 +1,7 @@
 import type { PipelineInput } from './pipeline'
 import { runPipeline } from './pipeline'
 import { resizeImage } from './resize'
-import { rgbToOklab } from './colorspace'
+import { rgbToOklab, oklabToRgb } from './colorspace'
 
 export interface AutoTuneDebug {
   iterationsRun: number
@@ -62,6 +62,19 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
   const whiteKey = (wr << 16) | (wg << 8) | wb
 
   const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode)
+
+  // Apply DRC to the reference so refStats reflects the same fixed transform the pipeline applies.
+  if (settings.compressDynamicRange) {
+    const blackL = sorted[sorted.length - 1].L
+    const range  = sorted[0].L - blackL
+    const d = reference.data
+    for (let i = 0; i < d.length; i += 4) {
+      const [L, a, b] = rgbToOklab(d[i], d[i + 1], d[i + 2])
+      const [r, g, bv] = oklabToRgb(blackL + L * range, a, b)
+      d[i] = r; d[i + 1] = g; d[i + 2] = bv
+    }
+  }
+
   const refStats = imageStats(reference, (_, __, ___, L) => L >= thresholdL)
   const refHighlight = Math.max(refStats.highlightFraction, 0.02)
 
@@ -182,7 +195,7 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
     const newLoss = loss(refStats, stats)
 
     // If loss didn't improve, we've overshot or plateaued — revert and stop.
-    if (newLoss >= prevLoss) break
+    if (newLoss >= prevLoss - 1e-4) break
 
     best = { saturation: nextSat, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC, redGain: nextRedGain, greenGain: nextGreenGain, blueGain: nextBlueGain }
     prevLoss = newLoss

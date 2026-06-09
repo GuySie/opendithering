@@ -91,6 +91,21 @@ export function deltaE_oklab(
   return dL * dL + da * da + db * db
 }
 
+// --- OKLab -> sRGB ---
+
+export function oklabToRgb(L: number, a: number, b: number): [number, number, number] {
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b
+  const l = l_ * l_ * l_
+  const m = m_ * m_ * m_
+  const s = s_ * s_ * s_
+  const lr =  4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
+  const lg = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
+  const lb = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+  return [linearToSrgb(lr), linearToSrgb(lg), linearToSrgb(lb)]
+}
+
 // --- Rec. 709 luminance (linear) ---
 
 export function rec709Luminance(r: number, g: number, b: number): number {
