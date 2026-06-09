@@ -47,7 +47,7 @@ export interface AutoTuneResult {
   debug: AutoTuneDebug
 }
 
-export function autoTune(input: PipelineInput, iterations = 8): AutoTuneResult {
+export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult {
   const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, palette, settings } = input
 
   // Never switch tone mode — respect whatever mode the user has chosen.
@@ -95,14 +95,32 @@ export function autoTune(input: PipelineInput, iterations = 8): AutoTuneResult {
   let converged = true
 
   for (let i = 0; i < iterations; i++) {
-    // Compute candidate adjustments from the previous iteration's output stats.
+    // Pass A: compute gain candidates from prevStats and run an interim pipeline
+    // (tone params unchanged) so saturation/exposure see the post-gain image.
+    // Gains are normalized to geometric mean = 1 so they only affect color balance,
+    // not overall brightness — exposure handles brightness separately.
+    const rawRed   = adjustGain(redGain,   refStats.meanR,    prevStats.meanR,    initial.redGain)
+    const rawGreen = adjustGain(greenGain, refStats.meanG,    prevStats.meanG,    initial.greenGain)
+    const rawBlue  = adjustGain(blueGain,  refStats.meanBlue, prevStats.meanBlue, initial.blueGain)
+    const geoMean  = Math.cbrt(rawRed * rawGreen * rawBlue)
+    const nextRedGain   = rawRed   / geoMean
+    const nextGreenGain = rawGreen / geoMean
+    const nextBlueGain  = rawBlue  / geoMean
+
+    const interimStats = imageStats(
+      runPipeline({ ...input, settings: { ...settings, saturation, exposure, contrast, strength, shadowBoost, highlightCompress, redGain: nextRedGain, greenGain: nextGreenGain, blueGain: nextBlueGain } }).measured,
+      isWhite,
+    )
+
+    // Pass B: compute tone/saturation candidates from interimStats so they
+    // compensate for any chroma or luminance shift the gains introduced.
 
     // Saturation: 50% damping + ±15% per-run cap.
     let nextSat = saturation
-    if (prevStats.meanC > 0.001) {
+    if (interimStats.meanC > 0.001) {
       nextSat = clamp(
         clamp(
-          saturation * (1 + (refStats.meanC / prevStats.meanC - 1) * 0.5),
+          saturation * (1 + (refStats.meanC / interimStats.meanC - 1) * 0.5),
           initial.saturation * 0.85, initial.saturation * 1.15,
         ),
         0.0, 2.0,
@@ -111,59 +129,50 @@ export function autoTune(input: PipelineInput, iterations = 8): AutoTuneResult {
 
     // Exposure: 30% damping + ±15% hard cap.
     let nextExp = exposure
-    if (prevStats.meanL > 0.001) {
-      const adj = 1 + (refStats.meanL / prevStats.meanL - 1) * 0.3
+    if (interimStats.meanL > 0.001) {
+      const adj = 1 + (refStats.meanL / interimStats.meanL - 1) * 0.3
       nextExp = clamp(
         clamp(exposure * adj, initial.exposure * 0.85, initial.exposure * 1.15),
         0.5, 2.0,
       )
     }
 
-    // Contrast (contrast mode only): driven by stddevL ratio, 30% damping.
+    // Contrast (contrast mode only): no relative cap — just hard absolute bounds.
+    // stddevL can be far enough from target that a relative cap prevents convergence.
     let nextContrast = contrast
-    if (toneMode === 'contrast' && prevStats.stddevL > 0.001) {
-      const adj = 1 + (refStats.stddevL / prevStats.stddevL - 1) * 0.3
-      nextContrast = clamp(
-        clamp(contrast * adj, initial.contrast * 0.85, initial.contrast * 1.15),
-        0.5, 2.0,
-      )
+    if (toneMode === 'contrast' && interimStats.stddevL > 0.001) {
+      const adj = 1 + (refStats.stddevL / interimStats.stddevL - 1) * 0.3
+      nextContrast = clamp(contrast * adj, 0.5, 2.0)
     }
 
-    // Strength (s-curve mode only): driven by stddevL ratio, 30% damping.
-    // Uses additive delta when strength is zero to avoid 0 * adj = 0 deadlock.
+    // Strength (s-curve mode only): ±20% cap, additive-delta fallback from zero.
     let nextStrength = strength
-    if (toneMode === 'scurve' && prevStats.stddevL > 0.001) {
-      const lo = initial.strength > 0.001 ? initial.strength * 0.85 : 0
-      const hi = initial.strength > 0.001 ? initial.strength * 1.15 : 0.15
+    if (toneMode === 'scurve' && interimStats.stddevL > 0.001) {
+      const lo = initial.strength > 0.001 ? initial.strength * 0.80 : 0
+      const hi = initial.strength > 0.001 ? initial.strength * 1.20 : 0.15
       const candidate = strength > 0.001
-        ? strength * (1 + (refStats.stddevL / prevStats.stddevL - 1) * 0.3)
-        : (refStats.stddevL - prevStats.stddevL) * 0.3
+        ? strength * (1 + (refStats.stddevL / interimStats.stddevL - 1) * 0.3)
+        : (refStats.stddevL - interimStats.stddevL) * 0.3
       nextStrength = clamp(clamp(candidate, lo, hi), 0.0, 1.0)
     }
 
-    // ShadowBoost (s-curve mode only): driven by shadowMeanL ratio, 30% damping.
-    // Uses additive delta when shadowBoost is zero to avoid 0 * adj = 0 deadlock.
+    // ShadowBoost (s-curve mode only): additive-delta fallback from zero.
     let nextShadowBoost = shadowBoost
-    if (toneMode === 'scurve' && prevStats.shadowMeanL > 0.001) {
+    if (toneMode === 'scurve' && interimStats.shadowMeanL > 0.001) {
       const lo = initial.shadowBoost > 0.001 ? initial.shadowBoost * 0.85 : 0
       const hi = initial.shadowBoost > 0.001 ? initial.shadowBoost * 1.15 : 0.15
       const candidate = shadowBoost > 0.001
-        ? shadowBoost * (1 + (refStats.shadowMeanL / prevStats.shadowMeanL - 1) * 0.3)
-        : (refStats.shadowMeanL - prevStats.shadowMeanL) * 0.3
+        ? shadowBoost * (1 + (refStats.shadowMeanL / interimStats.shadowMeanL - 1) * 0.3)
+        : (refStats.shadowMeanL - interimStats.shadowMeanL) * 0.3
       nextShadowBoost = clamp(clamp(candidate, lo, hi), 0.0, 1.0)
     }
 
     // highlightCompress (s-curve mode only).
     let nextHC = highlightCompress
     if (toneMode === 'scurve') {
-      const ratio = prevStats.highlightFraction / refHighlight
+      const ratio = interimStats.highlightFraction / refHighlight
       nextHC = clamp(highlightCompress * clamp(ratio, 0.75, 1.35), 0.5, 5.0)
     }
-
-    // Channel gains: driven by per-channel sRGB mean ratios, 30% damping, ±15% cap.
-    const nextRedGain   = adjustGain(redGain,   refStats.meanR,    prevStats.meanR,    initial.redGain)
-    const nextGreenGain = adjustGain(greenGain, refStats.meanG,    prevStats.meanG,    initial.greenGain)
-    const nextBlueGain  = adjustGain(blueGain,  refStats.meanBlue, prevStats.meanBlue, initial.blueGain)
 
     const result = runPipeline({
       ...input,
@@ -238,11 +247,11 @@ function adjustGain(current: number, refMean: number, prevMean: number, initialV
 
 function loss(ref: ImageStats, cur: ImageStats): number {
   return (
-    Math.abs(ref.meanL  - cur.meanL)  +
-    Math.abs(ref.meanC  - cur.meanC)  +
+    Math.abs(ref.meanL   - cur.meanL)   +
+    Math.abs(ref.meanC   - cur.meanC)   +
     Math.abs(ref.stddevL - cur.stddevL) +
-    Math.abs(ref.meanA  - cur.meanA)  +
-    Math.abs(ref.meanBv - cur.meanBv)
+    Math.abs(ref.meanA   - cur.meanA)   +
+    Math.abs(ref.meanBv  - cur.meanBv)
   )
 }
 

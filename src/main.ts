@@ -450,8 +450,6 @@ function autoOrientDisplay(imgW: number, imgH: number) {
     ;[displayWidth, displayHeight] = [displayHeight, displayWidth]
     bleRotation.value = '270'
     invalidateAll()
-  } else {
-    bleRotation.value = '0'
   }
   checkRotationConflict()
 }
@@ -551,6 +549,8 @@ async function processActive() {
 
   img.dithered = result.measured
   img.ideal = result.ideal
+  img.width = displayWidth
+  img.height = displayHeight
 
   refreshDitheredView()
   updatePaletteBadge()
@@ -1299,7 +1299,9 @@ btnDownloadZip.addEventListener('click', async () => {
       })
       bmp.close()
       img.dithered = r.measured
-      ;img.ideal = r.ideal
+      img.ideal = r.ideal
+      img.width = displayWidth
+      img.height = displayHeight
     }
     const ideal = img.ideal
     if (!ideal) continue

@@ -4,8 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenDithering</title>
-  <script type="module" crossorigin src="./assets/index-ml70U7D6.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-B036NZpj.css">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <script type="module" crossorigin src="./assets/index-Yfv5gCru.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-Q1AUbk8a.css">
 </head>
 <body>
   <header>
@@ -48,7 +49,15 @@
             <input type="number" id="dimWidth" min="1" max="7680" value="800" />
             <label for="dimHeight">Height</label>
             <input type="number" id="dimHeight" min="1" max="4320" value="480" />
+            <label for="bleRotation">Rotation</label>
+            <select id="bleRotation">
+              <option value="0">0°</option>
+              <option value="90">90°</option>
+              <option value="180">180°</option>
+              <option value="270">270°</option>
+            </select>
           </div>
+          <p class="rotation-warn" id="rotationWarn" hidden></p>
           <label for="paletteSelect">Panel type</label>
           <select id="paletteSelect"></select>
         </div>
@@ -99,11 +108,32 @@
           Compress dynamic range
         </label>
 
+        <div class="advanced-panel" id="panelColorGrading">
+          <details>
+            <summary>Channel gains</summary>
+            <div class="slider-row">
+              <label for="sliderRedGain">Red</label>
+              <input type="range" id="sliderRedGain" min="50" max="200" value="100" step="1" />
+              <span class="slider-val" id="valRedGain">1.00</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderGreenGain">Green</label>
+              <input type="range" id="sliderGreenGain" min="50" max="200" value="100" step="1" />
+              <span class="slider-val" id="valGreenGain">1.00</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderBlueGain">Blue</label>
+              <input type="range" id="sliderBlueGain" min="50" max="200" value="100" step="1" />
+              <span class="slider-val" id="valBlueGain">1.00</span>
+            </div>
+          </details>
+        </div>
+
         <div class="tone-mode-row">
           <label for="toneMode">Tone mode</label>
           <select id="toneMode">
-            <option value="scurve">S-curve</option>
             <option value="contrast">Contrast</option>
+            <option value="scurve">S-curve</option>
           </select>
         </div>
 
@@ -203,6 +233,10 @@
             <span id="errorSpaceSel"></span>
           </div>
         </div>
+      </section>
+
+      <section class="section">
+        <h2>6. Experimental</h2>
         <div id="panelLocalVariance">
           <label class="checkbox-label"><input type="checkbox" id="localVarianceDetection" /> Local variance (reduce diffusion in flat areas)</label>
         </div>
@@ -210,7 +244,7 @@
       </section>
 
       <section class="section">
-        <h2>6. Export</h2>
+        <h2>7. Export</h2>
         <p class="export-hint">Preview uses calibrated colors (realistic). Export uses ideal colors (as device expects).</p>
         <div class="export-row">
           <div class="split-btn">
@@ -233,15 +267,6 @@
               <button class="split-option" id="btnConnectDevice">Connect</button>
               <button class="split-option split-option--muted" id="btnDisconnectDevice">Disconnect</button>
             </div>
-          </div>
-          <div class="ble-rotation-group">
-            <label for="bleRotation">Rotation</label>
-            <select id="bleRotation">
-              <option value="0">0°</option>
-              <option value="90">90°</option>
-              <option value="180">180°</option>
-              <option value="270">270°</option>
-            </select>
           </div>
         </div>
         <p class="ble-status" id="bleStatus"><span class="ble-dot"></span><span id="bleStatusText">Not connected</span></p>
@@ -288,6 +313,9 @@
             <tbody>
               <tr><td>Mean L</td><td id="dbgRefL"></td><td id="dbgInitL"></td><td id="dbgFinalL"></td></tr>
               <tr><td>Mean C</td><td id="dbgRefC"></td><td id="dbgInitC"></td><td id="dbgFinalC"></td></tr>
+              <tr><td>Std dev L</td><td id="dbgRefStdL"></td><td id="dbgInitStdL"></td><td id="dbgFinalStdL"></td></tr>
+              <tr><td>Mean a</td><td id="dbgRefA"></td><td id="dbgInitA"></td><td id="dbgFinalA"></td></tr>
+              <tr><td>Mean b</td><td id="dbgRefBok"></td><td id="dbgInitBok"></td><td id="dbgFinalBok"></td></tr>
               <tr><td>Loss</td><td class="debug-muted">—</td><td id="dbgInitLoss"></td><td id="dbgFinalLoss"></td></tr>
             </tbody>
           </table>
@@ -296,7 +324,13 @@
             <tbody>
               <tr><td>Saturation</td><td id="dbgSatBefore"></td><td id="dbgSatAfter"></td></tr>
               <tr><td>Exposure</td><td id="dbgExpBefore"></td><td id="dbgExpAfter"></td></tr>
+              <tr id="dbgContrastRow"><td>Contrast</td><td id="dbgContrastBefore"></td><td id="dbgContrastAfter"></td></tr>
+              <tr id="dbgStrengthRow"><td>Strength</td><td id="dbgStrengthBefore"></td><td id="dbgStrengthAfter"></td></tr>
+              <tr id="dbgShadowBoostRow"><td>Shadow boost</td><td id="dbgShadowBoostBefore"></td><td id="dbgShadowBoostAfter"></td></tr>
               <tr id="dbgHCRow"><td>Highl. compress</td><td id="dbgHCBefore"></td><td id="dbgHCAfter"></td></tr>
+              <tr><td>Red gain</td><td id="dbgRedGainBefore"></td><td id="dbgRedGainAfter"></td></tr>
+              <tr><td>Green gain</td><td id="dbgGreenGainBefore"></td><td id="dbgGreenGainAfter"></td></tr>
+              <tr><td>Blue gain</td><td id="dbgBlueGainBefore"></td><td id="dbgBlueGainAfter"></td></tr>
             </tbody>
           </table>
         </div>
