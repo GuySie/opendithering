@@ -116,19 +116,43 @@ const debugAutoTune    = el<HTMLDivElement>('debugAutoTune')
 const dbgSummary       = el<HTMLSpanElement>('dbgSummary')
 const dbgRefL          = el<HTMLTableCellElement>('dbgRefL')
 const dbgRefC          = el<HTMLTableCellElement>('dbgRefC')
+const dbgRefStdL       = el<HTMLTableCellElement>('dbgRefStdL')
 const dbgInitL         = el<HTMLTableCellElement>('dbgInitL')
 const dbgInitC         = el<HTMLTableCellElement>('dbgInitC')
+const dbgInitStdL      = el<HTMLTableCellElement>('dbgInitStdL')
 const dbgFinalL        = el<HTMLTableCellElement>('dbgFinalL')
 const dbgFinalC        = el<HTMLTableCellElement>('dbgFinalC')
+const dbgFinalStdL     = el<HTMLTableCellElement>('dbgFinalStdL')
 const dbgInitLoss      = el<HTMLTableCellElement>('dbgInitLoss')
 const dbgFinalLoss     = el<HTMLTableCellElement>('dbgFinalLoss')
 const dbgSatBefore     = el<HTMLTableCellElement>('dbgSatBefore')
 const dbgSatAfter      = el<HTMLTableCellElement>('dbgSatAfter')
 const dbgExpBefore     = el<HTMLTableCellElement>('dbgExpBefore')
 const dbgExpAfter      = el<HTMLTableCellElement>('dbgExpAfter')
+const dbgContrastRow   = el<HTMLTableRowElement>('dbgContrastRow')
+const dbgContrastBefore = el<HTMLTableCellElement>('dbgContrastBefore')
+const dbgContrastAfter  = el<HTMLTableCellElement>('dbgContrastAfter')
+const dbgStrengthRow   = el<HTMLTableRowElement>('dbgStrengthRow')
+const dbgStrengthBefore = el<HTMLTableCellElement>('dbgStrengthBefore')
+const dbgStrengthAfter  = el<HTMLTableCellElement>('dbgStrengthAfter')
+const dbgShadowBoostRow   = el<HTMLTableRowElement>('dbgShadowBoostRow')
+const dbgShadowBoostBefore = el<HTMLTableCellElement>('dbgShadowBoostBefore')
+const dbgShadowBoostAfter  = el<HTMLTableCellElement>('dbgShadowBoostAfter')
 const dbgHCRow         = el<HTMLTableRowElement>('dbgHCRow')
 const dbgHCBefore      = el<HTMLTableCellElement>('dbgHCBefore')
 const dbgHCAfter       = el<HTMLTableCellElement>('dbgHCAfter')
+const dbgRefA          = el<HTMLTableCellElement>('dbgRefA')
+const dbgInitA         = el<HTMLTableCellElement>('dbgInitA')
+const dbgFinalA        = el<HTMLTableCellElement>('dbgFinalA')
+const dbgRefBok        = el<HTMLTableCellElement>('dbgRefBok')
+const dbgInitBok       = el<HTMLTableCellElement>('dbgInitBok')
+const dbgFinalBok      = el<HTMLTableCellElement>('dbgFinalBok')
+const dbgRedGainBefore   = el<HTMLTableCellElement>('dbgRedGainBefore')
+const dbgRedGainAfter    = el<HTMLTableCellElement>('dbgRedGainAfter')
+const dbgGreenGainBefore = el<HTMLTableCellElement>('dbgGreenGainBefore')
+const dbgGreenGainAfter  = el<HTMLTableCellElement>('dbgGreenGainAfter')
+const dbgBlueGainBefore  = el<HTMLTableCellElement>('dbgBlueGainBefore')
+const dbgBlueGainAfter   = el<HTMLTableCellElement>('dbgBlueGainAfter')
 const dbgLossHistory   = el<HTMLSpanElement>('dbgLossHistory')
 
 function el<T extends HTMLElement>(id: string): T {
@@ -426,8 +450,6 @@ function autoOrientDisplay(imgW: number, imgH: number) {
     ;[displayWidth, displayHeight] = [displayHeight, displayWidth]
     bleRotation.value = '270'
     invalidateAll()
-  } else {
-    bleRotation.value = '0'
   }
   checkRotationConflict()
 }
@@ -527,6 +549,8 @@ async function processActive() {
 
   img.dithered = result.measured
   img.ideal = result.ideal
+  img.width = displayWidth
+  img.height = displayHeight
 
   refreshDitheredView()
   updatePaletteBadge()
@@ -682,7 +706,7 @@ function sliderSetup(
   valId: string,
   scale: number,
   key: keyof ProcessingSettings,
-  decimals = 1,
+  decimals = 2,
 ) {
   const slider = el<HTMLInputElement>(sliderId)
   const valEl = el<HTMLSpanElement>(valId)
@@ -707,6 +731,9 @@ function sliderSetup(
 
 sliderSetup('sliderExposure', 'valExposure', 100, 'exposure')
 sliderSetup('sliderSaturation', 'valSaturation', 100, 'saturation')
+sliderSetup('sliderRedGain',   'valRedGain',   100, 'redGain')
+sliderSetup('sliderGreenGain', 'valGreenGain', 100, 'greenGain')
+sliderSetup('sliderBlueGain',  'valBlueGain',  100, 'blueGain')
 sliderSetup('sliderContrast', 'valContrast', 100, 'contrast')
 sliderSetup('sliderStrength', 'valStrength', 100, 'strength')
 sliderSetup('sliderShadowBoost', 'valShadowBoost', 100, 'shadowBoost')
@@ -818,26 +845,27 @@ btnAutoTune.addEventListener('click', async () => {
 
   const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
   const srcBitmap = await createImageBitmap(img.original)
-  const result = autoTune(
-    {
-      source: srcBitmap,
-      srcWidth: img.original.width,
-      srcHeight: img.original.height,
-      dstWidth: displayWidth,
-      dstHeight: displayHeight,
-      resizeMode,
-      palette,
-      settings,
-    },
-    settings.saturation,
-    settings.exposure,
-    settings.highlightCompress,
-  )
+  const result = autoTune({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
   srcBitmap.close()
 
   settings.saturation = result.saturation
   settings.exposure = result.exposure
+  settings.contrast = result.contrast
+  settings.strength = result.strength
+  settings.shadowBoost = result.shadowBoost
   settings.highlightCompress = result.highlightCompress
+  settings.redGain   = result.redGain
+  settings.greenGain = result.greenGain
+  settings.blueGain  = result.blueGain
   markCustomPreset()
   syncSlidersFromSettings()
   invalidateAll()
@@ -908,6 +936,9 @@ previewToggleBtns.forEach(btn => {
 function syncSlidersFromSettings() {
   setSlider('sliderExposure', 'valExposure', settings.exposure * 100, settings.exposure)
   setSlider('sliderSaturation', 'valSaturation', settings.saturation * 100, settings.saturation)
+  setSlider('sliderRedGain',   'valRedGain',   settings.redGain   * 100, settings.redGain)
+  setSlider('sliderGreenGain', 'valGreenGain', settings.greenGain * 100, settings.greenGain)
+  setSlider('sliderBlueGain',  'valBlueGain',  settings.blueGain  * 100, settings.blueGain)
   setSlider('sliderContrast', 'valContrast', settings.contrast * 100, settings.contrast)
   setSlider('sliderStrength', 'valStrength', settings.strength * 100, settings.strength)
   setSlider('sliderShadowBoost', 'valShadowBoost', settings.shadowBoost * 100, settings.shadowBoost)
@@ -955,7 +986,7 @@ function syncSlidersFromSettings() {
 
 function setSlider(sliderId: string, valId: string, sliderVal: number, displayVal: number) {
   el<HTMLInputElement>(sliderId).value = String(Math.round(sliderVal))
-  el<HTMLSpanElement>(valId).textContent = displayVal.toFixed(1)
+  el<HTMLSpanElement>(valId).textContent = displayVal.toFixed(2)
 }
 
 // ── Invalidation ──────────────────────────────────────────────────────────
@@ -976,12 +1007,21 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
     : `${iters} iteration${iters !== 1 ? 's' : ''} · ${d.converged ? 'converged' : 'hit limit'}`
   dbgSummary.textContent = statusLabel
 
-  dbgRefL.textContent   = f3(d.refStats.meanL)
-  dbgRefC.textContent   = f3(d.refStats.meanC)
-  dbgInitL.textContent  = f3(d.initialStats.meanL)
-  dbgInitC.textContent  = f3(d.initialStats.meanC)
-  dbgFinalL.textContent = f3(d.finalStats.meanL)
-  dbgFinalC.textContent = f3(d.finalStats.meanC)
+  dbgRefL.textContent    = f3(d.refStats.meanL)
+  dbgRefC.textContent    = f3(d.refStats.meanC)
+  dbgRefStdL.textContent = f3(d.refStats.stddevL)
+  dbgRefA.textContent    = f3(d.refStats.meanA)
+  dbgRefBok.textContent  = f3(d.refStats.meanBv)
+  dbgInitL.textContent   = f3(d.initialStats.meanL)
+  dbgInitC.textContent   = f3(d.initialStats.meanC)
+  dbgInitStdL.textContent = f3(d.initialStats.stddevL)
+  dbgInitA.textContent   = f3(d.initialStats.meanA)
+  dbgInitBok.textContent = f3(d.initialStats.meanBv)
+  dbgFinalL.textContent  = f3(d.finalStats.meanL)
+  dbgFinalC.textContent  = f3(d.finalStats.meanC)
+  dbgFinalStdL.textContent = f3(d.finalStats.stddevL)
+  dbgFinalA.textContent  = f3(d.finalStats.meanA)
+  dbgFinalBok.textContent = f3(d.finalStats.meanBv)
   dbgInitLoss.textContent  = f3(d.initialLoss)
   dbgFinalLoss.textContent = f3(d.finalLoss)
 
@@ -990,9 +1030,28 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
   dbgExpBefore.textContent = f2(d.initialExposure)
   dbgExpAfter.textContent  = f2(d.finalExposure)
 
+  dbgContrastRow.hidden = d.toneMode !== 'contrast'
+  dbgContrastBefore.textContent = f2(d.initialContrast)
+  dbgContrastAfter.textContent  = f2(d.finalContrast)
+
+  dbgStrengthRow.hidden = d.toneMode !== 'scurve'
+  dbgStrengthBefore.textContent = f2(d.initialStrength)
+  dbgStrengthAfter.textContent  = f2(d.finalStrength)
+
+  dbgShadowBoostRow.hidden = d.toneMode !== 'scurve'
+  dbgShadowBoostBefore.textContent = f2(d.initialShadowBoost)
+  dbgShadowBoostAfter.textContent  = f2(d.finalShadowBoost)
+
   dbgHCRow.hidden = d.toneMode !== 'scurve'
   dbgHCBefore.textContent = f2(d.initialHighlightCompress)
   dbgHCAfter.textContent  = f2(d.finalHighlightCompress)
+
+  dbgRedGainBefore.textContent   = f2(d.initialRedGain)
+  dbgRedGainAfter.textContent    = f2(d.finalRedGain)
+  dbgGreenGainBefore.textContent = f2(d.initialGreenGain)
+  dbgGreenGainAfter.textContent  = f2(d.finalGreenGain)
+  dbgBlueGainBefore.textContent  = f2(d.initialBlueGain)
+  dbgBlueGainAfter.textContent   = f2(d.finalBlueGain)
 
   dbgLossHistory.textContent = d.lossHistory.map(f3).join(' → ')
 
@@ -1240,7 +1299,9 @@ btnDownloadZip.addEventListener('click', async () => {
       })
       bmp.close()
       img.dithered = r.measured
-      ;img.ideal = r.ideal
+      img.ideal = r.ideal
+      img.width = displayWidth
+      img.height = displayHeight
     }
     const ideal = img.ideal
     if (!ideal) continue

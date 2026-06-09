@@ -1,6 +1,6 @@
 import type { ProcessingSettings, Palette, ResizeMode } from '../types'
 import { resizeImage } from './resize'
-import { compressDynamicRange, applyToneMapping, applySaturation, applyExposure } from './tone'
+import { compressDynamicRange, applyToneMapping, applySaturation, applyExposure, applyChannelGains } from './tone'
 import { getAlgorithm } from '../dithering/index'
 
 export interface PipelineInput {
@@ -41,7 +41,10 @@ export function runPipeline(input: PipelineInput): PipelineResult {
   // 5. Exposure
   applyExposure(resized.data, settings.exposure)
 
-  // 6. Dithering — produces output with measured palette colors
+  // 6. Channel gains (color grading)
+  applyChannelGains(resized.data, settings.redGain, settings.greenGain, settings.blueGain)
+
+  // 8. Dithering — produces output with measured palette colors
   const algorithm = getAlgorithm(settings.ditherAlgorithm)
 
   // Optionally expand the palette with pure primaries for wider gamut snap-points.
@@ -63,7 +66,7 @@ export function runPipeline(input: PipelineInput): PipelineResult {
     measured = remapToOriginalPalette(measured, palette)
   }
 
-  // 7. Palette swap: measured → ideal (for export)
+  // 9. Palette swap: measured → ideal (for export)
   const ideal = swapToIdeal(measured, palette)
 
   return { measured, ideal }

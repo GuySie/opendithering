@@ -128,3 +128,11 @@ export function applyExposure(data: Uint8ClampedArray, exposure: number): void {
     data[i + 2] = Math.min(255, Math.round(data[i + 2] * exposure))
   }
 }
+
+export function applyChannelGains(data: Uint8ClampedArray, redGain: number, greenGain: number, blueGain: number): void {
+  for (let i = 0; i < data.length; i += 4) {
+    data[i]     = Math.min(255, Math.round(data[i]     * redGain))
+    data[i + 1] = Math.min(255, Math.round(data[i + 1] * greenGain))
+    data[i + 2] = Math.min(255, Math.round(data[i + 2] * blueGain))
+  }
+}
