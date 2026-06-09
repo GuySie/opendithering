@@ -147,12 +147,10 @@ const dbgFinalA        = el<HTMLTableCellElement>('dbgFinalA')
 const dbgRefBok        = el<HTMLTableCellElement>('dbgRefBok')
 const dbgInitBok       = el<HTMLTableCellElement>('dbgInitBok')
 const dbgFinalBok      = el<HTMLTableCellElement>('dbgFinalBok')
-const dbgRedGainBefore   = el<HTMLTableCellElement>('dbgRedGainBefore')
-const dbgRedGainAfter    = el<HTMLTableCellElement>('dbgRedGainAfter')
-const dbgGreenGainBefore = el<HTMLTableCellElement>('dbgGreenGainBefore')
-const dbgGreenGainAfter  = el<HTMLTableCellElement>('dbgGreenGainAfter')
-const dbgBlueGainBefore  = el<HTMLTableCellElement>('dbgBlueGainBefore')
-const dbgBlueGainAfter   = el<HTMLTableCellElement>('dbgBlueGainAfter')
+const dbgAOffsetBefore = el<HTMLTableCellElement>('dbgAOffsetBefore')
+const dbgAOffsetAfter  = el<HTMLTableCellElement>('dbgAOffsetAfter')
+const dbgBOffsetBefore = el<HTMLTableCellElement>('dbgBOffsetBefore')
+const dbgBOffsetAfter  = el<HTMLTableCellElement>('dbgBOffsetAfter')
 const dbgLossHistory   = el<HTMLSpanElement>('dbgLossHistory')
 
 function el<T extends HTMLElement>(id: string): T {
@@ -731,9 +729,8 @@ function sliderSetup(
 
 sliderSetup('sliderExposure', 'valExposure', 100, 'exposure')
 sliderSetup('sliderSaturation', 'valSaturation', 100, 'saturation')
-sliderSetup('sliderRedGain',   'valRedGain',   100, 'redGain')
-sliderSetup('sliderGreenGain', 'valGreenGain', 100, 'greenGain')
-sliderSetup('sliderBlueGain',  'valBlueGain',  100, 'blueGain')
+sliderSetup('sliderTint',   'valTint',   1000, 'aOffset', 3)
+sliderSetup('sliderWarmth', 'valWarmth', 1000, 'bOffset', 3)
 sliderSetup('sliderContrast', 'valContrast', 100, 'contrast')
 sliderSetup('sliderStrength', 'valStrength', 100, 'strength')
 sliderSetup('sliderShadowBoost', 'valShadowBoost', 100, 'shadowBoost')
@@ -863,9 +860,8 @@ btnAutoTune.addEventListener('click', async () => {
   settings.strength = result.strength
   settings.shadowBoost = result.shadowBoost
   settings.highlightCompress = result.highlightCompress
-  settings.redGain   = result.redGain
-  settings.greenGain = result.greenGain
-  settings.blueGain  = result.blueGain
+  settings.aOffset = result.aOffset
+  settings.bOffset = result.bOffset
   markCustomPreset()
   syncSlidersFromSettings()
   invalidateAll()
@@ -936,9 +932,8 @@ previewToggleBtns.forEach(btn => {
 function syncSlidersFromSettings() {
   setSlider('sliderExposure', 'valExposure', settings.exposure * 100, settings.exposure)
   setSlider('sliderSaturation', 'valSaturation', settings.saturation * 100, settings.saturation)
-  setSlider('sliderRedGain',   'valRedGain',   settings.redGain   * 100, settings.redGain)
-  setSlider('sliderGreenGain', 'valGreenGain', settings.greenGain * 100, settings.greenGain)
-  setSlider('sliderBlueGain',  'valBlueGain',  settings.blueGain  * 100, settings.blueGain)
+  setSlider('sliderTint',   'valTint',   settings.aOffset * 1000, settings.aOffset, 3)
+  setSlider('sliderWarmth', 'valWarmth', settings.bOffset * 1000, settings.bOffset, 3)
   setSlider('sliderContrast', 'valContrast', settings.contrast * 100, settings.contrast)
   setSlider('sliderStrength', 'valStrength', settings.strength * 100, settings.strength)
   setSlider('sliderShadowBoost', 'valShadowBoost', settings.shadowBoost * 100, settings.shadowBoost)
@@ -984,9 +979,9 @@ function syncSlidersFromSettings() {
   expandPaletteCheck.checked = settings.expandPalette
 }
 
-function setSlider(sliderId: string, valId: string, sliderVal: number, displayVal: number) {
+function setSlider(sliderId: string, valId: string, sliderVal: number, displayVal: number, decimals = 2) {
   el<HTMLInputElement>(sliderId).value = String(Math.round(sliderVal))
-  el<HTMLSpanElement>(valId).textContent = displayVal.toFixed(2)
+  el<HTMLSpanElement>(valId).textContent = displayVal.toFixed(decimals)
 }
 
 // ── Invalidation ──────────────────────────────────────────────────────────
@@ -1046,12 +1041,10 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
   dbgHCBefore.textContent = f2(d.initialHighlightCompress)
   dbgHCAfter.textContent  = f2(d.finalHighlightCompress)
 
-  dbgRedGainBefore.textContent   = f2(d.initialRedGain)
-  dbgRedGainAfter.textContent    = f2(d.finalRedGain)
-  dbgGreenGainBefore.textContent = f2(d.initialGreenGain)
-  dbgGreenGainAfter.textContent  = f2(d.finalGreenGain)
-  dbgBlueGainBefore.textContent  = f2(d.initialBlueGain)
-  dbgBlueGainAfter.textContent   = f2(d.finalBlueGain)
+  dbgAOffsetBefore.textContent = f3(d.initialAOffset)
+  dbgAOffsetAfter.textContent  = f3(d.finalAOffset)
+  dbgBOffsetBefore.textContent = f3(d.initialBOffset)
+  dbgBOffsetAfter.textContent  = f3(d.finalBOffset)
 
   dbgLossHistory.textContent = d.lossHistory.map(f3).join(' → ')
 

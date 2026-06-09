@@ -102,31 +102,23 @@
           <input type="range" id="sliderSaturation" min="0" max="200" value="130" step="1" />
           <span class="slider-val" id="valSaturation">1.3</span>
         </div>
+        <div class="advanced-panel" id="panelColorGrading">
+          <div class="slider-row">
+            <label for="sliderTint">Tint</label>
+            <input type="range" id="sliderTint" min="-150" max="150" value="0" step="1" />
+            <span class="slider-val" id="valTint">0.000</span>
+          </div>
+          <div class="slider-row">
+            <label for="sliderWarmth">Warmth</label>
+            <input type="range" id="sliderWarmth" min="-150" max="150" value="0" step="1" />
+            <span class="slider-val" id="valWarmth">0.000</span>
+          </div>
+        </div>
+
         <label class="checkbox-label">
           <input type="checkbox" id="checkCDR" checked />
           Compress dynamic range
         </label>
-
-        <div class="advanced-panel" id="panelColorGrading">
-          <details>
-            <summary>Channel gains</summary>
-            <div class="slider-row">
-              <label for="sliderRedGain">Red</label>
-              <input type="range" id="sliderRedGain" min="50" max="200" value="100" step="1" />
-              <span class="slider-val" id="valRedGain">1.00</span>
-            </div>
-            <div class="slider-row">
-              <label for="sliderGreenGain">Green</label>
-              <input type="range" id="sliderGreenGain" min="50" max="200" value="100" step="1" />
-              <span class="slider-val" id="valGreenGain">1.00</span>
-            </div>
-            <div class="slider-row">
-              <label for="sliderBlueGain">Blue</label>
-              <input type="range" id="sliderBlueGain" min="50" max="200" value="100" step="1" />
-              <span class="slider-val" id="valBlueGain">1.00</span>
-            </div>
-          </details>
-        </div>
 
         <div class="tone-mode-row">
           <label for="toneMode">Tone mode</label>
@@ -147,29 +139,28 @@
 
         <!-- S-curve panel -->
         <div class="advanced-panel" id="panelScurve">
-          <details>
-            <summary>S-curve parameters</summary>
-            <div class="slider-row">
-              <label for="sliderStrength">Strength</label>
-              <input type="range" id="sliderStrength" min="0" max="100" value="90" step="1" />
-              <span class="slider-val" id="valStrength">0.9</span>
-            </div>
-            <div class="slider-row">
-              <label for="sliderShadowBoost">Shadow boost</label>
-              <input type="range" id="sliderShadowBoost" min="0" max="100" value="0" step="1" />
-              <span class="slider-val" id="valShadowBoost">0.0</span>
-            </div>
-            <div class="slider-row">
-              <label for="sliderHighlightCompress">Highlight compress</label>
-              <input type="range" id="sliderHighlightCompress" min="50" max="500" value="150" step="5" />
-              <span class="slider-val" id="valHighlightCompress">1.5</span>
-            </div>
-            <div class="slider-row">
-              <label for="sliderMidpoint">Midpoint</label>
-              <input type="range" id="sliderMidpoint" min="30" max="70" value="50" step="1" />
-              <span class="slider-val" id="valMidpoint">0.5</span>
-            </div>
-          </details>
+          <div class="slider-row">
+            <label for="sliderStrength">Strength</label>
+            <input type="range" id="sliderStrength" min="0" max="100" value="90" step="1" />
+            <span class="slider-val" id="valStrength">0.9</span>
+          </div>
+          <div class="slider-row">
+            <label for="sliderShadowBoost">Shadow boost</label>
+            <input type="range" id="sliderShadowBoost" min="0" max="100" value="0" step="1" />
+            <span class="slider-val" id="valShadowBoost">0.0</span>
+          </div>
+          <div class="slider-row">
+            <label for="sliderHighlightCompress">Highlight compress</label>
+            <input type="range" id="sliderHighlightCompress" min="50" max="500" value="150" step="5" />
+            <span class="slider-val" id="valHighlightCompress">1.5</span>
+          </div>
+        </div>
+
+        <!-- Shared tone parameter (applies to both contrast and s-curve) -->
+        <div class="slider-row">
+          <label for="sliderMidpoint">Midpoint</label>
+          <input type="range" id="sliderMidpoint" min="30" max="70" value="50" step="1" />
+          <span class="slider-val" id="valMidpoint">0.5</span>
         </div>
       </section>
 
@@ -327,9 +318,8 @@
               <tr id="dbgStrengthRow"><td>Strength</td><td id="dbgStrengthBefore"></td><td id="dbgStrengthAfter"></td></tr>
               <tr id="dbgShadowBoostRow"><td>Shadow boost</td><td id="dbgShadowBoostBefore"></td><td id="dbgShadowBoostAfter"></td></tr>
               <tr id="dbgHCRow"><td>Highl. compress</td><td id="dbgHCBefore"></td><td id="dbgHCAfter"></td></tr>
-              <tr><td>Red gain</td><td id="dbgRedGainBefore"></td><td id="dbgRedGainAfter"></td></tr>
-              <tr><td>Green gain</td><td id="dbgGreenGainBefore"></td><td id="dbgGreenGainAfter"></td></tr>
-              <tr><td>Blue gain</td><td id="dbgBlueGainBefore"></td><td id="dbgBlueGainAfter"></td></tr>
+              <tr><td>Tint (a)</td><td id="dbgAOffsetBefore"></td><td id="dbgAOffsetAfter"></td></tr>
+              <tr><td>Warmth (b)</td><td id="dbgBOffsetBefore"></td><td id="dbgBOffsetAfter"></td></tr>
             </tbody>
           </table>
         </div>

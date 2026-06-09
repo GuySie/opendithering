@@ -1,6 +1,7 @@
 import type { ProcessingSettings, Palette, ResizeMode } from '../types'
 import { resizeImage } from './resize'
-import { compressDynamicRange, applyToneMapping, applySaturation, applyExposure, applyChannelGains } from './tone'
+import { compressDynamicRange, applyToneMapping, applySaturation, applyExposure, applyColorBalance } from './tone'
+import { rgbToOklab, oklabToRgb } from './colorspace'
 import { getAlgorithm } from '../dithering/index'
 
 export interface PipelineInput {
@@ -21,30 +22,65 @@ export interface PipelineResult {
   ideal: ImageData
 }
 
+// Pack sRGB ImageData into a Float32Array of [L, a, b] triples.
+function toOklab(data: Uint8ClampedArray): Float32Array {
+  const n = data.length / 4
+  const buf = new Float32Array(n * 3)
+  for (let i = 0; i < n; i++) {
+    const [L, a, b] = rgbToOklab(data[i * 4], data[i * 4 + 1], data[i * 4 + 2])
+    buf[i * 3]     = L
+    buf[i * 3 + 1] = a
+    buf[i * 3 + 2] = b
+  }
+  return buf
+}
+
+// Write OKLab float buffer back into sRGB ImageData (alpha unchanged).
+function fromOklab(buf: Float32Array, data: Uint8ClampedArray): void {
+  const n = buf.length / 3
+  for (let i = 0; i < n; i++) {
+    const [r, g, b] = oklabToRgb(buf[i * 3], buf[i * 3 + 1], buf[i * 3 + 2])
+    data[i * 4]     = r
+    data[i * 4 + 1] = g
+    data[i * 4 + 2] = b
+  }
+}
+
 export function runPipeline(input: PipelineInput): PipelineResult {
   const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, palette, settings } = input
 
   // 1. Resize
   const resized = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode)
 
-  // 2. Dynamic range compression
+  // 2. Convert to OKLab (single conversion in)
+  const buf = toOklab(resized.data)
+
+  // 3. Dynamic range compression — scale L into palette's [blackL, whiteL]
   if (settings.compressDynamicRange) {
-    compressDynamicRange(resized.data, palette)
+    const sorted = palette.colors
+      .map(c => ({ L: rgbToOklab(c.measured[0], c.measured[1], c.measured[2])[0] }))
+      .sort((a, b) => a.L - b.L)
+    const blackL = sorted[0].L
+    const whiteL = sorted[sorted.length - 1].L
+    compressDynamicRange(buf, blackL, whiteL)
   }
 
-  // 3. Tone mapping
-  applyToneMapping(resized.data, settings)
+  // 4. Tone mapping (L only — chroma-neutral)
+  applyToneMapping(buf, settings)
 
-  // 4. Saturation
-  applySaturation(resized.data, settings.saturation)
+  // 5. Saturation (scale a and b uniformly)
+  applySaturation(buf, settings.saturation)
 
-  // 5. Exposure
-  applyExposure(resized.data, settings.exposure)
+  // 6. Exposure (scale L)
+  applyExposure(buf, settings.exposure)
 
-  // 6. Channel gains (color grading)
-  applyChannelGains(resized.data, settings.redGain, settings.greenGain, settings.blueGain)
+  // 7. Color balance (add aOffset/bOffset to a/b)
+  applyColorBalance(buf, settings.aOffset, settings.bOffset)
 
-  // 8. Dithering — produces output with measured palette colors
+  // 8. Convert back to sRGB (single conversion out)
+  fromOklab(buf, resized.data)
+
+  // 9. Dithering — produces output with measured palette colors
   const algorithm = getAlgorithm(settings.ditherAlgorithm)
 
   // Optionally expand the palette with pure primaries for wider gamut snap-points.
@@ -66,7 +102,7 @@ export function runPipeline(input: PipelineInput): PipelineResult {
     measured = remapToOriginalPalette(measured, palette)
   }
 
-  // 9. Palette swap: measured → ideal (for export)
+  // 10. Palette swap: measured → ideal (for export)
   const ideal = swapToIdeal(measured, palette)
 
   return { measured, ideal }
