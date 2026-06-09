@@ -47,7 +47,8 @@ Implemented in `src/processing/pipeline.ts`:
 3. **Tone mapping** — contrast mode (scale around midpoint) or S-curve (strength / shadowBoost / highlightCompress / midpoint)
 4. **Saturation** — HSL-space channel scaling
 5. **Exposure** — linear multiply + clamp
-6. **Dithering** — selected algorithm against `measured` palette colors (or expanded palette if `expandPalette` is on)
+6. **Channel gains** — per-channel R/G/B multipliers for color grading (`redGain`, `greenGain`, `blueGain`)
+7. **Dithering** — selected algorithm against `measured` palette colors (or expanded palette if `expandPalette` is on)
 7. **Remap primaries** — if `expandPalette` was used, pixels that landed on a pure primary are remapped back to the nearest original measured color before export or preview
 8. **Palette swap** — measured → ideal (export only)
 
@@ -85,10 +86,10 @@ src/
 │   └── knox.ts                # Eschbach & Knox: tone-dependent error diffusion in OKLab with fringe-field and cross-edge suppression (standalone)
 ├── processing/
 │   ├── colorspace.ts          # sRGB↔linear, RGB→L*a*b*, RGB→OKLab, deltaE_rgb/lab/oklab, rec709Luminance
-│   ├── tone.ts                # compressDynamicRange, applyToneMapping, applySaturation, applyExposure
+│   ├── tone.ts                # compressDynamicRange, applyToneMapping, applySaturation, applyExposure, applyChannelGains
 │   ├── resize.ts              # resizeImage (cover/contain/stretch/none)
 │   ├── pipeline.ts            # runPipeline() — orchestrates all steps, returns {measured, ideal}
-│   └── autotune.ts            # autoTune() — convergence-checked optimizer for tone params (saturation, exposure, contrast/strength/shadowBoost/highlightCompress)
+│   └── autotune.ts            # autoTune() — convergence-checked optimizer for tone params (saturation, exposure, contrast/strength/shadowBoost/highlightCompress, redGain/greenGain/blueGain)
 ├── ble/
 │   ├── opendisplay.ts         # OpenDisplay BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
 │   └── gicisky.ts             # Gicisky BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
@@ -147,10 +148,10 @@ The `ideal` values are the nominal RGB codes the firmware expects (e.g. pure `[2
 
 ### Auto-tune
 
-Implemented in `src/processing/autotune.ts`. `autoTune()` adjusts tone and colour parameters to make the dithered output match the source image as closely as possible, measured by L1 distance in Oklab L+C+stddev(L): `|ΔmeanL| + |ΔmeanC| + |ΔstddevL|`.
+Implemented in `src/processing/autotune.ts`. `autoTune()` adjusts tone and colour parameters to make the dithered output match the source image as closely as possible, measured by L1 distance across five OKLab stats: `|ΔmeanL| + |ΔmeanC| + |ΔstddevL| + |ΔmeanA| + |ΔmeanBv|`.
 
 **Parameters tuned per mode:**
-- **Both modes:** `saturation`, `exposure`
+- **Both modes:** `saturation`, `exposure`, `redGain`, `greenGain`, `blueGain` (channel gains driven by per-channel sRGB mean ratios)
 - **Contrast mode:** `contrast` (driven by stddevL ratio)
 - **S-curve mode:** `strength` (driven by stddevL ratio), `shadowBoost` (driven by shadow-zone meanL ratio), `highlightCompress` (driven by highlight-pixel fraction)
 

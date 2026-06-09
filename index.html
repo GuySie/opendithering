@@ -107,6 +107,27 @@
           Compress dynamic range
         </label>
 
+        <div class="advanced-panel" id="panelColorGrading">
+          <details>
+            <summary>Channel gains</summary>
+            <div class="slider-row">
+              <label for="sliderRedGain">Red</label>
+              <input type="range" id="sliderRedGain" min="50" max="200" value="100" step="1" />
+              <span class="slider-val" id="valRedGain">1.00</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderGreenGain">Green</label>
+              <input type="range" id="sliderGreenGain" min="50" max="200" value="100" step="1" />
+              <span class="slider-val" id="valGreenGain">1.00</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderBlueGain">Blue</label>
+              <input type="range" id="sliderBlueGain" min="50" max="200" value="100" step="1" />
+              <span class="slider-val" id="valBlueGain">1.00</span>
+            </div>
+          </details>
+        </div>
+
         <div class="tone-mode-row">
           <label for="toneMode">Tone mode</label>
           <select id="toneMode">
@@ -292,6 +313,8 @@
               <tr><td>Mean L</td><td id="dbgRefL"></td><td id="dbgInitL"></td><td id="dbgFinalL"></td></tr>
               <tr><td>Mean C</td><td id="dbgRefC"></td><td id="dbgInitC"></td><td id="dbgFinalC"></td></tr>
               <tr><td>Std dev L</td><td id="dbgRefStdL"></td><td id="dbgInitStdL"></td><td id="dbgFinalStdL"></td></tr>
+              <tr><td>Mean a</td><td id="dbgRefA"></td><td id="dbgInitA"></td><td id="dbgFinalA"></td></tr>
+              <tr><td>Mean b</td><td id="dbgRefBok"></td><td id="dbgInitBok"></td><td id="dbgFinalBok"></td></tr>
               <tr><td>Loss</td><td class="debug-muted">—</td><td id="dbgInitLoss"></td><td id="dbgFinalLoss"></td></tr>
             </tbody>
           </table>
@@ -304,6 +327,9 @@
               <tr id="dbgStrengthRow"><td>Strength</td><td id="dbgStrengthBefore"></td><td id="dbgStrengthAfter"></td></tr>
               <tr id="dbgShadowBoostRow"><td>Shadow boost</td><td id="dbgShadowBoostBefore"></td><td id="dbgShadowBoostAfter"></td></tr>
               <tr id="dbgHCRow"><td>Highl. compress</td><td id="dbgHCBefore"></td><td id="dbgHCAfter"></td></tr>
+              <tr><td>Red gain</td><td id="dbgRedGainBefore"></td><td id="dbgRedGainAfter"></td></tr>
+              <tr><td>Green gain</td><td id="dbgGreenGainBefore"></td><td id="dbgGreenGainAfter"></td></tr>
+              <tr><td>Blue gain</td><td id="dbgBlueGainBefore"></td><td id="dbgBlueGainAfter"></td></tr>
             </tbody>
           </table>
         </div>

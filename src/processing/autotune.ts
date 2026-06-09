@@ -6,9 +6,9 @@ import { rgbToOklab } from './colorspace'
 export interface AutoTuneDebug {
   iterationsRun: number
   converged: boolean
-  refStats: { meanL: number; meanC: number; stddevL: number; highlightFraction: number }
-  initialStats: { meanL: number; meanC: number; stddevL: number }
-  finalStats: { meanL: number; meanC: number; stddevL: number }
+  refStats: { meanL: number; meanC: number; stddevL: number; meanA: number; meanBv: number; highlightFraction: number }
+  initialStats: { meanL: number; meanC: number; stddevL: number; meanA: number; meanBv: number }
+  finalStats: { meanL: number; meanC: number; stddevL: number; meanA: number; meanBv: number }
   initialLoss: number
   finalLoss: number
   /** Loss after each committed (improving) iteration, with baseline at index 0. */
@@ -25,6 +25,12 @@ export interface AutoTuneDebug {
   finalShadowBoost: number
   initialHighlightCompress: number
   finalHighlightCompress: number
+  initialRedGain: number
+  finalRedGain: number
+  initialGreenGain: number
+  finalGreenGain: number
+  initialBlueGain: number
+  finalBlueGain: number
   toneMode: string
 }
 
@@ -35,6 +41,9 @@ export interface AutoTuneResult {
   strength: number
   shadowBoost: number
   highlightCompress: number
+  redGain: number
+  greenGain: number
+  blueGain: number
   debug: AutoTuneDebug
 }
 
@@ -66,20 +75,23 @@ export function autoTune(input: PipelineInput, iterations = 8): AutoTuneResult {
     strength: settings.strength,
     shadowBoost: settings.shadowBoost,
     highlightCompress: settings.highlightCompress,
+    redGain: settings.redGain,
+    greenGain: settings.greenGain,
+    blueGain: settings.blueGain,
   }
 
-  let { saturation, exposure, contrast, strength, shadowBoost, highlightCompress } = initial
+  let { saturation, exposure, contrast, strength, shadowBoost, highlightCompress, redGain, greenGain, blueGain } = initial
 
   // Establish baseline loss with current settings before making any changes.
   let prevStats = imageStats(
-    runPipeline({ ...input, settings: { ...settings, saturation, exposure, contrast, strength, shadowBoost, highlightCompress } }).measured,
+    runPipeline({ ...input, settings: { ...settings, saturation, exposure, contrast, strength, shadowBoost, highlightCompress, redGain, greenGain, blueGain } }).measured,
     isWhite,
   )
   let prevLoss = loss(refStats, prevStats)
-  let best = { saturation, exposure, contrast, strength, shadowBoost, highlightCompress }
+  let best = { saturation, exposure, contrast, strength, shadowBoost, highlightCompress, redGain, greenGain, blueGain }
 
   const lossHistory: number[] = [prevLoss]
-  const initialStats = { meanL: prevStats.meanL, meanC: prevStats.meanC, stddevL: prevStats.stddevL }
+  const initialStats = { meanL: prevStats.meanL, meanC: prevStats.meanC, stddevL: prevStats.stddevL, meanA: prevStats.meanA, meanBv: prevStats.meanBv }
   let converged = true
 
   for (let i = 0; i < iterations; i++) {
@@ -148,9 +160,14 @@ export function autoTune(input: PipelineInput, iterations = 8): AutoTuneResult {
       nextHC = clamp(highlightCompress * clamp(ratio, 0.75, 1.35), 0.5, 5.0)
     }
 
+    // Channel gains: driven by per-channel sRGB mean ratios, 30% damping, ±15% cap.
+    const nextRedGain   = adjustGain(redGain,   refStats.meanR,    prevStats.meanR,    initial.redGain)
+    const nextGreenGain = adjustGain(greenGain, refStats.meanG,    prevStats.meanG,    initial.greenGain)
+    const nextBlueGain  = adjustGain(blueGain,  refStats.meanBlue, prevStats.meanBlue, initial.blueGain)
+
     const result = runPipeline({
       ...input,
-      settings: { ...settings, saturation: nextSat, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC },
+      settings: { ...settings, saturation: nextSat, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC, redGain: nextRedGain, greenGain: nextGreenGain, blueGain: nextBlueGain },
     })
     const stats = imageStats(result.measured, isWhite)
     const newLoss = loss(refStats, stats)
@@ -158,7 +175,7 @@ export function autoTune(input: PipelineInput, iterations = 8): AutoTuneResult {
     // If loss didn't improve, we've overshot or plateaued — revert and stop.
     if (newLoss >= prevLoss) break
 
-    best = { saturation: nextSat, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC }
+    best = { saturation: nextSat, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC, redGain: nextRedGain, greenGain: nextGreenGain, blueGain: nextBlueGain }
     prevLoss = newLoss
     prevStats = stats
     saturation = nextSat
@@ -167,6 +184,9 @@ export function autoTune(input: PipelineInput, iterations = 8): AutoTuneResult {
     strength = nextStrength
     shadowBoost = nextShadowBoost
     highlightCompress = nextHC
+    redGain = nextRedGain
+    greenGain = nextGreenGain
+    blueGain = nextBlueGain
     lossHistory.push(newLoss)
 
     if (i === iterations - 1) converged = false
@@ -179,7 +199,7 @@ export function autoTune(input: PipelineInput, iterations = 8): AutoTuneResult {
       converged,
       refStats,
       initialStats,
-      finalStats: { meanL: prevStats.meanL, meanC: prevStats.meanC, stddevL: prevStats.stddevL },
+      finalStats: { meanL: prevStats.meanL, meanC: prevStats.meanC, stddevL: prevStats.stddevL, meanA: prevStats.meanA, meanBv: prevStats.meanBv },
       initialLoss: lossHistory[0],
       finalLoss: prevLoss,
       lossHistory,
@@ -195,16 +215,49 @@ export function autoTune(input: PipelineInput, iterations = 8): AutoTuneResult {
       finalShadowBoost: best.shadowBoost,
       initialHighlightCompress: initial.highlightCompress,
       finalHighlightCompress: best.highlightCompress,
+      initialRedGain: initial.redGain,
+      finalRedGain: best.redGain,
+      initialGreenGain: initial.greenGain,
+      finalGreenGain: best.greenGain,
+      initialBlueGain: initial.blueGain,
+      finalBlueGain: best.blueGain,
       toneMode,
     },
   }
 }
 
-function loss(ref: ImageStats, cur: ImageStats): number {
-  return Math.abs(ref.meanL - cur.meanL) + Math.abs(ref.meanC - cur.meanC) + Math.abs(ref.stddevL - cur.stddevL)
+function adjustGain(current: number, refMean: number, prevMean: number, initialVal: number): number {
+  if (prevMean < 0.001) return current
+  const lo = initialVal > 0.001 ? initialVal * 0.85 : 0
+  const hi = initialVal > 0.001 ? initialVal * 1.15 : 0.15
+  const candidate = current > 0.001
+    ? current * (1 + (refMean / prevMean - 1) * 0.3)
+    : (refMean - prevMean) * 0.3
+  return clamp(clamp(candidate, lo, hi), 0.5, 2.0)
 }
 
-interface ImageStats { meanL: number; meanC: number; highlightFraction: number; stddevL: number; shadowMeanL: number }
+function loss(ref: ImageStats, cur: ImageStats): number {
+  return (
+    Math.abs(ref.meanL  - cur.meanL)  +
+    Math.abs(ref.meanC  - cur.meanC)  +
+    Math.abs(ref.stddevL - cur.stddevL) +
+    Math.abs(ref.meanA  - cur.meanA)  +
+    Math.abs(ref.meanBv - cur.meanBv)
+  )
+}
+
+interface ImageStats {
+  meanL: number
+  meanC: number
+  highlightFraction: number
+  stddevL: number
+  shadowMeanL: number
+  meanA: number
+  meanBv: number
+  meanR: number
+  meanG: number
+  meanBlue: number
+}
 
 function imageStats(
   img: ImageData,
@@ -215,6 +268,8 @@ function imageStats(
   const SHADOW_THRESH = 0.4
   let sumL = 0, sumL2 = 0, sumC = 0, highlightCount = 0
   let sumShadowL = 0, shadowCount = 0
+  let sumA = 0, sumBv = 0
+  let sumR = 0, sumG = 0, sumBlue = 0
 
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i], g = data[i + 1], b = data[i + 2]
@@ -222,6 +277,11 @@ function imageStats(
     sumL += L
     sumL2 += L * L
     sumC += Math.sqrt(a * a + bv * bv)
+    sumA += a
+    sumBv += bv
+    sumR += r / 255
+    sumG += g / 255
+    sumBlue += b / 255
     if (isHighlight(r, g, b, L)) highlightCount++
     if (L < SHADOW_THRESH) { sumShadowL += L; shadowCount++ }
   }
@@ -233,6 +293,11 @@ function imageStats(
     highlightFraction: highlightCount / n,
     stddevL: Math.sqrt(Math.max(0, sumL2 / n - meanL * meanL)),
     shadowMeanL: shadowCount > 0 ? sumShadowL / shadowCount : 0,
+    meanA: sumA / n,
+    meanBv: sumBv / n,
+    meanR: sumR / n,
+    meanG: sumG / n,
+    meanBlue: sumBlue / n,
   }
 }
 

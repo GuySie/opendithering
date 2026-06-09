@@ -44,6 +44,9 @@ export interface ProcessingSettings {
   ditherStrength: number         // 0.0–1.0, how much error is forwarded
   localVarianceDetection: boolean // reduce diffusion strength in flat areas
   expandPalette: boolean         // append pure primaries to working palette
+  redGain: number                // 0.5–2.0, per-channel color grading
+  greenGain: number              // 0.5–2.0
+  blueGain: number               // 0.5–2.0
   ditherAlgorithm: string
   serpentine: boolean             // alternate scan direction each row (default true)
   knoxAlpha: number              // 0.0–1.0, tone-dependency strength for Eschbach & Knox
@@ -84,6 +87,9 @@ export const BALANCED_PRESET: ProcessingSettings = {
   ditherStrength: 1.0,
   localVarianceDetection: false,
   expandPalette: false,
+  redGain: 1.0,
+  greenGain: 1.0,
+  blueGain: 1.0,
   ditherAlgorithm: 'floyd-steinberg',
   serpentine: true,
   knoxAlpha: 0.5,
@@ -108,6 +114,9 @@ export const VIVID_PRESET: ProcessingSettings = {
   ditherStrength: 1.0,
   localVarianceDetection: false,
   expandPalette: false,
+  redGain: 1.0,
+  greenGain: 1.0,
+  blueGain: 1.0,
   ditherAlgorithm: 'floyd-steinberg',
   serpentine: true,
   knoxAlpha: 0.5,
@@ -132,6 +141,9 @@ export const SOFT_PRESET: ProcessingSettings = {
   ditherStrength: 1.0,
   localVarianceDetection: false,
   expandPalette: false,
+  redGain: 1.0,
+  greenGain: 1.0,
+  blueGain: 1.0,
   ditherAlgorithm: 'stucki',
   serpentine: true,
   knoxAlpha: 0.5,
@@ -156,6 +168,9 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   ditherStrength: 1.0,
   localVarianceDetection: false,
   expandPalette: false,
+  redGain: 1.0,
+  greenGain: 1.0,
+  blueGain: 1.0,
   ditherAlgorithm: 'dizzy',
   serpentine: true,
   knoxAlpha: 0.5,
@@ -180,6 +195,9 @@ export const NONE_PRESET: ProcessingSettings = {
   ditherStrength: 1.0,
   localVarianceDetection: false,
   expandPalette: false,
+  redGain: 1.0,
+  greenGain: 1.0,
+  blueGain: 1.0,
   ditherAlgorithm: 'floyd-steinberg',
   serpentine: true,
   knoxAlpha: 0.5,

@@ -223,6 +223,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 }
 .advanced-panel details[open] summary { color: var(--text); }
 .advanced-panel details > div { padding-top: 0.5rem; }
+.advanced-panel details > .slider-row { padding-top: 0; }
 
 /* ── Export ── */
 .export-row, .autotune-row {
