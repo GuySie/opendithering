@@ -45,7 +45,7 @@ export function resizeImage(
         drawH = dstH
         drawW = drawH * srcRatio
       }
-      // Fill background with white
+      // Fill background with a neutral paper-gray letterbox
       ctx.fillStyle = '#d5d3cc'
       ctx.fillRect(0, 0, dstW, dstH)
     }

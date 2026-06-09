@@ -249,6 +249,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
 .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn-primary:disabled, .btn-secondary:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-primary.btn-sending, .btn-secondary.btn-sending { pointer-events: none; cursor: wait; }
 
 .split-btn {
   position: relative;

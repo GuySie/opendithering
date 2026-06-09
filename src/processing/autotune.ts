@@ -55,14 +55,28 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
     .map(c => ({ measured: c.measured, L: rgbToOklab(c.measured[0], c.measured[1], c.measured[2])[0] }))
     .sort((a, b) => b.L - a.L)
   const thresholdL = (sorted[0].L + (sorted[1]?.L ?? 0)) / 2
-  const [wr, wg, wb] = sorted[0].measured
-  const whiteKey = (wr << 16) | (wg << 8) | wb
+  const whitePaletteL = sorted[0].L
+
+  // Apply the same DRC the pipeline applies so refStats are in the palette's
+  // [blackL, whiteL] L space — otherwise the optimizer fights a systematic gap
+  // it can never close and overcorrects exposure.
+  let drcBlackL = 0, drcWhiteL = 1
+  if (settings.compressDynamicRange) {
+    const drcSorted = palette.colors
+      .map(c => ({ L: rgbToOklab(c.measured[0], c.measured[1], c.measured[2])[0] }))
+      .sort((a, b) => a.L - b.L)
+    drcBlackL = drcSorted[0].L
+    drcWhiteL = drcSorted[drcSorted.length - 1].L
+  }
 
   const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode)
-  const refStats = imageStats(reference, (_, __, ___, L) => L >= thresholdL)
+  const refBuf = imageDataToOklabBuf(reference)
+  if (settings.compressDynamicRange) {
+    const drcRange = drcWhiteL - drcBlackL
+    for (let i = 0; i < refBuf.length; i += 3) refBuf[i] = drcBlackL + refBuf[i] * drcRange
+  }
+  const refStats = imageStats(refBuf, L => L >= thresholdL)
   const refHighlight = Math.max(refStats.highlightFraction, 0.02)
-
-  const isWhite = (r: number, g: number, b: number) => ((r << 16) | (g << 8) | b) === whiteKey
 
   // Read all initial values from settings.
   const initial = {
@@ -80,22 +94,21 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
 
   // Establish baseline with current settings before making any changes.
   let prevStats = imageStats(
-    runPipeline({ ...input, settings: { ...settings, saturation, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset, bOffset } }).measured,
-    isWhite,
+    imageDataToOklabBuf(runPipeline({ ...input, settings: { ...settings, saturation, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset, bOffset } }).measured),
+    L => L >= whitePaletteL,
   )
-  let prevLossL = lossL(refStats, prevStats)
-  let prevLossC = lossC(refStats, prevStats)
+  let prevLoss = loss(refStats, prevStats)
   let best = { saturation, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset, bOffset }
 
-  const lossHistory: number[] = [loss(refStats, prevStats)]
+  const lossHistory: number[] = [prevLoss]
   const initialStats = { meanL: prevStats.meanL, meanC: prevStats.meanC, stddevL: prevStats.stddevL, meanA: prevStats.meanA, meanBv: prevStats.meanBv }
   let converged = true
 
   for (let i = 0; i < iterations; i++) {
     // Two sequential sub-passes per iteration: L then C.
-    // Each pass is accepted/rejected against its own partial loss so a
-    // near-converged C pass cannot block an L pass that still has headroom.
-    // C pass runs after L so it corrects any chroma drift L introduced.
+    // Each is accepted/rejected against total loss — independent progress
+    // without the non-monotonic oscillation that partial-loss acceptance caused.
+    // C runs after L so it can correct any chroma drift L introduced.
 
     // ── L sub-pass: exposure, contrast/strength, shadowBoost, highlightCompress ──
 
@@ -104,7 +117,7 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
     if (prevStats.meanL > 0.001) {
       const adj = 1 + (refStats.meanL / prevStats.meanL - 1) * 0.3
       nextExp = clamp(
-        clamp(exposure * adj, initial.exposure * 0.85, initial.exposure * 1.15),
+        clamp(exposure * adj, exposure * 0.85, exposure * 1.15),
         0.5, 2.0,
       )
     }
@@ -149,14 +162,14 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
       ...input,
       settings: { ...settings, saturation, exposure: nextExp, contrast: nextContrast, strength: nextStrength, shadowBoost: nextShadowBoost, highlightCompress: nextHC, aOffset, bOffset },
     })
-    const statsAfterL = imageStats(lResult.measured, isWhite)
-    const newLossL = lossL(refStats, statsAfterL)
-    const lImproved = newLossL < prevLossL
+    const statsAfterL = imageStats(imageDataToOklabBuf(lResult.measured), L => L >= whitePaletteL)
+    const lossAfterL = loss(refStats, statsAfterL)
+    const lImproved = lossAfterL < prevLoss - 1e-4
     if (lImproved) {
       exposure = nextExp; contrast = nextContrast; strength = nextStrength
       shadowBoost = nextShadowBoost; highlightCompress = nextHC
-      prevLossL = newLossL
       prevStats = statsAfterL
+      prevLoss = lossAfterL
       best = { saturation, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset, bOffset }
     }
 
@@ -169,7 +182,7 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
       nextSat = clamp(
         clamp(
           saturation * (1 + (refStats.meanC / prevStats.meanC - 1) * 0.5),
-          initial.saturation * 0.85, initial.saturation * 1.15,
+          initial.saturation * 0.85, saturation * 1.15,
         ),
         0.0, 2.0,
       )
@@ -183,19 +196,19 @@ export function autoTune(input: PipelineInput, iterations = 12): AutoTuneResult 
       ...input,
       settings: { ...settings, saturation: nextSat, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset: nextAOffset, bOffset: nextBOffset },
     })
-    const statsAfterC = imageStats(cResult.measured, isWhite)
-    const newLossC = lossC(refStats, statsAfterC)
-    const cImproved = newLossC < prevLossC
+    const statsAfterC = imageStats(imageDataToOklabBuf(cResult.measured), L => L >= whitePaletteL)
+    const lossAfterC = loss(refStats, statsAfterC)
+    const cImproved = lossAfterC < prevLoss - 1e-4
     if (cImproved) {
       saturation = nextSat; aOffset = nextAOffset; bOffset = nextBOffset
-      prevLossC = newLossC
       prevStats = statsAfterC
+      prevLoss = lossAfterC
       best = { saturation, exposure, contrast, strength, shadowBoost, highlightCompress, aOffset, bOffset }
     }
 
     if (!lImproved && !cImproved) break
 
-    lossHistory.push(loss(refStats, prevStats))
+    lossHistory.push(prevLoss)
     if (i === iterations - 1) converged = false
   }
 
@@ -241,13 +254,6 @@ function loss(ref: ImageStats, cur: ImageStats): number {
   )
 }
 
-function lossL(ref: ImageStats, cur: ImageStats): number {
-  return Math.abs(ref.meanL - cur.meanL) + Math.abs(ref.stddevL - cur.stddevL)
-}
-
-function lossC(ref: ImageStats, cur: ImageStats): number {
-  return Math.abs(ref.meanC - cur.meanC) + Math.abs(ref.meanA - cur.meanA) + Math.abs(ref.meanBv - cur.meanBv)
-}
 
 interface ImageStats {
   meanL: number
@@ -259,26 +265,29 @@ interface ImageStats {
   meanBv: number
 }
 
-function imageStats(
-  img: ImageData,
-  isHighlight: (r: number, g: number, b: number, L: number) => boolean,
-): ImageStats {
-  const data = img.data
-  const n = data.length / 4
+function imageDataToOklabBuf(img: ImageData): Float32Array {
+  const n = img.data.length / 4
+  const buf = new Float32Array(n * 3)
+  for (let i = 0; i < n; i++) {
+    const [L, a, b] = rgbToOklab(img.data[i * 4], img.data[i * 4 + 1], img.data[i * 4 + 2])
+    buf[i * 3] = L; buf[i * 3 + 1] = a; buf[i * 3 + 2] = b
+  }
+  return buf
+}
+
+function imageStats(buf: Float32Array, isHighlight: (L: number) => boolean): ImageStats {
+  const n = buf.length / 3
   const SHADOW_THRESH = 0.4
   let sumL = 0, sumL2 = 0, sumC = 0, highlightCount = 0
   let sumShadowL = 0, shadowCount = 0
   let sumA = 0, sumBv = 0
 
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i], g = data[i + 1], b = data[i + 2]
-    const [L, a, bv] = rgbToOklab(r, g, b)
-    sumL += L
-    sumL2 += L * L
+  for (let i = 0; i < n; i++) {
+    const L = buf[i * 3], a = buf[i * 3 + 1], bv = buf[i * 3 + 2]
+    sumL += L; sumL2 += L * L
     sumC += Math.sqrt(a * a + bv * bv)
-    sumA += a
-    sumBv += bv
-    if (isHighlight(r, g, b, L)) highlightCount++
+    sumA += a; sumBv += bv
+    if (isHighlight(L)) highlightCount++
     if (L < SHADOW_THRESH) { sumShadowL += L; shadowCount++ }
   }
 

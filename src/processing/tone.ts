@@ -55,7 +55,7 @@ export function applySaturation(buf: Float32Array, saturation: number): void {
 
 export function applyExposure(buf: Float32Array, exposure: number): void {
   for (let i = 0; i < buf.length; i += 3) {
-    buf[i] = Math.min(1, buf[i] * exposure)
+    buf[i] = Math.max(0, Math.min(1, buf[i] * exposure))
   }
 }
 

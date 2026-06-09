@@ -1211,8 +1211,21 @@ btnUploadDevice.addEventListener('click', async () => {
     return
   }
 
+  const preset = DISPLAY_PRESETS.find(p => p.id === presetSelect.value)
+  if (preset && preset.id !== 'custom') {
+    const deg = parseInt(bleRotation.value)
+    const outW = (deg === 90 || deg === 270) ? displayHeight : displayWidth
+    const outH = (deg === 90 || deg === 270) ? displayWidth  : displayHeight
+    if (outW !== preset.width || outH !== preset.height) {
+      const ok = confirm(
+        `Rotation mismatch: the current rotation outputs ${outW}×${outH} px but the device expects ${preset.width}×${preset.height} px.\n\nUpload anyway?`
+      )
+      if (!ok) return
+    }
+  }
+
   const originalLabel = btnUploadDevice.textContent ?? '↑ OpenDisplay BLE'
-  btnUploadDevice.disabled = true
+  btnUploadDevice.classList.add('btn-sending')
   btnUploadDeviceArrow.disabled = true
 
   const isConnected = () => bleState?.protocol === 'opendisplay'
@@ -1226,6 +1239,7 @@ btnUploadDevice.addEventListener('click', async () => {
       btnUploadDevice.textContent = '↑ Connecting…'
       await doConnect()
       if (!bleState) {
+        btnUploadDevice.classList.remove('btn-sending')
         btnUploadDevice.textContent = originalLabel
         updateExportButtons()
         return
@@ -1249,6 +1263,7 @@ btnUploadDevice.addEventListener('click', async () => {
       bleState.conn.device.gatt?.disconnect()
     }
 
+    btnUploadDevice.classList.remove('btn-sending')
     btnUploadDevice.textContent = '✓ Sent'
     setTimeout(() => {
       btnUploadDevice.textContent = originalLabel
@@ -1258,6 +1273,7 @@ btnUploadDevice.addEventListener('click', async () => {
     bleState = null
     setBleConnected(false)
     const msg = err instanceof Error ? err.message : String(err)
+    btnUploadDevice.classList.remove('btn-sending')
     if (!msg.toLowerCase().includes('cancel') && !msg.toLowerCase().includes('user')) {
       btnUploadDevice.textContent = '✗ Error'
       setTimeout(() => {
