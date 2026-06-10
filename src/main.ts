@@ -5,6 +5,7 @@ import { getAllPaletteGroups, getPaletteGroup, getPaletteVariant } from './palet
 import { getAllAlgorithms } from './dithering/index'
 import { runPipeline } from './processing/pipeline'
 import { autoTune } from './processing/autotune'
+import { autoExpose } from './processing/autoexpose'
 import type { AutoTuneDebug } from './processing/autotune'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
@@ -60,7 +61,7 @@ const SERPENTINE_ALGORITHMS = new Set(['floyd-steinberg', 'atkinson', 'burkes', 
 const colorPresetSel      = el<HTMLSelectElement>('colorPreset')
 const errorSpaceSel       = el<HTMLSpanElement>('errorSpaceSel')
 const distSpaceSel        = el<HTMLSpanElement>('distSpaceSel')
-const colorSpaceLabel: Record<string, string> = { rgb: 'RGB', cielab: 'CIELAB', oklab: 'OKLab' }
+const colorSpaceLabel: Record<string, string> = { rgb: 'RGB', cielab: 'CIELAB', oklab: 'OKLab', 'oklab-chroma': 'OKLab chroma-aware' }
 const localVarianceCheck  = el<HTMLInputElement>('localVarianceDetection')
 const expandPaletteCheck  = el<HTMLInputElement>('expandPalette')
 const canvasOrig       = el<HTMLCanvasElement>('canvasOriginal')
@@ -112,6 +113,7 @@ const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
 })()
 const checkCDR         = el<HTMLInputElement>('checkCDR')
 const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
+const btnAutoExpose    = el<HTMLButtonElement>('btnAutoExpose')
 const debugAutoTune    = el<HTMLDivElement>('debugAutoTune')
 const dbgSummary       = el<HTMLSpanElement>('dbgSummary')
 const dbgRefL          = el<HTMLTableCellElement>('dbgRefL')
@@ -731,6 +733,8 @@ function sliderSetup(
 
 sliderSetup('sliderExposure', 'valExposure', 100, 'exposure')
 sliderSetup('sliderSaturation', 'valSaturation', 100, 'saturation')
+sliderSetup('sliderClarity', 'valClarity', 100, 'clarity', 2)
+sliderSetup('sliderClarityRadius', 'valClarityRadius', 1, 'clarityRadius', 0)
 sliderSetup('sliderRedGain',   'valRedGain',   100, 'redGain')
 sliderSetup('sliderGreenGain', 'valGreenGain', 100, 'greenGain')
 sliderSetup('sliderBlueGain',  'valBlueGain',  100, 'blueGain')
@@ -876,6 +880,50 @@ btnAutoTune.addEventListener('click', async () => {
   btnAutoTune.textContent = 'Auto-tune'
 })
 
+btnAutoExpose.addEventListener('click', async () => {
+  if (!activeId) return
+  const img = images.find(i => i.id === activeId)
+  if (!img) return
+
+  btnAutoExpose.disabled = true
+  btnAutoExpose.textContent = 'Exposing…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
+  const srcBitmap = await createImageBitmap(img.original)
+  const result = autoExpose({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
+  srcBitmap.close()
+
+  settings.exposure          = result.exposure
+  settings.saturation        = result.saturation
+  settings.contrast          = result.contrast
+  settings.strength          = result.strength
+  settings.shadowBoost       = result.shadowBoost
+  settings.highlightCompress = result.highlightCompress
+  settings.midpoint          = result.midpoint
+  settings.redGain           = result.redGain
+  settings.greenGain         = result.greenGain
+  settings.blueGain          = result.blueGain
+  settings.compressDynamicRange = result.compressDynamicRange
+
+  markCustomPreset()
+  syncSlidersFromSettings()
+  invalidateAll()
+  scheduleProcess()
+
+  btnAutoExpose.disabled = false
+  btnAutoExpose.textContent = 'Auto Expose'
+})
+
 toneModeSelect.addEventListener('change', () => {
   settings.toneMode = toneModeSelect.value as 'contrast' | 'scurve'
   panelContrast.hidden = settings.toneMode !== 'contrast'
@@ -898,7 +946,9 @@ algorithmSelect.addEventListener('change', () => {
 })
 
 function applyColorPreset(value: string) {
-  const [errSpace, distSpace] = value.split('_') as [import('./types').ColorSpace, import('./types').ColorSpace]
+  const sep = value.indexOf('_')
+  const errSpace  = value.slice(0, sep)       as import('./types').ColorSpace
+  const distSpace = value.slice(sep + 1)      as import('./types').ColorSpace
   settings.errorSpace = errSpace
   settings.distSpace  = distSpace
   errorSpaceSel.textContent = colorSpaceLabel[errSpace]
@@ -936,6 +986,9 @@ previewToggleBtns.forEach(btn => {
 function syncSlidersFromSettings() {
   setSlider('sliderExposure', 'valExposure', settings.exposure * 100, settings.exposure)
   setSlider('sliderSaturation', 'valSaturation', settings.saturation * 100, settings.saturation)
+  setSlider('sliderClarity', 'valClarity', settings.clarity * 100, settings.clarity)
+  el<HTMLInputElement>('sliderClarityRadius').value = String(settings.clarityRadius)
+  el<HTMLSpanElement>('valClarityRadius').textContent = String(settings.clarityRadius)
   setSlider('sliderRedGain',   'valRedGain',   settings.redGain   * 100, settings.redGain)
   setSlider('sliderGreenGain', 'valGreenGain', settings.greenGain * 100, settings.greenGain)
   setSlider('sliderBlueGain',  'valBlueGain',  settings.blueGain  * 100, settings.blueGain)
