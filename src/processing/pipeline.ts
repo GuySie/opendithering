@@ -1,6 +1,6 @@
 import type { ProcessingSettings, Palette, ResizeMode } from '../types'
 import { resizeImage } from './resize'
-import { compressDynamicRange, applyToneMapping, applySaturation, applyExposure, applyChannelGains } from './tone'
+import { compressDynamicRange, applyToneMapping, applySaturation, applyExposure, applyChannelGains, applyClarity } from './tone'
 import { getAlgorithm } from '../dithering/index'
 
 export interface PipelineInput {
@@ -26,6 +26,11 @@ export function runPipeline(input: PipelineInput): PipelineResult {
 
   // 1. Resize
   const resized = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode)
+
+  // 1.5 Clarity (midtone-weighted unsharp mask)
+  if (settings.clarity !== 0) {
+    applyClarity(resized.data, resized.width, resized.height, settings.clarity, settings.clarityRadius)
+  }
 
   // 2. Dynamic range compression
   if (settings.compressDynamicRange) {

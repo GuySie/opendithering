@@ -262,7 +262,7 @@ function loss(ref: ImageStats, cur: ImageStats): number {
   return (
     Math.abs(ref.meanL   - cur.meanL)   +
     Math.abs(ref.meanC   - cur.meanC)   +
-    Math.abs(ref.stddevL - cur.stddevL) +
+    0.5 * Math.abs(ref.stddevL - cur.stddevL) +
     Math.abs(ref.meanA   - cur.meanA)   +
     Math.abs(ref.meanBv  - cur.meanBv)
   )

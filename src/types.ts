@@ -27,7 +27,7 @@ export interface DisplayPreset {
 
 export type ResizeMode = 'cover' | 'contain' | 'stretch' | 'none'
 export type ToneMode = 'contrast' | 'scurve'
-export type ColorSpace = 'rgb' | 'cielab' | 'oklab'
+export type ColorSpace = 'rgb' | 'cielab' | 'oklab' | 'oklab-chroma'
 
 export interface ProcessingSettings {
   exposure: number              // 0.5–2.0, default 1.0
@@ -54,6 +54,8 @@ export interface ProcessingSettings {
   knoxEdgeSensitivity: number    // 0.5–8.0, cross-edge suppression sensitivity for Eschbach & Knox
   riemersmaQueueSize: number     // 4–64, error history queue length for Riemersma
   dizzyDiagonalWeight: number    // 0.0–1.0, diagonal neighbour weight for Dizzy
+  clarity: number                // -1.0–1.0, unsharp mask strength (0 = off, positive = sharpen, negative = blur)
+  clarityRadius: number          // 1–4, box blur radius for unsharp mask (larger = coarser features sharpened)
 }
 
 export interface DitheringAlgorithm {
@@ -97,6 +99,8 @@ export const BALANCED_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  clarity: 0.0,
+  clarityRadius: 2,
 }
 
 export const VIVID_PRESET: ProcessingSettings = {
@@ -124,6 +128,8 @@ export const VIVID_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  clarity: 0.0,
+  clarityRadius: 2,
 }
 
 export const SOFT_PRESET: ProcessingSettings = {
@@ -151,6 +157,8 @@ export const SOFT_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  clarity: 0.0,
+  clarityRadius: 2,
 }
 
 export const GRAYSCALE_PRESET: ProcessingSettings = {
@@ -178,6 +186,8 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  clarity: 0.0,
+  clarityRadius: 2,
 }
 
 export const NONE_PRESET: ProcessingSettings = {
@@ -205,6 +215,8 @@ export const NONE_PRESET: ProcessingSettings = {
   knoxEdgeSensitivity: 4.0,
   riemersmaQueueSize: 16,
   dizzyDiagonalWeight: 0.1,
+  clarity: 0.0,
+  clarityRadius: 2,
 }
 
 export type PresetName = 'balanced' | 'vivid' | 'soft' | 'grayscale' | 'none' | 'custom'
