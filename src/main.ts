@@ -4,9 +4,9 @@ import { DISPLAY_PRESETS } from './displays/presets'
 import { getAllPaletteGroups, getPaletteGroup, getPaletteVariant } from './palettes/index'
 import { getAllAlgorithms } from './dithering/index'
 import { runPipeline } from './processing/pipeline'
-import { autoTune } from './processing/autotune'
+import { colorTune } from './processing/autotune'
 import { autoExpose } from './processing/autoexpose'
-import type { AutoTuneDebug } from './processing/autotune'
+import type { ColorTuneDebug } from './processing/autotune'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
@@ -112,37 +112,17 @@ const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
     : `BLE upload is not supported in ${name}. Try Chrome or Edge.`
 })()
 const checkCDR         = el<HTMLInputElement>('checkCDR')
-const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
+const btnColorTune     = el<HTMLButtonElement>('btnColorTune')
 const btnAutoExpose    = el<HTMLButtonElement>('btnAutoExpose')
-const debugAutoTune    = el<HTMLDivElement>('debugAutoTune')
+const debugColorTune   = el<HTMLDivElement>('debugColorTune')
 const dbgSummary       = el<HTMLSpanElement>('dbgSummary')
-const dbgRefL          = el<HTMLTableCellElement>('dbgRefL')
 const dbgRefC          = el<HTMLTableCellElement>('dbgRefC')
-const dbgRefStdL       = el<HTMLTableCellElement>('dbgRefStdL')
-const dbgInitL         = el<HTMLTableCellElement>('dbgInitL')
 const dbgInitC         = el<HTMLTableCellElement>('dbgInitC')
-const dbgInitStdL      = el<HTMLTableCellElement>('dbgInitStdL')
-const dbgFinalL        = el<HTMLTableCellElement>('dbgFinalL')
 const dbgFinalC        = el<HTMLTableCellElement>('dbgFinalC')
-const dbgFinalStdL     = el<HTMLTableCellElement>('dbgFinalStdL')
 const dbgInitLoss      = el<HTMLTableCellElement>('dbgInitLoss')
 const dbgFinalLoss     = el<HTMLTableCellElement>('dbgFinalLoss')
 const dbgSatBefore     = el<HTMLTableCellElement>('dbgSatBefore')
 const dbgSatAfter      = el<HTMLTableCellElement>('dbgSatAfter')
-const dbgExpBefore     = el<HTMLTableCellElement>('dbgExpBefore')
-const dbgExpAfter      = el<HTMLTableCellElement>('dbgExpAfter')
-const dbgContrastRow   = el<HTMLTableRowElement>('dbgContrastRow')
-const dbgContrastBefore = el<HTMLTableCellElement>('dbgContrastBefore')
-const dbgContrastAfter  = el<HTMLTableCellElement>('dbgContrastAfter')
-const dbgStrengthRow   = el<HTMLTableRowElement>('dbgStrengthRow')
-const dbgStrengthBefore = el<HTMLTableCellElement>('dbgStrengthBefore')
-const dbgStrengthAfter  = el<HTMLTableCellElement>('dbgStrengthAfter')
-const dbgShadowBoostRow   = el<HTMLTableRowElement>('dbgShadowBoostRow')
-const dbgShadowBoostBefore = el<HTMLTableCellElement>('dbgShadowBoostBefore')
-const dbgShadowBoostAfter  = el<HTMLTableCellElement>('dbgShadowBoostAfter')
-const dbgHCRow         = el<HTMLTableRowElement>('dbgHCRow')
-const dbgHCBefore      = el<HTMLTableCellElement>('dbgHCBefore')
-const dbgHCAfter       = el<HTMLTableCellElement>('dbgHCAfter')
 const dbgRefA          = el<HTMLTableCellElement>('dbgRefA')
 const dbgInitA         = el<HTMLTableCellElement>('dbgInitA')
 const dbgFinalA        = el<HTMLTableCellElement>('dbgFinalA')
@@ -838,18 +818,18 @@ checkCDR.addEventListener('change', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
-btnAutoTune.addEventListener('click', async () => {
+btnColorTune.addEventListener('click', async () => {
   if (!activeId) return
   const img = images.find(i => i.id === activeId)
   if (!img) return
 
-  btnAutoTune.disabled = true
-  btnAutoTune.textContent = 'Tuning…'
+  btnColorTune.disabled = true
+  btnColorTune.textContent = 'Tuning…'
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
 
   const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
   const srcBitmap = await createImageBitmap(img.original)
-  const result = autoTune({
+  const result = colorTune({
     source: srcBitmap,
     srcWidth: img.original.width,
     srcHeight: img.original.height,
@@ -862,22 +842,17 @@ btnAutoTune.addEventListener('click', async () => {
   srcBitmap.close()
 
   settings.saturation = result.saturation
-  settings.exposure = result.exposure
-  settings.contrast = result.contrast
-  settings.strength = result.strength
-  settings.shadowBoost = result.shadowBoost
-  settings.highlightCompress = result.highlightCompress
-  settings.redGain   = result.redGain
-  settings.greenGain = result.greenGain
-  settings.blueGain  = result.blueGain
+  settings.redGain    = result.redGain
+  settings.greenGain  = result.greenGain
+  settings.blueGain   = result.blueGain
   markCustomPreset()
   syncSlidersFromSettings()
   invalidateAll()
   scheduleProcess()
-  showAutoTuneDebug(result.debug)
+  showColorTuneDebug(result.debug)
 
-  btnAutoTune.disabled = false
-  btnAutoTune.textContent = 'Auto-tune'
+  btnColorTune.disabled = false
+  btnColorTune.textContent = 'Color-tune'
 })
 
 btnAutoExpose.addEventListener('click', async () => {
@@ -1050,7 +1025,7 @@ function invalidateAll() {
 
 // ── Auto-tune debug panel ─────────────────────────────────────────────────
 
-function showAutoTuneDebug(d: AutoTuneDebug) {
+function showColorTuneDebug(d: ColorTuneDebug) {
   const f3 = (n: number) => n.toFixed(3)
   const f2 = (n: number) => n.toFixed(2)
 
@@ -1060,19 +1035,13 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
     : `${iters} iteration${iters !== 1 ? 's' : ''} · ${d.converged ? 'converged' : 'hit limit'}`
   dbgSummary.textContent = statusLabel
 
-  dbgRefL.textContent    = f3(d.refStats.meanL)
   dbgRefC.textContent    = f3(d.refStats.meanC)
-  dbgRefStdL.textContent = f3(d.refStats.stddevL)
   dbgRefA.textContent    = f3(d.refStats.meanA)
   dbgRefBok.textContent  = f3(d.refStats.meanBv)
-  dbgInitL.textContent   = f3(d.initialStats.meanL)
   dbgInitC.textContent   = f3(d.initialStats.meanC)
-  dbgInitStdL.textContent = f3(d.initialStats.stddevL)
   dbgInitA.textContent   = f3(d.initialStats.meanA)
   dbgInitBok.textContent = f3(d.initialStats.meanBv)
-  dbgFinalL.textContent  = f3(d.finalStats.meanL)
   dbgFinalC.textContent  = f3(d.finalStats.meanC)
-  dbgFinalStdL.textContent = f3(d.finalStats.stddevL)
   dbgFinalA.textContent  = f3(d.finalStats.meanA)
   dbgFinalBok.textContent = f3(d.finalStats.meanBv)
   dbgInitLoss.textContent  = f3(d.initialLoss)
@@ -1080,24 +1049,6 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
 
   dbgSatBefore.textContent = f2(d.initialSaturation)
   dbgSatAfter.textContent  = f2(d.finalSaturation)
-  dbgExpBefore.textContent = f2(d.initialExposure)
-  dbgExpAfter.textContent  = f2(d.finalExposure)
-
-  dbgContrastRow.hidden = d.toneMode !== 'contrast'
-  dbgContrastBefore.textContent = f2(d.initialContrast)
-  dbgContrastAfter.textContent  = f2(d.finalContrast)
-
-  dbgStrengthRow.hidden = d.toneMode !== 'scurve'
-  dbgStrengthBefore.textContent = f2(d.initialStrength)
-  dbgStrengthAfter.textContent  = f2(d.finalStrength)
-
-  dbgShadowBoostRow.hidden = d.toneMode !== 'scurve'
-  dbgShadowBoostBefore.textContent = f2(d.initialShadowBoost)
-  dbgShadowBoostAfter.textContent  = f2(d.finalShadowBoost)
-
-  dbgHCRow.hidden = d.toneMode !== 'scurve'
-  dbgHCBefore.textContent = f2(d.initialHighlightCompress)
-  dbgHCAfter.textContent  = f2(d.finalHighlightCompress)
 
   dbgRedGainBefore.textContent   = f2(d.initialRedGain)
   dbgRedGainAfter.textContent    = f2(d.finalRedGain)
@@ -1108,7 +1059,7 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
 
   dbgLossHistory.textContent = d.lossHistory.map(f3).join(' → ')
 
-  debugAutoTune.hidden = false
+  debugColorTune.hidden = false
 }
 
 // ── Palette badge ─────────────────────────────────────────────────────────
