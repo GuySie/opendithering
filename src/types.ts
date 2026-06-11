@@ -56,6 +56,7 @@ export interface ProcessingSettings {
   dizzyDiagonalWeight: number    // 0.0–1.0, diagonal neighbour weight for Dizzy
   clarity: number                // -1.0–1.0, unsharp mask strength (0 = off, positive = sharpen, negative = blur)
   clarityRadius: number          // 1–4, box blur radius for unsharp mask (larger = coarser features sharpened)
+  hueSatBands: [number, number, number, number, number, number]  // per-hue sat multipliers [Red, Yellow, Green, Cyan, Blue, Magenta], default [1,1,1,1,1,1]
 }
 
 export interface DitheringAlgorithm {
@@ -101,6 +102,7 @@ export const BALANCED_PRESET: ProcessingSettings = {
   dizzyDiagonalWeight: 0.1,
   clarity: 0.0,
   clarityRadius: 2,
+  hueSatBands: [1, 1, 1, 1, 1, 1],
 }
 
 export const VIVID_PRESET: ProcessingSettings = {
@@ -130,6 +132,7 @@ export const VIVID_PRESET: ProcessingSettings = {
   dizzyDiagonalWeight: 0.1,
   clarity: 0.0,
   clarityRadius: 2,
+  hueSatBands: [1, 1, 1, 1, 1, 1],
 }
 
 export const SOFT_PRESET: ProcessingSettings = {
@@ -159,6 +162,7 @@ export const SOFT_PRESET: ProcessingSettings = {
   dizzyDiagonalWeight: 0.1,
   clarity: 0.0,
   clarityRadius: 2,
+  hueSatBands: [1, 1, 1, 1, 1, 1],
 }
 
 export const GRAYSCALE_PRESET: ProcessingSettings = {
@@ -188,6 +192,7 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   dizzyDiagonalWeight: 0.1,
   clarity: 0.0,
   clarityRadius: 2,
+  hueSatBands: [1, 1, 1, 1, 1, 1],
 }
 
 export const NONE_PRESET: ProcessingSettings = {
@@ -217,6 +222,7 @@ export const NONE_PRESET: ProcessingSettings = {
   dizzyDiagonalWeight: 0.1,
   clarity: 0.0,
   clarityRadius: 2,
+  hueSatBands: [1, 1, 1, 1, 1, 1],
 }
 
 export type PresetName = 'balanced' | 'vivid' | 'soft' | 'grayscale' | 'none' | 'custom'

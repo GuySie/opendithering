@@ -4,9 +4,11 @@ import { DISPLAY_PRESETS } from './displays/presets'
 import { getAllPaletteGroups, getPaletteGroup, getPaletteVariant } from './palettes/index'
 import { getAllAlgorithms } from './dithering/index'
 import { runPipeline } from './processing/pipeline'
-import { colorTune } from './processing/autotune'
+import { colorTune } from './processing/colortune'
+import { hueTune } from './processing/huetune'
 import { autoExpose } from './processing/autoexpose'
-import type { ColorTuneDebug } from './processing/autotune'
+import type { ColorTuneDebug } from './processing/colortune'
+import type { HueTuneDebug } from './processing/huetune'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
@@ -112,9 +114,12 @@ const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
     : `BLE upload is not supported in ${name}. Try Chrome or Edge.`
 })()
 const checkCDR         = el<HTMLInputElement>('checkCDR')
+const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
 const btnColorTune     = el<HTMLButtonElement>('btnColorTune')
+const btnHueTune       = el<HTMLButtonElement>('btnHueTune')
 const btnAutoExpose    = el<HTMLButtonElement>('btnAutoExpose')
 const debugColorTune   = el<HTMLDivElement>('debugColorTune')
+const debugHueTune     = el<HTMLDivElement>('debugHueTune')
 const dbgSummary       = el<HTMLSpanElement>('dbgSummary')
 const dbgRefC          = el<HTMLTableCellElement>('dbgRefC')
 const dbgInitC         = el<HTMLTableCellElement>('dbgInitC')
@@ -718,6 +723,25 @@ sliderSetup('sliderClarityRadius', 'valClarityRadius', 1, 'clarityRadius', 0)
 sliderSetup('sliderRedGain',   'valRedGain',   100, 'redGain')
 sliderSetup('sliderGreenGain', 'valGreenGain', 100, 'greenGain')
 sliderSetup('sliderBlueGain',  'valBlueGain',  100, 'blueGain')
+
+const HUE_BAND_NAMES = ['Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta'] as const
+HUE_BAND_NAMES.forEach((name, idx) => {
+  const slider = el<HTMLInputElement>(`sliderHueSat${name}`)
+  const valEl  = el<HTMLSpanElement>(`valHueSat${name}`)
+  slider.addEventListener('input', () => {
+    const v = parseInt(slider.value) / 100
+    settings.hueSatBands[idx] = v
+    valEl.textContent = v.toFixed(2)
+    markCustomPreset(); invalidateAll(); scheduleProcess()
+  })
+  valEl.title = 'Double-click to reset'
+  valEl.addEventListener('dblclick', () => {
+    settings.hueSatBands[idx] = 1
+    slider.value = '100'
+    valEl.textContent = '1.00'
+    markCustomPreset(); invalidateAll(); scheduleProcess()
+  })
+})
 sliderSetup('sliderContrast', 'valContrast', 100, 'contrast')
 sliderSetup('sliderStrength', 'valStrength', 100, 'strength')
 sliderSetup('sliderShadowBoost', 'valShadowBoost', 100, 'shadowBoost')
@@ -818,6 +842,72 @@ checkCDR.addEventListener('change', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
+btnAutoTune.addEventListener('click', async () => {
+  if (!activeId) return
+  const img = images.find(i => i.id === activeId)
+  if (!img) return
+
+  btnAutoTune.disabled = true
+  btnAutoTune.textContent = 'Exposing…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
+  const srcBitmap = await createImageBitmap(img.original)
+
+  // Step 1: Auto Expose
+  const exposeResult = autoExpose({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
+  settings.exposure          = exposeResult.exposure
+  settings.saturation        = exposeResult.saturation
+  settings.contrast          = exposeResult.contrast
+  settings.strength          = exposeResult.strength
+  settings.shadowBoost       = exposeResult.shadowBoost
+  settings.highlightCompress = exposeResult.highlightCompress
+  settings.midpoint          = exposeResult.midpoint
+  settings.redGain           = exposeResult.redGain
+  settings.greenGain         = exposeResult.greenGain
+  settings.blueGain          = exposeResult.blueGain
+  settings.compressDynamicRange = exposeResult.compressDynamicRange
+
+  // Step 2: Color-tune
+  btnAutoTune.textContent = 'Tuning…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const tuneResult = colorTune({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
+  srcBitmap.close()
+
+  settings.saturation = tuneResult.saturation
+  settings.redGain    = tuneResult.redGain
+  settings.greenGain  = tuneResult.greenGain
+  settings.blueGain   = tuneResult.blueGain
+
+  markCustomPreset()
+  syncSlidersFromSettings()
+  invalidateAll()
+  scheduleProcess()
+  showColorTuneDebug(tuneResult.debug)
+
+  btnAutoTune.disabled = false
+  btnAutoTune.textContent = 'Auto-tune'
+})
+
 btnColorTune.addEventListener('click', async () => {
   if (!activeId) return
   const img = images.find(i => i.id === activeId)
@@ -853,6 +943,40 @@ btnColorTune.addEventListener('click', async () => {
 
   btnColorTune.disabled = false
   btnColorTune.textContent = 'Color-tune'
+})
+
+btnHueTune.addEventListener('click', async () => {
+  if (!activeId) return
+  const img = images.find(i => i.id === activeId)
+  if (!img) return
+
+  btnHueTune.disabled = true
+  btnHueTune.textContent = 'Tuning…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
+  const srcBitmap = await createImageBitmap(img.original)
+  const result = hueTune({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
+  srcBitmap.close()
+
+  settings.hueSatBands = result.hueSatBands
+  markCustomPreset()
+  syncSlidersFromSettings()
+  invalidateAll()
+  scheduleProcess()
+  showHueTuneDebug(result.debug)
+
+  btnHueTune.disabled = false
+  btnHueTune.textContent = 'Hue-tune'
 })
 
 btnAutoExpose.addEventListener('click', async () => {
@@ -967,6 +1091,9 @@ function syncSlidersFromSettings() {
   setSlider('sliderRedGain',   'valRedGain',   settings.redGain   * 100, settings.redGain)
   setSlider('sliderGreenGain', 'valGreenGain', settings.greenGain * 100, settings.greenGain)
   setSlider('sliderBlueGain',  'valBlueGain',  settings.blueGain  * 100, settings.blueGain)
+  HUE_BAND_NAMES.forEach((name, idx) => {
+    setSlider(`sliderHueSat${name}`, `valHueSat${name}`, settings.hueSatBands[idx] * 100, settings.hueSatBands[idx])
+  })
   setSlider('sliderContrast', 'valContrast', settings.contrast * 100, settings.contrast)
   setSlider('sliderStrength', 'valStrength', settings.strength * 100, settings.strength)
   setSlider('sliderShadowBoost', 'valShadowBoost', settings.shadowBoost * 100, settings.shadowBoost)
@@ -1060,6 +1187,41 @@ function showColorTuneDebug(d: ColorTuneDebug) {
   dbgLossHistory.textContent = d.lossHistory.map(f3).join(' → ')
 
   debugColorTune.hidden = false
+}
+
+function showHueTuneDebug(d: HueTuneDebug) {
+  const f2 = (n: number) => n.toFixed(2)
+  const f3 = (n: number) => n.toFixed(3)
+
+  const iters = d.iterationsRun
+  const statusLabel = iters === 0
+    ? 'no change (already optimal)'
+    : `${iters} iteration${iters !== 1 ? 's' : ''} · ${d.converged ? 'converged' : 'hit limit'}`
+  el<HTMLSpanElement>('dbgHueSummary').textContent = statusLabel
+
+  const bandIds = ['Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta'] as const
+  for (const band of d.bands) {
+    const name = band.name as typeof bandIds[number]
+    if (band.pixelCount < 50) {
+      el<HTMLTableCellElement>(`dbgHueRef${name}`).textContent       = '—'
+      el<HTMLTableCellElement>(`dbgHueInit${name}`).textContent      = '—'
+      el<HTMLTableCellElement>(`dbgHueFinal${name}`).textContent     = '—'
+      el<HTMLTableCellElement>(`dbgHueBandInit${name}`).textContent  = '—'
+      el<HTMLTableCellElement>(`dbgHueBandFinal${name}`).textContent = '—'
+      el<HTMLTableCellElement>(`dbgHueCnt${name}`).textContent       = String(band.pixelCount)
+    } else {
+      el<HTMLTableCellElement>(`dbgHueRef${name}`).textContent       = f3(band.refMeanC)
+      el<HTMLTableCellElement>(`dbgHueInit${name}`).textContent      = f3(band.initialMeanC)
+      el<HTMLTableCellElement>(`dbgHueFinal${name}`).textContent     = f3(band.finalMeanC)
+      el<HTMLTableCellElement>(`dbgHueBandInit${name}`).textContent  = f2(band.initialBandValue)
+      el<HTMLTableCellElement>(`dbgHueBandFinal${name}`).textContent = f2(band.finalBandValue)
+      el<HTMLTableCellElement>(`dbgHueCnt${name}`).textContent       = String(band.pixelCount)
+    }
+  }
+
+  el<HTMLSpanElement>('dbgHueLossHistory').textContent = d.lossHistory.map(f3).join(' → ')
+
+  debugHueTune.hidden = false
 }
 
 // ── Palette badge ─────────────────────────────────────────────────────────

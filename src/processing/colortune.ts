@@ -81,21 +81,7 @@ export function colorTune(input: PipelineInput, iterations = 12): ColorTuneResul
     const nextGreenGain = adjustGain(greenGain, refStats.meanG,    prevStats.meanG,    initial.greenGain)
     const nextBlueGain  = adjustGain(blueGain,  refStats.meanBlue, prevStats.meanBlue, initial.blueGain)
 
-    const interimStats = imageStats(
-      runPipeline({ ...input, settings: { ...settings, saturation, redGain: nextRedGain, greenGain: nextGreenGain, blueGain: nextBlueGain } }).measured,
-    )
-
-    // Pass B: adjust saturation from post-gain interim stats.
-    let nextSat = saturation
-    if (interimStats.meanC > 0.001) {
-      nextSat = clamp(
-        clamp(
-          saturation * (1 + (refStats.meanC / interimStats.meanC - 1) * 0.5),
-          initial.saturation * 0.85, initial.saturation * 1.15,
-        ),
-        0.0, 2.0,
-      )
-    }
+    const nextSat = saturation
 
     const result = runPipeline({
       ...input,

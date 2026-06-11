@@ -210,9 +210,9 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .tone-mode-row { margin-top: 0.875rem; }
 
 /* ── Advanced panel ── */
-.advanced-panel { margin-top: 0.75rem; }
-#panelColorMatching { margin-top: 0.875rem; }
-#panelLocalVariance { margin-top: 0.875rem; }
+.advanced-panel,
+#panelColorMatching,
+#panelLocalVariance,
 #panelSerpentine { margin-top: 0.875rem; }
 .advanced-panel details summary {
   cursor: pointer;
@@ -224,6 +224,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .advanced-panel details[open] summary { color: var(--text); }
 .advanced-panel details > div { padding-top: 0.5rem; }
 .advanced-panel details > .slider-row { padding-top: 0; }
+.advanced-panel hr { margin: 0.75rem 0; border: none; border-top: 1px solid var(--border); opacity: 0.4; }
 
 /* ── Export ── */
 .export-row, .autotune-row {
@@ -231,9 +232,9 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   gap: 0.5rem;
   align-items: center;
 }
-.autotune-row { margin-bottom: 0.25rem; }
-.export-row { margin-top: 0.75rem; }
-.export-row:first-of-type { margin-top: 0.875rem; }
+.autotune-row + .autotune-row { margin-top: 0.5rem; }
+.export-row { margin-top: 0.875rem; }
+.export-row + .export-row { margin-top: 0.75rem; }
 .btn-primary, .btn-secondary {
   flex: 1;
   padding: 0.55rem 0.5rem;
@@ -478,7 +479,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  margin-top: 0.5rem;
+  margin-top: 0.75rem;
 }
 .palette-swatches .swatch {
   width: 20px;

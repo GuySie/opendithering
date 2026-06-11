@@ -1,6 +1,6 @@
 import type { ProcessingSettings, Palette, ResizeMode } from '../types'
 import { resizeImage } from './resize'
-import { compressDynamicRange, applyToneMapping, applySaturation, applyExposure, applyChannelGains, applyClarity } from './tone'
+import { compressDynamicRange, applyToneMapping, applySaturation, applyHueSatBands, applyExposure, applyChannelGains, applyClarity } from './tone'
 import { getAlgorithm } from '../dithering/index'
 
 export interface PipelineInput {
@@ -42,6 +42,7 @@ export function runPipeline(input: PipelineInput): PipelineResult {
 
   // 4. Saturation
   applySaturation(resized.data, settings.saturation)
+  if (settings.hueSatBands.some(v => v !== 1)) applyHueSatBands(resized.data, settings.hueSatBands)
 
   // 5. Exposure
   applyExposure(resized.data, settings.exposure)

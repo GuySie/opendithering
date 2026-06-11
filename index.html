@@ -90,8 +90,12 @@
         <h2>4. Tone</h2>
 
         <div class="autotune-row">
-          <button class="btn-secondary" id="btnColorTune">Color-tune</button>
+          <button class="btn-secondary" id="btnAutoTune">Auto-tune</button>
+        </div>
+        <div class="autotune-row">
           <button class="btn-secondary" id="btnAutoExpose">Auto Expose</button>
+          <button class="btn-secondary" id="btnColorTune">Color-tune</button>
+          <button class="btn-secondary" id="btnHueTune">Hue-tune</button>
         </div>
         <div class="slider-row">
           <label for="sliderExposure">Exposure</label>
@@ -120,7 +124,7 @@
 
         <div class="advanced-panel" id="panelColorGrading">
           <details>
-            <summary>Channel gains</summary>
+            <summary>Color correction</summary>
             <div class="slider-row">
               <label for="sliderRedGain">Red</label>
               <input type="range" id="sliderRedGain" min="50" max="200" value="100" step="1" />
@@ -135,6 +139,37 @@
               <label for="sliderBlueGain">Blue</label>
               <input type="range" id="sliderBlueGain" min="50" max="200" value="100" step="1" />
               <span class="slider-val" id="valBlueGain">1.00</span>
+            </div>
+            <hr>
+            <div class="slider-row">
+              <label for="sliderHueSatRed"><span style="color:#e74c3c">●</span> Red</label>
+              <input type="range" id="sliderHueSatRed" min="25" max="400" value="100" step="1" />
+              <span class="slider-val" id="valHueSatRed">1.00</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderHueSatYellow"><span style="color:#f0c040">●</span> Yellow</label>
+              <input type="range" id="sliderHueSatYellow" min="25" max="400" value="100" step="1" />
+              <span class="slider-val" id="valHueSatYellow">1.00</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderHueSatGreen"><span style="color:#2ecc71">●</span> Green</label>
+              <input type="range" id="sliderHueSatGreen" min="25" max="400" value="100" step="1" />
+              <span class="slider-val" id="valHueSatGreen">1.00</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderHueSatCyan"><span style="color:#1abc9c">●</span> Cyan</label>
+              <input type="range" id="sliderHueSatCyan" min="25" max="400" value="100" step="1" />
+              <span class="slider-val" id="valHueSatCyan">1.00</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderHueSatBlue"><span style="color:#3498db">●</span> Blue</label>
+              <input type="range" id="sliderHueSatBlue" min="25" max="400" value="100" step="1" />
+              <span class="slider-val" id="valHueSatBlue">1.00</span>
+            </div>
+            <div class="slider-row">
+              <label for="sliderHueSatMagenta"><span style="color:#9b59b6">●</span> Magenta</label>
+              <input type="range" id="sliderHueSatMagenta" min="25" max="400" value="100" step="1" />
+              <span class="slider-val" id="valHueSatMagenta">1.00</span>
             </div>
           </details>
         </div>
@@ -339,6 +374,30 @@
           </table>
         </div>
         <div class="debug-loss-row">Loss history: <span id="dbgLossHistory"></span></div>
+      </div>
+
+      <div id="debugHueTune" class="debug-panel" hidden>
+        <div class="debug-header">Hue-tune — <span id="dbgHueSummary"></span></div>
+        <div class="debug-body">
+          <table class="debug-table">
+            <thead><tr><th></th><th>Target C</th><th>C before</th><th>C after</th><th>× before</th><th>× after</th><th>Pixels</th></tr></thead>
+            <tbody>
+              <tr><td><span style="color:#e74c3c">●</span> Red</td>
+                <td id="dbgHueRefRed"></td><td id="dbgHueInitRed"></td><td id="dbgHueFinalRed"></td><td id="dbgHueBandInitRed"></td><td id="dbgHueBandFinalRed"></td><td id="dbgHueCntRed"></td></tr>
+              <tr><td><span style="color:#f0c040">●</span> Yellow</td>
+                <td id="dbgHueRefYellow"></td><td id="dbgHueInitYellow"></td><td id="dbgHueFinalYellow"></td><td id="dbgHueBandInitYellow"></td><td id="dbgHueBandFinalYellow"></td><td id="dbgHueCntYellow"></td></tr>
+              <tr><td><span style="color:#2ecc71">●</span> Green</td>
+                <td id="dbgHueRefGreen"></td><td id="dbgHueInitGreen"></td><td id="dbgHueFinalGreen"></td><td id="dbgHueBandInitGreen"></td><td id="dbgHueBandFinalGreen"></td><td id="dbgHueCntGreen"></td></tr>
+              <tr><td><span style="color:#1abc9c">●</span> Cyan</td>
+                <td id="dbgHueRefCyan"></td><td id="dbgHueInitCyan"></td><td id="dbgHueFinalCyan"></td><td id="dbgHueBandInitCyan"></td><td id="dbgHueBandFinalCyan"></td><td id="dbgHueCntCyan"></td></tr>
+              <tr><td><span style="color:#3498db">●</span> Blue</td>
+                <td id="dbgHueRefBlue"></td><td id="dbgHueInitBlue"></td><td id="dbgHueFinalBlue"></td><td id="dbgHueBandInitBlue"></td><td id="dbgHueBandFinalBlue"></td><td id="dbgHueCntBlue"></td></tr>
+              <tr><td><span style="color:#9b59b6">●</span> Magenta</td>
+                <td id="dbgHueRefMagenta"></td><td id="dbgHueInitMagenta"></td><td id="dbgHueFinalMagenta"></td><td id="dbgHueBandInitMagenta"></td><td id="dbgHueBandFinalMagenta"></td><td id="dbgHueCntMagenta"></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="debug-loss-row">Loss history: <span id="dbgHueLossHistory"></span></div>
       </div>
     </main>
   </div>
