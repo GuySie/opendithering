@@ -351,6 +351,31 @@
         </div>
       </div>
 
+      <div id="debugAutoExpose" class="debug-panel" hidden>
+        <div class="debug-header">Auto Expose</div>
+        <div class="debug-body">
+          <table class="debug-table">
+            <thead><tr><th>Stat</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td>Mean L</td><td id="dbgExpMeanL"></td></tr>
+              <tr><td>Std L</td><td id="dbgExpStdL"></td></tr>
+              <tr><td>Shadow L</td><td id="dbgExpShadowL"></td></tr>
+              <tr><td>Highlights</td><td id="dbgExpHighlights"></td></tr>
+            </tbody>
+          </table>
+          <table class="debug-table">
+            <thead><tr><th>Param</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td>Exposure</td><td id="dbgExpExposure"></td></tr>
+              <tr id="dbgExpContrastRow"><td>Contrast</td><td id="dbgExpContrast"></td></tr>
+              <tr id="dbgExpStrengthRow"><td>Strength</td><td id="dbgExpStrength"></td></tr>
+              <tr id="dbgExpShadowRow"><td>Shadow boost</td><td id="dbgExpShadowBoost"></td></tr>
+              <tr id="dbgExpHighlightRow"><td>Highlight compress</td><td id="dbgExpHighlightCompress"></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div id="debugColorTune" class="debug-panel" hidden>
         <div class="debug-header">Color-tune — <span id="dbgSummary"></span></div>
         <div class="debug-body">

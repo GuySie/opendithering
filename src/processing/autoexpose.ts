@@ -2,6 +2,13 @@ import type { PipelineInput } from './pipeline'
 import { resizeImage } from './resize'
 import { rgbToOklab, oklabToRgb } from './colorspace'
 
+export interface AutoExposeDebug {
+  meanL: number
+  stddevL: number
+  shadowMeanL: number
+  highlightFraction: number
+}
+
 export interface AutoExposeResult {
   exposure: number
   saturation: number
@@ -14,6 +21,7 @@ export interface AutoExposeResult {
   greenGain: number
   blueGain: number
   compressDynamicRange: boolean
+  debug: AutoExposeDebug
 }
 
 const TARGET_MEAN_L    = 0.55
@@ -88,5 +96,6 @@ export function autoExpose(input: PipelineInput): AutoExposeResult {
     greenGain: 1.0,
     blueGain: 1.0,
     compressDynamicRange: true,
+    debug: { meanL, stddevL, shadowMeanL, highlightFraction },
   }
 }

@@ -9,6 +9,7 @@ import { hueTune } from './processing/huetune'
 import { autoExpose } from './processing/autoexpose'
 import type { ColorTuneDebug } from './processing/colortune'
 import type { HueTuneDebug } from './processing/huetune'
+import type { AutoExposeDebug } from './processing/autoexpose'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
@@ -118,6 +119,7 @@ const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
 const btnColorTune     = el<HTMLButtonElement>('btnColorTune')
 const btnHueTune       = el<HTMLButtonElement>('btnHueTune')
 const btnAutoExpose    = el<HTMLButtonElement>('btnAutoExpose')
+const debugAutoExpose  = el<HTMLDivElement>('debugAutoExpose')
 const debugColorTune   = el<HTMLDivElement>('debugColorTune')
 const debugHueTune     = el<HTMLDivElement>('debugHueTune')
 const dbgSummary       = el<HTMLSpanElement>('dbgSummary')
@@ -414,6 +416,9 @@ function activateImage(id: string) {
 
   emptyState.hidden = true
   previewPanels.hidden = false
+  debugAutoExpose.hidden = true
+  debugColorTune.hidden = true
+  debugHueTune.hidden = true
 }
 
 function checkRotationConflict() {
@@ -878,7 +883,7 @@ btnAutoTune.addEventListener('click', async () => {
   settings.compressDynamicRange = exposeResult.compressDynamicRange
 
   // Step 2: Color-tune
-  btnAutoTune.textContent = 'Tuning…'
+  btnAutoTune.textContent = 'Color-tuning…'
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
 
   const tuneResult = colorTune({
@@ -891,18 +896,36 @@ btnAutoTune.addEventListener('click', async () => {
     palette,
     settings,
   })
-  srcBitmap.close()
-
   settings.saturation = tuneResult.saturation
   settings.redGain    = tuneResult.redGain
   settings.greenGain  = tuneResult.greenGain
   settings.blueGain   = tuneResult.blueGain
 
+  // Step 3: Hue-tune
+  btnAutoTune.textContent = 'Hue-tuning…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const hueResult = hueTune({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
+  srcBitmap.close()
+
+  settings.hueSatBands = hueResult.hueSatBands
+
   markCustomPreset()
   syncSlidersFromSettings()
   invalidateAll()
   scheduleProcess()
+  showAutoExposeDebug(exposeResult.debug)
   showColorTuneDebug(tuneResult.debug)
+  showHueTuneDebug(hueResult.debug)
 
   btnAutoTune.disabled = false
   btnAutoTune.textContent = 'Auto-tune'
@@ -1018,6 +1041,7 @@ btnAutoExpose.addEventListener('click', async () => {
   syncSlidersFromSettings()
   invalidateAll()
   scheduleProcess()
+  showAutoExposeDebug(result.debug)
 
   btnAutoExpose.disabled = false
   btnAutoExpose.textContent = 'Auto Expose'
@@ -1148,9 +1172,36 @@ function setSlider(sliderId: string, valId: string, sliderVal: number, displayVa
 
 function invalidateAll() {
   for (const img of images) img.dithered = null
+  debugAutoExpose.hidden = true
+  debugColorTune.hidden = true
+  debugHueTune.hidden = true
 }
 
 // ── Auto-tune debug panel ─────────────────────────────────────────────────
+
+function showAutoExposeDebug(d: AutoExposeDebug) {
+  const f3 = (n: number) => n.toFixed(3)
+  const pct = (n: number) => (n * 100).toFixed(1) + '%'
+  const txt = (id: string, v: string) => { (document.getElementById(id) as HTMLElement).textContent = v }
+
+  txt('dbgExpMeanL',          f3(d.meanL))
+  txt('dbgExpStdL',           f3(d.stddevL))
+  txt('dbgExpShadowL',        f3(d.shadowMeanL))
+  txt('dbgExpHighlights',     pct(d.highlightFraction))
+  txt('dbgExpExposure',       f3(settings.exposure))
+  txt('dbgExpContrast',       f3(settings.contrast))
+  txt('dbgExpStrength',       f3(settings.strength))
+  txt('dbgExpShadowBoost',    f3(settings.shadowBoost))
+  txt('dbgExpHighlightCompress', f3(settings.highlightCompress))
+
+  const isContrast = settings.toneMode === 'contrast'
+  ;(document.getElementById('dbgExpContrastRow') as HTMLElement).hidden = !isContrast
+  ;(document.getElementById('dbgExpStrengthRow') as HTMLElement).hidden = isContrast
+  ;(document.getElementById('dbgExpShadowRow') as HTMLElement).hidden = isContrast
+  ;(document.getElementById('dbgExpHighlightRow') as HTMLElement).hidden = isContrast
+
+  debugAutoExpose.hidden = false
+}
 
 function showColorTuneDebug(d: ColorTuneDebug) {
   const f3 = (n: number) => n.toFixed(3)

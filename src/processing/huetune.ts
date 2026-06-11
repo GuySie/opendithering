@@ -130,7 +130,7 @@ interface BandStat {
 function computeBandStats(refData: Uint8ClampedArray, dithData: ArrayLike<number>): BandStat[] {
   const refSums  = new Float64Array(6)
   const dithSums = new Float64Array(6)
-  const counts   = new Int32Array(6)
+  const counts   = new Float64Array(6)
 
   for (let i = 0; i < refData.length; i += 4) {
     const rr = refData[i], rg = refData[i + 1], rb = refData[i + 2]
@@ -143,16 +143,26 @@ function computeBandStats(refData: Uint8ClampedArray, dithData: ArrayLike<number
     if (max === rn)      h = ((gn - bn) / d + (gn < bn ? 6 : 0)) / 6
     else if (max === gn) h = ((bn - rn) / d + 2) / 6
     else                 h = ((rn - gn) / d + 4) / 6
-    const band = Math.round(h * 6) % 6
+
+    // Mirror applyHueSatBands: Math.floor bands + linear interpolation to next band.
+    const hx = h * 6
+    const bandIdx = Math.floor(hx) % 6
+    const nextBand = (bandIdx + 1) % 6
+    const t = hx - Math.floor(hx)
 
     const [, ra, rbv] = rgbToOklab(rr, rg, rb)
-    refSums[band] += Math.sqrt(ra * ra + rbv * rbv)
+    const refC = Math.sqrt(ra * ra + rbv * rbv)
+    refSums[bandIdx] += (1 - t) * refC
+    refSums[nextBand] += t * refC
 
     const dr = dithData[i], dg = dithData[i + 1], db = dithData[i + 2]
     const [, da, dbv] = rgbToOklab(dr, dg, db)
-    dithSums[band] += Math.sqrt(da * da + dbv * dbv)
+    const dithC = Math.sqrt(da * da + dbv * dbv)
+    dithSums[bandIdx] += (1 - t) * dithC
+    dithSums[nextBand] += t * dithC
 
-    counts[band]++
+    counts[bandIdx] += (1 - t)
+    counts[nextBand] += t
   }
 
   return Array.from({ length: 6 }, (_, i) => ({

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenDithering</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-  <script type="module" crossorigin src="./assets/index-DDYtyzpj.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DF9uocph.css">
+  <script type="module" crossorigin src="./assets/index-GpF0xMCO.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DHR-U8yV.css">
 </head>
 <body>
   <header>
@@ -92,9 +92,11 @@
 
         <div class="autotune-row">
           <button class="btn-secondary" id="btnAutoTune">Auto-tune</button>
+        </div>
+        <div class="autotune-row">
+          <button class="btn-secondary" id="btnAutoExpose">Auto Expose</button>
           <button class="btn-secondary" id="btnColorTune">Color-tune</button>
           <button class="btn-secondary" id="btnHueTune">Hue-tune</button>
-          <button class="btn-secondary" id="btnAutoExpose">Auto Expose</button>
         </div>
         <div class="slider-row">
           <label for="sliderExposure">Exposure</label>
@@ -123,7 +125,7 @@
 
         <div class="advanced-panel" id="panelColorGrading">
           <details>
-            <summary>Channel gains</summary>
+            <summary>Color correction</summary>
             <div class="slider-row">
               <label for="sliderRedGain">Red</label>
               <input type="range" id="sliderRedGain" min="50" max="200" value="100" step="1" />
@@ -139,35 +141,35 @@
               <input type="range" id="sliderBlueGain" min="50" max="200" value="100" step="1" />
               <span class="slider-val" id="valBlueGain">1.00</span>
             </div>
-            <hr style="margin: 6px 0; opacity: 0.25;">
+            <hr>
             <div class="slider-row">
               <label for="sliderHueSatRed"><span style="color:#e74c3c">●</span> Red</label>
-              <input type="range" id="sliderHueSatRed" min="0" max="200" value="100" step="1" />
+              <input type="range" id="sliderHueSatRed" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatRed">1.00</span>
             </div>
             <div class="slider-row">
               <label for="sliderHueSatYellow"><span style="color:#f0c040">●</span> Yellow</label>
-              <input type="range" id="sliderHueSatYellow" min="0" max="200" value="100" step="1" />
+              <input type="range" id="sliderHueSatYellow" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatYellow">1.00</span>
             </div>
             <div class="slider-row">
               <label for="sliderHueSatGreen"><span style="color:#2ecc71">●</span> Green</label>
-              <input type="range" id="sliderHueSatGreen" min="0" max="200" value="100" step="1" />
+              <input type="range" id="sliderHueSatGreen" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatGreen">1.00</span>
             </div>
             <div class="slider-row">
               <label for="sliderHueSatCyan"><span style="color:#1abc9c">●</span> Cyan</label>
-              <input type="range" id="sliderHueSatCyan" min="0" max="200" value="100" step="1" />
+              <input type="range" id="sliderHueSatCyan" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatCyan">1.00</span>
             </div>
             <div class="slider-row">
               <label for="sliderHueSatBlue"><span style="color:#3498db">●</span> Blue</label>
-              <input type="range" id="sliderHueSatBlue" min="0" max="200" value="100" step="1" />
+              <input type="range" id="sliderHueSatBlue" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatBlue">1.00</span>
             </div>
             <div class="slider-row">
               <label for="sliderHueSatMagenta"><span style="color:#9b59b6">●</span> Magenta</label>
-              <input type="range" id="sliderHueSatMagenta" min="0" max="200" value="100" step="1" />
+              <input type="range" id="sliderHueSatMagenta" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatMagenta">1.00</span>
             </div>
           </details>
@@ -347,6 +349,31 @@
             <canvas id="canvasDithered"></canvas>
             <div class="processing-overlay" id="processingOverlay" hidden>Processing…</div>
           </div>
+        </div>
+      </div>
+
+      <div id="debugAutoExpose" class="debug-panel" hidden>
+        <div class="debug-header">Auto Expose</div>
+        <div class="debug-body">
+          <table class="debug-table">
+            <thead><tr><th>Stat</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td>Mean L</td><td id="dbgExpMeanL"></td></tr>
+              <tr><td>Std L</td><td id="dbgExpStdL"></td></tr>
+              <tr><td>Shadow L</td><td id="dbgExpShadowL"></td></tr>
+              <tr><td>Highlights</td><td id="dbgExpHighlights"></td></tr>
+            </tbody>
+          </table>
+          <table class="debug-table">
+            <thead><tr><th>Param</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td>Exposure</td><td id="dbgExpExposure"></td></tr>
+              <tr id="dbgExpContrastRow"><td>Contrast</td><td id="dbgExpContrast"></td></tr>
+              <tr id="dbgExpStrengthRow"><td>Strength</td><td id="dbgExpStrength"></td></tr>
+              <tr id="dbgExpShadowRow"><td>Shadow boost</td><td id="dbgExpShadowBoost"></td></tr>
+              <tr id="dbgExpHighlightRow"><td>Highlight compress</td><td id="dbgExpHighlightCompress"></td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
