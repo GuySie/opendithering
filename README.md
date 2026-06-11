@@ -16,7 +16,7 @@ This app is an experiment to find the optimal dithering algorithm and settings f
 - **Multiple display presets** — Seeed reTerminal, TRMNL, Waveshare PhotoPainter, Pimoroni Inky Impression, Soldered Inkplate, Solum M3 ESL, Gicisky ESL, or custom dimensions and panels
 - **Image adjustments** — tone mapping, saturation, exposure, clarity (midtone unsharp mask), dynamic range compression, per-channel RGB gains, and per-hue saturation bands
 - **Auto Expose** — one-click histogram-based tone normalisation; derives exposure and contrast from OKLab luminance statistics as a starting point
-- **Color-tune** — iterative optimizer that adjusts saturation and RGB channel gains to match the dithered output's chroma to the source
+- **Color-tune** — iterative optimizer that adjusts RGB channel gains to match the dithered output's chroma to the source
 - **Hue-tune** — iterative optimizer that independently adjusts the saturation of each hue band (Red / Yellow / Green / Cyan / Blue / Magenta)
 - **Color space control** — dither in RGB, CIELAB, OKLab, or OKLab chroma-aware; independently choose error diffusion space and nearest-color distance space
 - **Zoom / pan** — click the preview canvas to zoom to 1:1 pixels and drag to pan the full image

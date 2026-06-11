@@ -128,8 +128,12 @@ interface BandStat {
 }
 
 function computeBandStats(refData: Uint8ClampedArray, dithData: ArrayLike<number>): BandStat[] {
-  const refSums  = new Float64Array(6)
-  const dithSums = new Float64Array(6)
+  // Accumulate OKLab a and b separately so we compute chroma of the mean vector,
+  // not the mean of per-pixel chromas. This makes the metric hue-sensitive: pixels
+  // that dither to the wrong hue cancel out in the vector sum, reducing effective
+  // chroma even when individual pixel chromas are high.
+  const refSumA  = new Float64Array(6), refSumB  = new Float64Array(6)
+  const dithSumA = new Float64Array(6), dithSumB = new Float64Array(6)
   const counts   = new Float64Array(6)
 
   for (let i = 0; i < refData.length; i += 4) {
@@ -151,25 +155,28 @@ function computeBandStats(refData: Uint8ClampedArray, dithData: ArrayLike<number
     const t = hx - Math.floor(hx)
 
     const [, ra, rbv] = rgbToOklab(rr, rg, rb)
-    const refC = Math.sqrt(ra * ra + rbv * rbv)
-    refSums[bandIdx] += (1 - t) * refC
-    refSums[nextBand] += t * refC
+    refSumA[bandIdx] += (1 - t) * ra;  refSumB[bandIdx] += (1 - t) * rbv
+    refSumA[nextBand] += t * ra;       refSumB[nextBand] += t * rbv
 
     const dr = dithData[i], dg = dithData[i + 1], db = dithData[i + 2]
     const [, da, dbv] = rgbToOklab(dr, dg, db)
-    const dithC = Math.sqrt(da * da + dbv * dbv)
-    dithSums[bandIdx] += (1 - t) * dithC
-    dithSums[nextBand] += t * dithC
+    dithSumA[bandIdx] += (1 - t) * da;  dithSumB[bandIdx] += (1 - t) * dbv
+    dithSumA[nextBand] += t * da;       dithSumB[nextBand] += t * dbv
 
     counts[bandIdx] += (1 - t)
     counts[nextBand] += t
   }
 
-  return Array.from({ length: 6 }, (_, i) => ({
-    refMeanC:  counts[i] > 0 ? refSums[i]  / counts[i] : 0,
-    dithMeanC: counts[i] > 0 ? dithSums[i] / counts[i] : 0,
-    count: counts[i],
-  }))
+  return Array.from({ length: 6 }, (_, i) => {
+    if (counts[i] === 0) return { refMeanC: 0, dithMeanC: 0, count: 0 }
+    const rA = refSumA[i] / counts[i],  rB = refSumB[i] / counts[i]
+    const dA = dithSumA[i] / counts[i], dB = dithSumB[i] / counts[i]
+    return {
+      refMeanC:  Math.sqrt(rA * rA + rB * rB),
+      dithMeanC: Math.sqrt(dA * dA + dB * dB),
+      count: counts[i],
+    }
+  })
 }
 
 function hueLoss(stats: BandStat[], minPixels: number): number {

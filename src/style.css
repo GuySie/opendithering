@@ -35,8 +35,15 @@ header {
 }
 header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; }
 .tagline { color: var(--text-muted); font-size: 0.85rem; }
-.github-link {
+.blog-link {
   margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.blog-link:hover { color: var(--text); }
+.github-link {
   color: var(--text-muted);
   display: flex;
   align-items: center;
@@ -192,7 +199,8 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 }
 .slider-row label { margin: 0; grid-column: 1 / -1; }
 .slider-row input[type="range"] { grid-column: 1; accent-color: var(--accent); width: 100%; }
-.slider-val { color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 2.8ch; text-align: right; font-size: 0.8rem; cursor: pointer; }
+.slider-val { color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 2.8ch; text-align: right; font-size: 0.8rem; cursor: text; }
+.slider-val[contenteditable="true"] { color: var(--text); outline: 1px solid var(--accent); border-radius: 2px; cursor: text; }
 
 /* ── Checkbox ── */
 .checkbox-label {
@@ -594,3 +602,21 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 }
 .cascade-option:hover { background: var(--accent); color: #fff; }
 .cascade-option.active { color: var(--accent); }
+
+/* ── Tooltips ── */
+#tooltip {
+  position: fixed;
+  z-index: 9999;
+  background: #0d0d0d;
+  color: var(--text);
+  font-size: 0.72rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  max-width: 240px;
+  line-height: 1.5;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  white-space: normal;
+}
+#tooltip[hidden] { display: none; }

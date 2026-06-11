@@ -91,7 +91,7 @@ src/
 │   ├── resize.ts              # resizeImage (cover/contain/stretch/none)
 │   ├── pipeline.ts            # runPipeline() — orchestrates all steps, returns {measured, ideal}
 │   ├── autoexpose.ts          # autoExpose() — one-shot histogram-based tone normalisation; derives exposure and contrast/s-curve params from OKLab luminance statistics of the DRC-adjusted source
-│   ├── colortune.ts           # colorTune() — convergence-checked optimizer for saturation and RGB channel gains; chroma-only loss (|ΔmeanC| + |ΔmeanA| + |ΔmeanBv|)
+│   ├── colortune.ts           # colorTune() — convergence-checked optimizer for RGB channel gains; chroma-only loss (|ΔmeanC| + |ΔmeanA| + |ΔmeanBv|)
 │   └── huetune.ts             # hueTune() — convergence-checked optimizer for per-hue saturation bands (Red/Yellow/Green/Cyan/Blue/Magenta)
 ├── ble/
 │   ├── opendisplay.ts         # OpenDisplay BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
@@ -163,19 +163,19 @@ Implemented in `src/processing/autoexpose.ts`. `autoExpose()` is a **one-shot** 
 3. Derive `exposure = TARGET_MEAN_L / meanL` (target 0.55, clamped 0.5–2.0).
 4. In contrast mode: `contrast = TARGET_STDDEV_L / stddevL` (target 0.27, clamped 0.5–2.0). In s-curve mode: derive `strength`, `shadowBoost`, and `highlightCompress` from the same stats.
 
-**Return value:** `AutoExposeResult` — `{ exposure, saturation, contrast, strength, shadowBoost, highlightCompress, midpoint, redGain, greenGain, blueGain, compressDynamicRange }`. All gain and saturation fields are reset to 1.0; `compressDynamicRange` is always `true`.
+**Return value:** `AutoExposeResult` — `{ exposure, saturation, contrast, strength, shadowBoost, highlightCompress, midpoint, redGain, greenGain, blueGain, compressDynamicRange, debug: AutoExposeDebug }`. All gain and saturation fields are reset to 1.0; `compressDynamicRange` is always `true`. The debug struct carries `{ meanL, stddevL, shadowMeanL, highlightFraction }`. The debug panel (`#debugAutoExpose`) renders this after each Auto Expose or Auto-tune run.
 
 ### Color-tune
 
-Implemented in `src/processing/colortune.ts`. `colorTune()` iteratively adjusts **saturation and RGB channel gains** to match the dithered output's chroma to the source image, measured by `|ΔmeanC| + |ΔmeanA| + |ΔmeanBv|` in OKLab. Tone parameters (exposure, contrast, s-curve) are not touched — use Auto Expose for those.
+Implemented in `src/processing/colortune.ts`. `colorTune()` iteratively adjusts **RGB channel gains** to match the dithered output's chroma to the source image, measured by `|ΔmeanC| + |ΔmeanA| + |ΔmeanBv|` in OKLab. Tone parameters (exposure, contrast, s-curve) are not touched — use Auto Expose for those.
 
 **Algorithm:**
 1. Resize the source and apply DRC to build reference stats (meanC, meanA, meanBv, and per-channel sRGB means).
-2. Establish a baseline loss with the current settings.
-3. Each iteration: compute ratio-based gain adjustments (30% damping, ±15% per-run cap relative to initial values, absolute bounds 0.5–2.0). Run the pipeline, compute new loss. If `newLoss >= prevLoss − 1e-4`, revert and stop. Otherwise commit and continue.
+2. Reset redGain, greenGain, blueGain to 1.0 and establish a baseline loss from there.
+3. Each iteration: compute ratio-based gain adjustments (30% damping, ±15% per-run cap relative to the reset values, absolute bounds 0.5–2.0). Run the pipeline, compute new loss. If `newLoss >= prevLoss − 1e-4`, revert and stop. Otherwise commit and continue.
 4. Maximum 12 iterations.
 
-**Return value:** `ColorTuneResult` — `{ saturation, redGain, greenGain, blueGain, debug: ColorTuneDebug }`. The debug struct carries `iterationsRun`, `converged`, `refStats`/`initialStats`/`finalStats` (each with meanC/meanA/meanBv), `initialLoss`, `finalLoss`, `lossHistory`, and before/after values for all four parameters. The debug panel (`#debugColorTune`) renders this after each run.
+**Return value:** `ColorTuneResult` — `{ saturation, redGain, greenGain, blueGain, debug: ColorTuneDebug }`. `saturation` is always returned unchanged (not optimised). The debug struct carries `iterationsRun`, `converged`, `refStats`/`initialStats`/`finalStats` (each with meanC/meanA/meanBv), `initialLoss`, `finalLoss`, `lossHistory`, and before/after values for the three gain parameters. The debug panel (`#debugColorTune`) renders this after each run.
 
 ### Hue-tune
 
@@ -188,6 +188,16 @@ Implemented in `src/processing/huetune.ts`. `hueTune()` iteratively adjusts the 
 4. Maximum 20 iterations.
 
 **Return value:** `HueTuneResult` — `{ hueSatBands, debug: HueTuneDebug }`. The debug struct carries `iterationsRun`, `converged`, `bands` (array of `HueTuneBandDebug` with per-band pixel count, refMeanC, initialMeanC, finalMeanC, initialBandValue, finalBandValue), `initialLoss`, `finalLoss`, `lossHistory`. The debug panel (`#debugHueTune`) renders this after each run.
+
+### Auto-tune
+
+The **Auto-tune** button (`btnAutoTune`) chains all three optimisers in sequence on the same image and settings:
+
+1. **Auto Expose** — resets tone/gain/saturation to neutral and derives exposure + contrast/s-curve from luminance statistics
+2. **Color-tune** — adjusts RGB channel gains to match dithered chroma to the source
+3. **Hue-tune** — independently adjusts per-hue saturation bands to match per-segment chroma
+
+Each step feeds its output settings into the next. After all three complete, all three debug panels (`#debugAutoExpose`, `#debugColorTune`, `#debugHueTune`) are rendered and `syncSlidersFromSettings()` is called to reflect the final values in the UI.
 
 ### OpenDisplay BLE upload
 

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenDithering</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-  <script type="module" crossorigin src="./assets/index-GpF0xMCO.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DHR-U8yV.css">
+  <script type="module" crossorigin src="./assets/index-DyBq2JLj.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-bDIkWL7w.css">
 </head>
 <body>
   <header>
@@ -36,7 +36,7 @@
 
       <section class="section">
         <h2>2. Display</h2>
-        <label>Device preset</label>
+        <label data-tooltip="Select a predefined e-paper device. Sets display dimensions and panel type automatically.">Device preset</label>
         <div id="presetCascade">
           <button type="button" class="cascade-trigger" id="presetTrigger">
             <span id="presetLabel">—</span><span class="cascade-chevron">▾</span>
@@ -45,11 +45,11 @@
         <select id="presetSelect" hidden></select>
         <div class="custom-dims" id="customDims">
           <div class="dim-row">
-            <label for="dimWidth">Width</label>
+            <label for="dimWidth" data-tooltip="Output width in pixels.">Width</label>
             <input type="number" id="dimWidth" min="1" max="7680" value="800" />
-            <label for="dimHeight">Height</label>
+            <label for="dimHeight" data-tooltip="Output height in pixels.">Height</label>
             <input type="number" id="dimHeight" min="1" max="4320" value="480" />
-            <label for="bleRotation">Rotation</label>
+            <label for="bleRotation" data-tooltip="Rotate the output before export and BLE upload.">Rotation</label>
             <select id="bleRotation">
               <option value="0">0°</option>
               <option value="90">90°</option>
@@ -58,11 +58,11 @@
             </select>
           </div>
           <p class="rotation-warn" id="rotationWarn" hidden></p>
-          <label for="paletteSelect">Panel type</label>
+          <label for="paletteSelect" data-tooltip="The e-paper panel's color technology.">Panel type</label>
           <select id="paletteSelect"></select>
         </div>
 
-        <label for="resizeMode">Resize mode</label>
+        <label for="resizeMode" data-tooltip="How the source image is scaled to the display. Cover fills and crops; Contain fits with padding; Stretch distorts to fill; None center-crops without scaling.">Resize mode</label>
         <select id="resizeMode">
           <option value="cover">Cover (fill, crop)</option>
           <option value="contain">Contain (fit, pad)</option>
@@ -70,7 +70,7 @@
           <option value="none">None (center-crop)</option>
         </select>
 
-        <label for="calibrationSelect">Calibration</label>
+        <label for="calibrationSelect" data-tooltip="Measured color calibration source. Dithering runs against these measured colors; the exported PNG uses the firmware's ideal values.">Calibration</label>
         <select id="calibrationSelect"></select>
         <div class="palette-swatches" id="paletteSwatches"></div>
       </section>
@@ -91,34 +91,34 @@
         <h2>4. Tone</h2>
 
         <div class="autotune-row">
-          <button class="btn-secondary" id="btnAutoTune">Auto-tune</button>
+          <button class="btn-secondary" id="btnAutoTune" data-tooltip="Run Auto Expose → Color-tune → Hue-tune in sequence for a fully automatic tone result.">Auto-tune</button>
         </div>
         <div class="autotune-row">
-          <button class="btn-secondary" id="btnAutoExpose">Auto Expose</button>
-          <button class="btn-secondary" id="btnColorTune">Color-tune</button>
-          <button class="btn-secondary" id="btnHueTune">Hue-tune</button>
+          <button class="btn-secondary" id="btnAutoExpose" data-tooltip="One-shot tone normaliser: resets all tone settings, then derives exposure and contrast from the image's luminance statistics.">Auto Expose</button>
+          <button class="btn-secondary" id="btnColorTune" data-tooltip="Iteratively adjusts RGB channel gains to match the dithered output's overall chroma to the source.">Color-tune</button>
+          <button class="btn-secondary" id="btnHueTune" data-tooltip="Iteratively adjusts per-hue saturation bands so each color range's chroma matches the source.">Hue-tune</button>
         </div>
         <div class="slider-row">
-          <label for="sliderExposure">Exposure</label>
+          <label for="sliderExposure" data-tooltip="Linear brightness multiplier applied after tone mapping. 1.0 = unchanged.">Exposure</label>
           <input type="range" id="sliderExposure" min="50" max="200" value="100" step="1" />
           <span class="slider-val" id="valExposure">1.0</span>
         </div>
         <div class="slider-row">
-          <label for="sliderSaturation">Saturation</label>
+          <label for="sliderSaturation" data-tooltip="Global color saturation multiplier in HSL space. 1.0 = unchanged; 0 = grayscale.">Saturation</label>
           <input type="range" id="sliderSaturation" min="0" max="200" value="130" step="1" />
           <span class="slider-val" id="valSaturation">1.3</span>
         </div>
         <div class="slider-row">
-          <label for="sliderClarity">Clarity</label>
+          <label for="sliderClarity" data-tooltip="Midtone-weighted unsharp mask. Positive sharpens; negative softens. Effect fades to zero at pure black or white.">Clarity</label>
           <input type="range" id="sliderClarity" min="-100" max="100" value="0" step="1" />
           <span class="slider-val" id="valClarity">0.00</span>
         </div>
         <div class="slider-row">
-          <label for="sliderClarityRadius">Clarity radius</label>
+          <label for="sliderClarityRadius" data-tooltip="Spatial scale of the clarity effect. Larger radius affects broader image features.">Clarity radius</label>
           <input type="range" id="sliderClarityRadius" min="1" max="4" value="2" step="1" />
           <span class="slider-val" id="valClarityRadius">2</span>
         </div>
-        <label class="checkbox-label">
+        <label class="checkbox-label" data-tooltip="Maps source luminance into the display's actual black–white output range before tone mapping, so adjustments operate within the panel's real capabilities.">
           <input type="checkbox" id="checkCDR" checked />
           Compress dynamic range
         </label>
@@ -127,48 +127,48 @@
           <details>
             <summary>Color correction</summary>
             <div class="slider-row">
-              <label for="sliderRedGain">Red</label>
+              <label for="sliderRedGain" data-tooltip="Red channel gain for color grading. 1.0 = unchanged.">Red</label>
               <input type="range" id="sliderRedGain" min="50" max="200" value="100" step="1" />
               <span class="slider-val" id="valRedGain">1.00</span>
             </div>
             <div class="slider-row">
-              <label for="sliderGreenGain">Green</label>
+              <label for="sliderGreenGain" data-tooltip="Green channel gain for color grading. 1.0 = unchanged.">Green</label>
               <input type="range" id="sliderGreenGain" min="50" max="200" value="100" step="1" />
               <span class="slider-val" id="valGreenGain">1.00</span>
             </div>
             <div class="slider-row">
-              <label for="sliderBlueGain">Blue</label>
+              <label for="sliderBlueGain" data-tooltip="Blue channel gain for color grading. 1.0 = unchanged.">Blue</label>
               <input type="range" id="sliderBlueGain" min="50" max="200" value="100" step="1" />
               <span class="slider-val" id="valBlueGain">1.00</span>
             </div>
             <hr>
             <div class="slider-row">
-              <label for="sliderHueSatRed"><span style="color:#e74c3c">●</span> Red</label>
+              <label for="sliderHueSatRed" data-tooltip="Saturation multiplier for red tones. Applied after global saturation. 1.0 = unchanged."><span style="color:#e74c3c">●</span> Red</label>
               <input type="range" id="sliderHueSatRed" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatRed">1.00</span>
             </div>
             <div class="slider-row">
-              <label for="sliderHueSatYellow"><span style="color:#f0c040">●</span> Yellow</label>
+              <label for="sliderHueSatYellow" data-tooltip="Saturation multiplier for yellow tones. Applied after global saturation. 1.0 = unchanged."><span style="color:#f0c040">●</span> Yellow</label>
               <input type="range" id="sliderHueSatYellow" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatYellow">1.00</span>
             </div>
             <div class="slider-row">
-              <label for="sliderHueSatGreen"><span style="color:#2ecc71">●</span> Green</label>
+              <label for="sliderHueSatGreen" data-tooltip="Saturation multiplier for green tones. Applied after global saturation. 1.0 = unchanged."><span style="color:#2ecc71">●</span> Green</label>
               <input type="range" id="sliderHueSatGreen" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatGreen">1.00</span>
             </div>
             <div class="slider-row">
-              <label for="sliderHueSatCyan"><span style="color:#1abc9c">●</span> Cyan</label>
+              <label for="sliderHueSatCyan" data-tooltip="Saturation multiplier for cyan tones. Applied after global saturation. 1.0 = unchanged."><span style="color:#1abc9c">●</span> Cyan</label>
               <input type="range" id="sliderHueSatCyan" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatCyan">1.00</span>
             </div>
             <div class="slider-row">
-              <label for="sliderHueSatBlue"><span style="color:#3498db">●</span> Blue</label>
+              <label for="sliderHueSatBlue" data-tooltip="Saturation multiplier for blue tones. Applied after global saturation. 1.0 = unchanged."><span style="color:#3498db">●</span> Blue</label>
               <input type="range" id="sliderHueSatBlue" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatBlue">1.00</span>
             </div>
             <div class="slider-row">
-              <label for="sliderHueSatMagenta"><span style="color:#9b59b6">●</span> Magenta</label>
+              <label for="sliderHueSatMagenta" data-tooltip="Saturation multiplier for magenta tones. Applied after global saturation. 1.0 = unchanged."><span style="color:#9b59b6">●</span> Magenta</label>
               <input type="range" id="sliderHueSatMagenta" min="25" max="400" value="100" step="1" />
               <span class="slider-val" id="valHueSatMagenta">1.00</span>
             </div>
@@ -176,7 +176,7 @@
         </div>
 
         <div class="tone-mode-row">
-          <label for="toneMode">Tone mode</label>
+          <label for="toneMode" data-tooltip="Contrast: scales luminance around a midpoint. S-curve: applies a smooth S-shaped tone curve with configurable shape.">Tone mode</label>
           <select id="toneMode">
             <option value="contrast">Contrast</option>
             <option value="scurve">S-curve</option>
@@ -186,7 +186,7 @@
         <!-- Contrast panel -->
         <div class="advanced-panel" id="panelContrast" hidden>
           <div class="slider-row">
-            <label for="sliderContrast">Contrast</label>
+            <label for="sliderContrast" data-tooltip="Luminance contrast multiplier around the midpoint. 1.0 = unchanged; higher values increase contrast.">Contrast</label>
             <input type="range" id="sliderContrast" min="50" max="200" value="100" step="1" />
             <span class="slider-val" id="valContrast">1.0</span>
           </div>
@@ -197,22 +197,22 @@
           <details>
             <summary>S-curve parameters</summary>
             <div class="slider-row">
-              <label for="sliderStrength">Strength</label>
+              <label for="sliderStrength" data-tooltip="S-curve intensity. 0 = linear (no curve); 1 = maximum S-curve.">Strength</label>
               <input type="range" id="sliderStrength" min="0" max="100" value="90" step="1" />
               <span class="slider-val" id="valStrength">0.9</span>
             </div>
             <div class="slider-row">
-              <label for="sliderShadowBoost">Shadow boost</label>
+              <label for="sliderShadowBoost" data-tooltip="Extra lift applied to shadow tones on the S-curve.">Shadow boost</label>
               <input type="range" id="sliderShadowBoost" min="0" max="100" value="0" step="1" />
               <span class="slider-val" id="valShadowBoost">0.0</span>
             </div>
             <div class="slider-row">
-              <label for="sliderHighlightCompress">Highlight compress</label>
+              <label for="sliderHighlightCompress" data-tooltip="Highlight rolloff factor. Higher values produce a gentler shoulder and compress bright tones more.">Highlight compress</label>
               <input type="range" id="sliderHighlightCompress" min="50" max="500" value="150" step="5" />
               <span class="slider-val" id="valHighlightCompress">1.5</span>
             </div>
             <div class="slider-row">
-              <label for="sliderMidpoint">Midpoint</label>
+              <label for="sliderMidpoint" data-tooltip="Tone curve pivot point as a fraction of the full luminance range.">Midpoint</label>
               <input type="range" id="sliderMidpoint" min="30" max="70" value="50" step="1" />
               <span class="slider-val" id="valMidpoint">0.5</span>
             </div>
@@ -222,49 +222,49 @@
 
       <section class="section">
         <h2>5. Dithering</h2>
-        <label for="algorithmSelect">Algorithm</label>
+        <label for="algorithmSelect" data-tooltip="Error-diffusion or ordered dithering algorithm used to quantise the image to the palette colors.">Algorithm</label>
         <select id="algorithmSelect"></select>
         <div id="panelKnoxAlpha" hidden>
           <div class="slider-row">
-            <label for="sliderKnoxAlpha">Tone dependency (α)</label>
+            <label for="sliderKnoxAlpha" data-tooltip="Knox: 0 = uniform diffusion across all tones; 1 = full tone-dependent diffusion (less in shadows and highlights).">Tone dependency (α)</label>
             <input type="range" id="sliderKnoxAlpha" min="0" max="100" value="50" />
             <span class="slider-val" id="valKnoxAlpha">0.50</span>
           </div>
           <div class="slider-row">
-            <label for="sliderKnoxFringe">Fringe magnitude</label>
+            <label for="sliderKnoxFringe" data-tooltip="Knox: models ink bleed by raising the luminance threshold of unprocessed neighbors after each pixel fires. Tune for your specific device.">Fringe magnitude</label>
             <input type="range" id="sliderKnoxFringe" min="0" max="15" value="4" step="1" />
             <span class="slider-val" id="valKnoxFringe">0.04</span>
           </div>
           <div class="slider-row">
-            <label for="sliderKnoxEdge">Edge sensitivity</label>
+            <label for="sliderKnoxEdge" data-tooltip="Knox: cross-edge suppression scale. Higher values suppress error diffusion at gentler luminance gradients.">Edge sensitivity</label>
             <input type="range" id="sliderKnoxEdge" min="50" max="800" value="400" step="25" />
             <span class="slider-val" id="valKnoxEdge">4.0</span>
           </div>
         </div>
         <div id="panelRiemersmaQueue" hidden>
           <div class="slider-row">
-            <label for="sliderRiemersmaQueue">History length</label>
+            <label for="sliderRiemersmaQueue" data-tooltip="Riemersma: error queue length along the Hilbert curve. Longer = smoother gradients with wider spread; shorter = more local.">History length</label>
             <input type="range" id="sliderRiemersmaQueue" min="4" max="64" value="16" step="4" />
             <span class="slider-val" id="valRiemersmaQueue">16</span>
           </div>
         </div>
         <div id="panelDizzyDiagonal" hidden>
           <div class="slider-row">
-            <label for="sliderDizzyDiagonal">Diagonal weight</label>
+            <label for="sliderDizzyDiagonal" data-tooltip="Dizzy: weight of diagonal neighbors relative to cardinal (always 1). 0 = 4-connected only; 1 = equal 8-connected spreading.">Diagonal weight</label>
             <input type="range" id="sliderDizzyDiagonal" min="0" max="100" value="10" step="5" />
             <span class="slider-val" id="valDizzyDiagonal">0.10</span>
           </div>
         </div>
         <div id="panelSerpentine">
-          <label class="checkbox-label"><input type="checkbox" id="serpentineCheck" checked /> Serpentine scan</label>
+          <label class="checkbox-label" data-tooltip="Alternate row scan direction each line, reducing unidirectional banding artefacts."><input type="checkbox" id="serpentineCheck" checked /> Serpentine scan</label>
         </div>
         <div class="slider-row">
-          <label for="sliderDitherStrength">Diffusion strength</label>
+          <label for="sliderDitherStrength" data-tooltip="Scales error forwarded to neighbors. 100% = full diffusion; 0% = nearest-color only with no error spreading.">Diffusion strength</label>
           <input type="range" id="sliderDitherStrength" min="0" max="100" value="100" />
           <span class="slider-val" id="valDitherStrength">100%</span>
         </div>
         <div id="panelColorMatching">
-          <label for="colorPreset">Color matching</label>
+          <label for="colorPreset" data-tooltip="Color space preset for finding the nearest palette color and diffusing quantisation error. OKLab variants often give more perceptually even results.">Color matching</label>
           <select id="colorPreset">
             <option value="rgb_rgb">RGB (full)</option>
             <option value="rgb_cielab">CIELAB distance</option>
@@ -274,9 +274,9 @@
             <option value="oklab_oklab-chroma">OKLab chroma-aware</option>
           </select>
           <div id="panelAdvancedColor" class="dim-row">
-            <label>Find color using</label>
+            <label data-tooltip="Color space used to measure distance between the source pixel and palette candidates when selecting the nearest color.">Find color using</label>
             <span id="distSpaceSel"></span>
-            <label>Diffuse error in</label>
+            <label data-tooltip="Color space in which quantisation error is accumulated and spread to neighboring pixels.">Diffuse error in</label>
             <span id="errorSpaceSel"></span>
           </div>
         </div>
@@ -285,9 +285,9 @@
       <section class="section">
         <h2>6. Experimental</h2>
         <div id="panelLocalVariance">
-          <label class="checkbox-label"><input type="checkbox" id="localVarianceDetection" /> Local variance (reduce diffusion in flat areas)</label>
+          <label class="checkbox-label" data-tooltip="Reduces diffusion strength in smooth image areas to avoid over-dithering in gradients and flat regions."><input type="checkbox" id="localVarianceDetection" /> Local variance (reduce diffusion in flat areas)</label>
         </div>
-        <label class="checkbox-label"><input type="checkbox" id="expandPalette" /> Expand palette with pure primaries</label>
+        <label class="checkbox-label" data-tooltip="Adds pure RGB primaries as temporary dithering snap-points, then remaps them to the nearest real palette color after dithering."><input type="checkbox" id="expandPalette" /> Expand palette with pure primaries</label>
       </section>
 
       <section class="section">

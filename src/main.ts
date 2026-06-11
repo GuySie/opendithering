@@ -693,6 +693,52 @@ function getResetDefaults(): ProcessingSettings {
 }
 
 // Sliders
+function makeValEditable(
+  valEl: HTMLSpanElement,
+  min: number,
+  max: number,
+  decimals: number,
+  onCommit: (v: number) => void,
+  format?: (v: number) => string,
+) {
+  let savedText = ''
+  let escaping = false
+
+  valEl.addEventListener('click', () => {
+    if (valEl.contentEditable === 'true') return
+    savedText = valEl.textContent ?? ''
+    valEl.contentEditable = 'true'
+    valEl.focus()
+    const range = document.createRange()
+    range.selectNodeContents(valEl)
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+  })
+
+  valEl.addEventListener('blur', () => {
+    if (escaping) { escaping = false; return }
+    valEl.contentEditable = 'false'
+    const parsed = parseFloat(valEl.textContent ?? '')
+    if (isFinite(parsed)) {
+      const clamped = Math.max(min, Math.min(max, parsed))
+      onCommit(clamped)
+      valEl.textContent = format ? format(clamped) : clamped.toFixed(decimals)
+    } else {
+      valEl.textContent = savedText
+    }
+  })
+
+  valEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); valEl.blur() }
+    if (e.key === 'Escape') {
+      escaping = true
+      valEl.contentEditable = 'false'
+      valEl.textContent = savedText
+      valEl.blur()
+    }
+  })
+}
+
 function sliderSetup(
   sliderId: string,
   valId: string,
@@ -711,14 +757,25 @@ function sliderSetup(
     invalidateAll(); scheduleProcess()
   })
 
-  valEl.title = 'Double-click to reset'
-  valEl.addEventListener('dblclick', () => {
+  slider.addEventListener('dblclick', () => {
     const defaultVal = (getResetDefaults() as unknown as Record<string, number>)[key as string]
     slider.value = String(Math.round(defaultVal * scale))
     ;(settings as unknown as Record<string, number>)[key as string] = defaultVal
     valEl.textContent = defaultVal.toFixed(decimals)
     markCustomPreset(); invalidateAll(); scheduleProcess()
   })
+
+  makeValEditable(
+    valEl,
+    parseInt(slider.min) / scale,
+    parseInt(slider.max) / scale,
+    decimals,
+    v => {
+      ;(settings as unknown as Record<string, number>)[key as string] = v
+      slider.value = String(Math.round(v * scale))
+      markCustomPreset(); invalidateAll(); scheduleProcess()
+    },
+  )
 }
 
 sliderSetup('sliderExposure', 'valExposure', 100, 'exposure')
@@ -739,11 +796,15 @@ HUE_BAND_NAMES.forEach((name, idx) => {
     valEl.textContent = v.toFixed(2)
     markCustomPreset(); invalidateAll(); scheduleProcess()
   })
-  valEl.title = 'Double-click to reset'
-  valEl.addEventListener('dblclick', () => {
+  slider.addEventListener('dblclick', () => {
     settings.hueSatBands[idx] = 1
     slider.value = '100'
     valEl.textContent = '1.00'
+    markCustomPreset(); invalidateAll(); scheduleProcess()
+  })
+  makeValEditable(valEl, 0.25, 4.0, 2, v => {
+    settings.hueSatBands[idx] = v
+    slider.value = String(Math.round(v * 100))
     markCustomPreset(); invalidateAll(); scheduleProcess()
   })
 })
@@ -758,14 +819,18 @@ el<HTMLInputElement>('sliderDitherStrength').addEventListener('input', () => {
   el<HTMLSpanElement>('valDitherStrength').textContent = String(pct) + '%'
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valDitherStrength') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valDitherStrength').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderDitherStrength').addEventListener('dblclick', () => {
   const v = getResetDefaults().ditherStrength
   el<HTMLInputElement>('sliderDitherStrength').value = String(Math.round(v * 100))
   settings.ditherStrength = v
   el<HTMLSpanElement>('valDitherStrength').textContent = String(Math.round(v * 100)) + '%'
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
+makeValEditable(el<HTMLSpanElement>('valDitherStrength'), 0, 100, 0, v => {
+  el<HTMLInputElement>('sliderDitherStrength').value = String(Math.round(v))
+  settings.ditherStrength = v / 100
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+}, v => String(Math.round(v)) + '%')
 
 el<HTMLInputElement>('sliderKnoxAlpha').addEventListener('input', () => {
   const pct = parseInt(el<HTMLInputElement>('sliderKnoxAlpha').value)
@@ -773,12 +838,16 @@ el<HTMLInputElement>('sliderKnoxAlpha').addEventListener('input', () => {
   el<HTMLSpanElement>('valKnoxAlpha').textContent = (pct / 100).toFixed(2)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valKnoxAlpha') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valKnoxAlpha').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderKnoxAlpha').addEventListener('dblclick', () => {
   const v = getResetDefaults().knoxAlpha
   el<HTMLInputElement>('sliderKnoxAlpha').value = String(Math.round(v * 100))
   settings.knoxAlpha = v
   el<HTMLSpanElement>('valKnoxAlpha').textContent = v.toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+makeValEditable(el<HTMLSpanElement>('valKnoxAlpha'), 0, 1, 2, v => {
+  el<HTMLInputElement>('sliderKnoxAlpha').value = String(Math.round(v * 100))
+  settings.knoxAlpha = v
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -788,12 +857,16 @@ el<HTMLInputElement>('sliderKnoxFringe').addEventListener('input', () => {
   el<HTMLSpanElement>('valKnoxFringe').textContent = (v / 100).toFixed(2)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valKnoxFringe') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valKnoxFringe').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderKnoxFringe').addEventListener('dblclick', () => {
   const v = getResetDefaults().knoxFringe
   el<HTMLInputElement>('sliderKnoxFringe').value = String(Math.round(v * 100))
   settings.knoxFringe = v
   el<HTMLSpanElement>('valKnoxFringe').textContent = v.toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+makeValEditable(el<HTMLSpanElement>('valKnoxFringe'), 0, 0.15, 2, v => {
+  el<HTMLInputElement>('sliderKnoxFringe').value = String(Math.round(v * 100))
+  settings.knoxFringe = v
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -803,12 +876,16 @@ el<HTMLInputElement>('sliderKnoxEdge').addEventListener('input', () => {
   el<HTMLSpanElement>('valKnoxEdge').textContent = (v / 100).toFixed(1)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valKnoxEdge') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valKnoxEdge').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderKnoxEdge').addEventListener('dblclick', () => {
   const v = getResetDefaults().knoxEdgeSensitivity
   el<HTMLInputElement>('sliderKnoxEdge').value = String(Math.round(v * 100))
   settings.knoxEdgeSensitivity = v
   el<HTMLSpanElement>('valKnoxEdge').textContent = v.toFixed(1)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+makeValEditable(el<HTMLSpanElement>('valKnoxEdge'), 0.5, 8, 1, v => {
+  el<HTMLInputElement>('sliderKnoxEdge').value = String(Math.round(v * 100))
+  settings.knoxEdgeSensitivity = v
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -818,14 +895,19 @@ el<HTMLInputElement>('sliderRiemersmaQueue').addEventListener('input', () => {
   el<HTMLSpanElement>('valRiemersmaQueue').textContent = String(v)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valRiemersmaQueue') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valRiemersmaQueue').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderRiemersmaQueue').addEventListener('dblclick', () => {
   const v = getResetDefaults().riemersmaQueueSize
   el<HTMLInputElement>('sliderRiemersmaQueue').value = String(v)
   settings.riemersmaQueueSize = v
   el<HTMLSpanElement>('valRiemersmaQueue').textContent = String(v)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
+makeValEditable(el<HTMLSpanElement>('valRiemersmaQueue'), 4, 64, 0, v => {
+  const snapped = Math.round(v / 4) * 4
+  el<HTMLInputElement>('sliderRiemersmaQueue').value = String(snapped)
+  settings.riemersmaQueueSize = snapped
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+}, v => String(Math.round(v / 4) * 4))
 
 el<HTMLInputElement>('sliderDizzyDiagonal').addEventListener('input', () => {
   const v = parseInt(el<HTMLInputElement>('sliderDizzyDiagonal').value)
@@ -833,12 +915,16 @@ el<HTMLInputElement>('sliderDizzyDiagonal').addEventListener('input', () => {
   el<HTMLSpanElement>('valDizzyDiagonal').textContent = (v / 100).toFixed(2)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valDizzyDiagonal') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valDizzyDiagonal').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderDizzyDiagonal').addEventListener('dblclick', () => {
   const v = getResetDefaults().dizzyDiagonalWeight
   el<HTMLInputElement>('sliderDizzyDiagonal').value = String(Math.round(v * 100))
   settings.dizzyDiagonalWeight = v
   el<HTMLSpanElement>('valDizzyDiagonal').textContent = v.toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+makeValEditable(el<HTMLSpanElement>('valDizzyDiagonal'), 0, 1, 2, v => {
+  el<HTMLInputElement>('sliderDizzyDiagonal').value = String(Math.round(v * 100))
+  settings.dizzyDiagonalWeight = v
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -1728,4 +1814,27 @@ renderSwatches()
 buildCascadeMenu()
 presetSelect.value = 'seeed-reterminal-e1002'
 updatePresetLabel()
+
+// ── Tooltips ──────────────────────────────────────────────────────────────────
+{
+  const tt = document.createElement('div')
+  tt.id = 'tooltip'
+  tt.hidden = true
+  document.body.appendChild(tt)
+  let cur: HTMLElement | null = null
+
+  document.addEventListener('mouseover', e => {
+    const t = (e.target as Element).closest<HTMLElement>('[data-tooltip]')
+    if (t === cur) return
+    cur = t ?? null
+    tt.hidden = true
+    if (!t) return
+    tt.textContent = t.dataset.tooltip!
+    const r = t.getBoundingClientRect()
+    const left = Math.max(4, Math.min(r.left, window.innerWidth - 244))
+    tt.style.left = `${left}px`
+    tt.style.top = `${r.bottom + 5}px`
+    tt.hidden = false
+  })
+}
 setDimsEditable(false)

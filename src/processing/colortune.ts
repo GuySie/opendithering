@@ -56,9 +56,9 @@ export function colorTune(input: PipelineInput, iterations = 12): ColorTuneResul
 
   const initial = {
     saturation: settings.saturation,
-    redGain: settings.redGain,
-    greenGain: settings.greenGain,
-    blueGain: settings.blueGain,
+    redGain: 1.0,
+    greenGain: 1.0,
+    blueGain: 1.0,
   }
 
   let { saturation, redGain, greenGain, blueGain } = initial
