@@ -119,6 +119,20 @@ export function applySaturation(data: Uint8ClampedArray, saturation: number): vo
   }
 }
 
+export function applyHueSatBands(data: Uint8ClampedArray, bands: readonly number[]): void {
+  for (let i = 0; i < data.length; i += 4) {
+    const [h, s, l] = rgbToHsl(data[i], data[i + 1], data[i + 2])
+    if (s === 0) continue
+    const hDeg = h * 360
+    const bandIdx = Math.floor(hDeg / 60) % 6
+    const nextBand = (bandIdx + 1) % 6
+    const t = (hDeg % 60) / 60
+    const multiplier = (1 - t) * bands[bandIdx] + t * bands[nextBand]
+    const [r, g, b] = hslToRgb(h, Math.min(1, s * multiplier), l)
+    data[i] = r; data[i + 1] = g; data[i + 2] = b
+  }
+}
+
 // --- Exposure ---
 
 export function applyExposure(data: Uint8ClampedArray, exposure: number): void {
@@ -134,5 +148,70 @@ export function applyChannelGains(data: Uint8ClampedArray, redGain: number, gree
     data[i]     = Math.min(255, Math.round(data[i]     * redGain))
     data[i + 1] = Math.min(255, Math.round(data[i + 1] * greenGain))
     data[i + 2] = Math.min(255, Math.round(data[i + 2] * blueGain))
+  }
+}
+
+// --- Clarity (midtone-weighted unsharp mask) ---
+// Sharpens or softens the image before dithering. The effect is weighted by
+// 4·L·(1−L), peaking at 50% grey and fading to zero at pure black/white, so
+// quantised shadows/highlights are unaffected while midtone edges are enhanced.
+
+// Two-pass separable box blur. Returns a new Float32Array (n*4, RGBA stride) of blurred RGB values.
+// Alpha channel is left as 0; only R/G/B are meaningful.
+export function boxBlur(data: Uint8ClampedArray, width: number, height: number, radius: number): Float32Array {
+  const n = width * height
+  const r = Math.max(1, Math.round(radius))
+  const tmp = new Float32Array(n * 3)
+  const out = new Float32Array(n * 4)
+
+  // Horizontal pass: data (stride 4) → tmp (stride 3)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sr = 0, sg = 0, sb = 0, count = 0
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = Math.min(width - 1, Math.max(0, x + dx))
+        const i = (y * width + nx) * 4
+        sr += data[i]; sg += data[i + 1]; sb += data[i + 2]; count++
+      }
+      const t = (y * width + x) * 3
+      tmp[t] = sr / count; tmp[t + 1] = sg / count; tmp[t + 2] = sb / count
+    }
+  }
+
+  // Vertical pass: tmp (stride 3) → out (stride 4)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sr = 0, sg = 0, sb = 0, count = 0
+      for (let dy = -r; dy <= r; dy++) {
+        const ny = Math.min(height - 1, Math.max(0, y + dy))
+        const t = (ny * width + x) * 3
+        sr += tmp[t]; sg += tmp[t + 1]; sb += tmp[t + 2]; count++
+      }
+      const b = (y * width + x) * 4
+      out[b] = sr / count; out[b + 1] = sg / count; out[b + 2] = sb / count
+    }
+  }
+
+  return out
+}
+
+export function applyClarity(data: Uint8ClampedArray, width: number, height: number, amount: number, radius = 2): void {
+  if (amount === 0) return
+
+  const n = width * height
+  const r = Math.max(1, Math.min(4, Math.round(radius)))
+  const blurred = boxBlur(data, width, height, r)
+
+  // Apply unsharp mask with midtone weighting
+  for (let i = 0; i < n; i++) {
+    const pi = i * 4
+    const bi = i * 4
+    const origR = data[pi], origG = data[pi + 1], origB = data[pi + 2]
+    const L = rec709Luminance(origR / 255, origG / 255, origB / 255)
+    const midtoneWeight = 4 * L * (1 - L)
+    const blend = amount * midtoneWeight
+    data[pi]     = Math.min(255, Math.max(0, Math.round(origR + (origR - blurred[bi])     * blend)))
+    data[pi + 1] = Math.min(255, Math.max(0, Math.round(origG + (origG - blurred[bi + 1]) * blend)))
+    data[pi + 2] = Math.min(255, Math.max(0, Math.round(origB + (origB - blurred[bi + 2]) * blend)))
   }
 }

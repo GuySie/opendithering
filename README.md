@@ -14,9 +14,11 @@ This app is an experiment to find the optimal dithering algorithm and settings f
 - **Palette-accurate output** — each palette carries both *measured* colors (how the panel actually looks) and *ideal* colors (what the device expects); dithering runs against calibrated, export uses ideal
 - **Calibration variants** — choose from different color profiles per panel type, based on estimations or measurements
 - **Multiple display presets** — Seeed reTerminal, TRMNL, Waveshare PhotoPainter, Pimoroni Inky Impression, Soldered Inkplate, Solum M3 ESL, Gicisky ESL, or custom dimensions and panels
-- **Image adjustments** — tone mapping, saturation, exposure, dynamic range compression
-- **Auto-tune** — one-click optimizer that adjusts saturation and exposure to match the dithered output as closely as possible to the source image
-- **Color space control** — dither in RGB, CIELAB, or OKLab; independently choose error diffusion space and nearest-color distance space
+- **Image adjustments** — tone mapping, saturation, exposure, clarity (midtone unsharp mask), dynamic range compression, per-channel RGB gains, and per-hue saturation bands
+- **Auto Expose** — one-click histogram-based tone normalisation; derives exposure and contrast from OKLab luminance statistics as a starting point
+- **Color-tune** — iterative optimizer that adjusts RGB channel gains to match the dithered output's chroma to the source
+- **Hue-tune** — iterative optimizer that independently adjusts the saturation of each hue band (Red / Yellow / Green / Cyan / Blue / Magenta)
+- **Color space control** — dither in RGB, CIELAB, OKLab, or OKLab chroma-aware; independently choose error diffusion space and nearest-color distance space
 - **Zoom / pan** — click the preview canvas to zoom to 1:1 pixels and drag to pan the full image
 - **Export** — downloads a PNG or BMP sized exactly to the display, using ideal palette colors; rotation is applied before export
 - **OpenDisplay upload** — send the dithered image directly to an [OpenDisplay](https://opendisplay.org/) device over Web Bluetooth. Requires Chrome or Edge. Preliminary support for Gicisky/Picksmart ESL also added (but only tested on 7.5" tag)
@@ -61,4 +63,4 @@ Requires Node 20+.
 
 ## Architecture notes
 
-The processing pipeline runs in order: resize → dynamic range compression → tone mapping → saturation → exposure → dithering → palette swap (export only). See [CLAUDE.md](CLAUDE.md) for full architecture documentation.
+The processing pipeline runs in order: resize → clarity → dynamic range compression → tone mapping → saturation + hue-sat bands → exposure → channel gains → dithering → palette swap (export only). See [CLAUDE.md](CLAUDE.md) for full architecture documentation.

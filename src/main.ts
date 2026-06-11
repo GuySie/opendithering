@@ -4,8 +4,12 @@ import { DISPLAY_PRESETS } from './displays/presets'
 import { getAllPaletteGroups, getPaletteGroup, getPaletteVariant } from './palettes/index'
 import { getAllAlgorithms } from './dithering/index'
 import { runPipeline } from './processing/pipeline'
-import { autoTune } from './processing/autotune'
-import type { AutoTuneDebug } from './processing/autotune'
+import { colorTune } from './processing/colortune'
+import { hueTune } from './processing/huetune'
+import { autoExpose } from './processing/autoexpose'
+import type { ColorTuneDebug } from './processing/colortune'
+import type { HueTuneDebug } from './processing/huetune'
+import type { AutoExposeDebug } from './processing/autoexpose'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
@@ -19,7 +23,7 @@ let resizeMode: ResizeMode = 'cover'
 let displayWidth = 800
 let displayHeight = 480
 let paletteGroupId       = 'spectra6'
-let calibrationVariantId = 'spectra6-aitjcize'
+let calibrationVariantId = 'spectra6-wenting'
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let showIdealPreview = false
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
@@ -60,7 +64,7 @@ const SERPENTINE_ALGORITHMS = new Set(['floyd-steinberg', 'atkinson', 'burkes', 
 const colorPresetSel      = el<HTMLSelectElement>('colorPreset')
 const errorSpaceSel       = el<HTMLSpanElement>('errorSpaceSel')
 const distSpaceSel        = el<HTMLSpanElement>('distSpaceSel')
-const colorSpaceLabel: Record<string, string> = { rgb: 'RGB', cielab: 'CIELAB', oklab: 'OKLab' }
+const colorSpaceLabel: Record<string, string> = { rgb: 'RGB', cielab: 'CIELAB', oklab: 'OKLab', 'oklab-chroma': 'OKLab chroma-aware' }
 const localVarianceCheck  = el<HTMLInputElement>('localVarianceDetection')
 const expandPaletteCheck  = el<HTMLInputElement>('expandPalette')
 const canvasOrig       = el<HTMLCanvasElement>('canvasOriginal')
@@ -112,35 +116,20 @@ const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
 })()
 const checkCDR         = el<HTMLInputElement>('checkCDR')
 const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
-const debugAutoTune    = el<HTMLDivElement>('debugAutoTune')
+const btnColorTune     = el<HTMLButtonElement>('btnColorTune')
+const btnHueTune       = el<HTMLButtonElement>('btnHueTune')
+const btnAutoExpose    = el<HTMLButtonElement>('btnAutoExpose')
+const debugAutoExpose  = el<HTMLDivElement>('debugAutoExpose')
+const debugColorTune   = el<HTMLDivElement>('debugColorTune')
+const debugHueTune     = el<HTMLDivElement>('debugHueTune')
 const dbgSummary       = el<HTMLSpanElement>('dbgSummary')
-const dbgRefL          = el<HTMLTableCellElement>('dbgRefL')
 const dbgRefC          = el<HTMLTableCellElement>('dbgRefC')
-const dbgRefStdL       = el<HTMLTableCellElement>('dbgRefStdL')
-const dbgInitL         = el<HTMLTableCellElement>('dbgInitL')
 const dbgInitC         = el<HTMLTableCellElement>('dbgInitC')
-const dbgInitStdL      = el<HTMLTableCellElement>('dbgInitStdL')
-const dbgFinalL        = el<HTMLTableCellElement>('dbgFinalL')
 const dbgFinalC        = el<HTMLTableCellElement>('dbgFinalC')
-const dbgFinalStdL     = el<HTMLTableCellElement>('dbgFinalStdL')
 const dbgInitLoss      = el<HTMLTableCellElement>('dbgInitLoss')
 const dbgFinalLoss     = el<HTMLTableCellElement>('dbgFinalLoss')
 const dbgSatBefore     = el<HTMLTableCellElement>('dbgSatBefore')
 const dbgSatAfter      = el<HTMLTableCellElement>('dbgSatAfter')
-const dbgExpBefore     = el<HTMLTableCellElement>('dbgExpBefore')
-const dbgExpAfter      = el<HTMLTableCellElement>('dbgExpAfter')
-const dbgContrastRow   = el<HTMLTableRowElement>('dbgContrastRow')
-const dbgContrastBefore = el<HTMLTableCellElement>('dbgContrastBefore')
-const dbgContrastAfter  = el<HTMLTableCellElement>('dbgContrastAfter')
-const dbgStrengthRow   = el<HTMLTableRowElement>('dbgStrengthRow')
-const dbgStrengthBefore = el<HTMLTableCellElement>('dbgStrengthBefore')
-const dbgStrengthAfter  = el<HTMLTableCellElement>('dbgStrengthAfter')
-const dbgShadowBoostRow   = el<HTMLTableRowElement>('dbgShadowBoostRow')
-const dbgShadowBoostBefore = el<HTMLTableCellElement>('dbgShadowBoostBefore')
-const dbgShadowBoostAfter  = el<HTMLTableCellElement>('dbgShadowBoostAfter')
-const dbgHCRow         = el<HTMLTableRowElement>('dbgHCRow')
-const dbgHCBefore      = el<HTMLTableCellElement>('dbgHCBefore')
-const dbgHCAfter       = el<HTMLTableCellElement>('dbgHCAfter')
 const dbgRefA          = el<HTMLTableCellElement>('dbgRefA')
 const dbgInitA         = el<HTMLTableCellElement>('dbgInitA')
 const dbgFinalA        = el<HTMLTableCellElement>('dbgFinalA')
@@ -427,6 +416,9 @@ function activateImage(id: string) {
 
   emptyState.hidden = true
   previewPanels.hidden = false
+  debugAutoExpose.hidden = true
+  debugColorTune.hidden = true
+  debugHueTune.hidden = true
 }
 
 function checkRotationConflict() {
@@ -701,6 +693,52 @@ function getResetDefaults(): ProcessingSettings {
 }
 
 // Sliders
+function makeValEditable(
+  valEl: HTMLSpanElement,
+  min: number,
+  max: number,
+  decimals: number,
+  onCommit: (v: number) => void,
+  format?: (v: number) => string,
+) {
+  let savedText = ''
+  let escaping = false
+
+  valEl.addEventListener('click', () => {
+    if (valEl.contentEditable === 'true') return
+    savedText = valEl.textContent ?? ''
+    valEl.contentEditable = 'true'
+    valEl.focus()
+    const range = document.createRange()
+    range.selectNodeContents(valEl)
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+  })
+
+  valEl.addEventListener('blur', () => {
+    if (escaping) { escaping = false; return }
+    valEl.contentEditable = 'false'
+    const parsed = parseFloat(valEl.textContent ?? '')
+    if (isFinite(parsed)) {
+      const clamped = Math.max(min, Math.min(max, parsed))
+      onCommit(clamped)
+      valEl.textContent = format ? format(clamped) : clamped.toFixed(decimals)
+    } else {
+      valEl.textContent = savedText
+    }
+  })
+
+  valEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); valEl.blur() }
+    if (e.key === 'Escape') {
+      escaping = true
+      valEl.contentEditable = 'false'
+      valEl.textContent = savedText
+      valEl.blur()
+    }
+  })
+}
+
 function sliderSetup(
   sliderId: string,
   valId: string,
@@ -719,21 +757,57 @@ function sliderSetup(
     invalidateAll(); scheduleProcess()
   })
 
-  valEl.title = 'Double-click to reset'
-  valEl.addEventListener('dblclick', () => {
+  slider.addEventListener('dblclick', () => {
     const defaultVal = (getResetDefaults() as unknown as Record<string, number>)[key as string]
     slider.value = String(Math.round(defaultVal * scale))
     ;(settings as unknown as Record<string, number>)[key as string] = defaultVal
     valEl.textContent = defaultVal.toFixed(decimals)
     markCustomPreset(); invalidateAll(); scheduleProcess()
   })
+
+  makeValEditable(
+    valEl,
+    parseInt(slider.min) / scale,
+    parseInt(slider.max) / scale,
+    decimals,
+    v => {
+      ;(settings as unknown as Record<string, number>)[key as string] = v
+      slider.value = String(Math.round(v * scale))
+      markCustomPreset(); invalidateAll(); scheduleProcess()
+    },
+  )
 }
 
 sliderSetup('sliderExposure', 'valExposure', 100, 'exposure')
 sliderSetup('sliderSaturation', 'valSaturation', 100, 'saturation')
+sliderSetup('sliderClarity', 'valClarity', 100, 'clarity', 2)
+sliderSetup('sliderClarityRadius', 'valClarityRadius', 1, 'clarityRadius', 0)
 sliderSetup('sliderRedGain',   'valRedGain',   100, 'redGain')
 sliderSetup('sliderGreenGain', 'valGreenGain', 100, 'greenGain')
 sliderSetup('sliderBlueGain',  'valBlueGain',  100, 'blueGain')
+
+const HUE_BAND_NAMES = ['Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta'] as const
+HUE_BAND_NAMES.forEach((name, idx) => {
+  const slider = el<HTMLInputElement>(`sliderHueSat${name}`)
+  const valEl  = el<HTMLSpanElement>(`valHueSat${name}`)
+  slider.addEventListener('input', () => {
+    const v = parseInt(slider.value) / 100
+    settings.hueSatBands[idx] = v
+    valEl.textContent = v.toFixed(2)
+    markCustomPreset(); invalidateAll(); scheduleProcess()
+  })
+  slider.addEventListener('dblclick', () => {
+    settings.hueSatBands[idx] = 1
+    slider.value = '100'
+    valEl.textContent = '1.00'
+    markCustomPreset(); invalidateAll(); scheduleProcess()
+  })
+  makeValEditable(valEl, 0.25, 4.0, 2, v => {
+    settings.hueSatBands[idx] = v
+    slider.value = String(Math.round(v * 100))
+    markCustomPreset(); invalidateAll(); scheduleProcess()
+  })
+})
 sliderSetup('sliderContrast', 'valContrast', 100, 'contrast')
 sliderSetup('sliderStrength', 'valStrength', 100, 'strength')
 sliderSetup('sliderShadowBoost', 'valShadowBoost', 100, 'shadowBoost')
@@ -745,14 +819,18 @@ el<HTMLInputElement>('sliderDitherStrength').addEventListener('input', () => {
   el<HTMLSpanElement>('valDitherStrength').textContent = String(pct) + '%'
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valDitherStrength') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valDitherStrength').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderDitherStrength').addEventListener('dblclick', () => {
   const v = getResetDefaults().ditherStrength
   el<HTMLInputElement>('sliderDitherStrength').value = String(Math.round(v * 100))
   settings.ditherStrength = v
   el<HTMLSpanElement>('valDitherStrength').textContent = String(Math.round(v * 100)) + '%'
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
+makeValEditable(el<HTMLSpanElement>('valDitherStrength'), 0, 100, 0, v => {
+  el<HTMLInputElement>('sliderDitherStrength').value = String(Math.round(v))
+  settings.ditherStrength = v / 100
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+}, v => String(Math.round(v)) + '%')
 
 el<HTMLInputElement>('sliderKnoxAlpha').addEventListener('input', () => {
   const pct = parseInt(el<HTMLInputElement>('sliderKnoxAlpha').value)
@@ -760,12 +838,16 @@ el<HTMLInputElement>('sliderKnoxAlpha').addEventListener('input', () => {
   el<HTMLSpanElement>('valKnoxAlpha').textContent = (pct / 100).toFixed(2)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valKnoxAlpha') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valKnoxAlpha').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderKnoxAlpha').addEventListener('dblclick', () => {
   const v = getResetDefaults().knoxAlpha
   el<HTMLInputElement>('sliderKnoxAlpha').value = String(Math.round(v * 100))
   settings.knoxAlpha = v
   el<HTMLSpanElement>('valKnoxAlpha').textContent = v.toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+makeValEditable(el<HTMLSpanElement>('valKnoxAlpha'), 0, 1, 2, v => {
+  el<HTMLInputElement>('sliderKnoxAlpha').value = String(Math.round(v * 100))
+  settings.knoxAlpha = v
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -775,12 +857,16 @@ el<HTMLInputElement>('sliderKnoxFringe').addEventListener('input', () => {
   el<HTMLSpanElement>('valKnoxFringe').textContent = (v / 100).toFixed(2)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valKnoxFringe') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valKnoxFringe').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderKnoxFringe').addEventListener('dblclick', () => {
   const v = getResetDefaults().knoxFringe
   el<HTMLInputElement>('sliderKnoxFringe').value = String(Math.round(v * 100))
   settings.knoxFringe = v
   el<HTMLSpanElement>('valKnoxFringe').textContent = v.toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+makeValEditable(el<HTMLSpanElement>('valKnoxFringe'), 0, 0.15, 2, v => {
+  el<HTMLInputElement>('sliderKnoxFringe').value = String(Math.round(v * 100))
+  settings.knoxFringe = v
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -790,12 +876,16 @@ el<HTMLInputElement>('sliderKnoxEdge').addEventListener('input', () => {
   el<HTMLSpanElement>('valKnoxEdge').textContent = (v / 100).toFixed(1)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valKnoxEdge') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valKnoxEdge').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderKnoxEdge').addEventListener('dblclick', () => {
   const v = getResetDefaults().knoxEdgeSensitivity
   el<HTMLInputElement>('sliderKnoxEdge').value = String(Math.round(v * 100))
   settings.knoxEdgeSensitivity = v
   el<HTMLSpanElement>('valKnoxEdge').textContent = v.toFixed(1)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+makeValEditable(el<HTMLSpanElement>('valKnoxEdge'), 0.5, 8, 1, v => {
+  el<HTMLInputElement>('sliderKnoxEdge').value = String(Math.round(v * 100))
+  settings.knoxEdgeSensitivity = v
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -805,14 +895,19 @@ el<HTMLInputElement>('sliderRiemersmaQueue').addEventListener('input', () => {
   el<HTMLSpanElement>('valRiemersmaQueue').textContent = String(v)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valRiemersmaQueue') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valRiemersmaQueue').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderRiemersmaQueue').addEventListener('dblclick', () => {
   const v = getResetDefaults().riemersmaQueueSize
   el<HTMLInputElement>('sliderRiemersmaQueue').value = String(v)
   settings.riemersmaQueueSize = v
   el<HTMLSpanElement>('valRiemersmaQueue').textContent = String(v)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
+makeValEditable(el<HTMLSpanElement>('valRiemersmaQueue'), 4, 64, 0, v => {
+  const snapped = Math.round(v / 4) * 4
+  el<HTMLInputElement>('sliderRiemersmaQueue').value = String(snapped)
+  settings.riemersmaQueueSize = snapped
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+}, v => String(Math.round(v / 4) * 4))
 
 el<HTMLInputElement>('sliderDizzyDiagonal').addEventListener('input', () => {
   const v = parseInt(el<HTMLInputElement>('sliderDizzyDiagonal').value)
@@ -820,12 +915,16 @@ el<HTMLInputElement>('sliderDizzyDiagonal').addEventListener('input', () => {
   el<HTMLSpanElement>('valDizzyDiagonal').textContent = (v / 100).toFixed(2)
   markCustomPreset(); invalidateAll(); scheduleProcess()
 });
-(el<HTMLSpanElement>('valDizzyDiagonal') as HTMLElement).title = 'Double-click to reset'
-el<HTMLSpanElement>('valDizzyDiagonal').addEventListener('dblclick', () => {
+el<HTMLInputElement>('sliderDizzyDiagonal').addEventListener('dblclick', () => {
   const v = getResetDefaults().dizzyDiagonalWeight
   el<HTMLInputElement>('sliderDizzyDiagonal').value = String(Math.round(v * 100))
   settings.dizzyDiagonalWeight = v
   el<HTMLSpanElement>('valDizzyDiagonal').textContent = v.toFixed(2)
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+makeValEditable(el<HTMLSpanElement>('valDizzyDiagonal'), 0, 1, 2, v => {
+  el<HTMLInputElement>('sliderDizzyDiagonal').value = String(Math.round(v * 100))
+  settings.dizzyDiagonalWeight = v
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -840,12 +939,96 @@ btnAutoTune.addEventListener('click', async () => {
   if (!img) return
 
   btnAutoTune.disabled = true
-  btnAutoTune.textContent = 'Tuning…'
+  btnAutoTune.textContent = 'Exposing…'
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
 
   const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
   const srcBitmap = await createImageBitmap(img.original)
-  const result = autoTune({
+
+  // Step 1: Auto Expose
+  const exposeResult = autoExpose({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
+  settings.exposure          = exposeResult.exposure
+  settings.saturation        = exposeResult.saturation
+  settings.contrast          = exposeResult.contrast
+  settings.strength          = exposeResult.strength
+  settings.shadowBoost       = exposeResult.shadowBoost
+  settings.highlightCompress = exposeResult.highlightCompress
+  settings.midpoint          = exposeResult.midpoint
+  settings.redGain           = exposeResult.redGain
+  settings.greenGain         = exposeResult.greenGain
+  settings.blueGain          = exposeResult.blueGain
+  settings.compressDynamicRange = exposeResult.compressDynamicRange
+
+  // Step 2: Color-tune
+  btnAutoTune.textContent = 'Color-tuning…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const tuneResult = colorTune({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
+  settings.saturation = tuneResult.saturation
+  settings.redGain    = tuneResult.redGain
+  settings.greenGain  = tuneResult.greenGain
+  settings.blueGain   = tuneResult.blueGain
+
+  // Step 3: Hue-tune
+  btnAutoTune.textContent = 'Hue-tuning…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const hueResult = hueTune({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
+  srcBitmap.close()
+
+  settings.hueSatBands = hueResult.hueSatBands
+
+  markCustomPreset()
+  syncSlidersFromSettings()
+  invalidateAll()
+  scheduleProcess()
+  showAutoExposeDebug(exposeResult.debug)
+  showColorTuneDebug(tuneResult.debug)
+  showHueTuneDebug(hueResult.debug)
+
+  btnAutoTune.disabled = false
+  btnAutoTune.textContent = 'Auto-tune'
+})
+
+btnColorTune.addEventListener('click', async () => {
+  if (!activeId) return
+  const img = images.find(i => i.id === activeId)
+  if (!img) return
+
+  btnColorTune.disabled = true
+  btnColorTune.textContent = 'Tuning…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
+  const srcBitmap = await createImageBitmap(img.original)
+  const result = colorTune({
     source: srcBitmap,
     srcWidth: img.original.width,
     srcHeight: img.original.height,
@@ -858,22 +1041,96 @@ btnAutoTune.addEventListener('click', async () => {
   srcBitmap.close()
 
   settings.saturation = result.saturation
-  settings.exposure = result.exposure
-  settings.contrast = result.contrast
-  settings.strength = result.strength
-  settings.shadowBoost = result.shadowBoost
-  settings.highlightCompress = result.highlightCompress
-  settings.redGain   = result.redGain
-  settings.greenGain = result.greenGain
-  settings.blueGain  = result.blueGain
+  settings.redGain    = result.redGain
+  settings.greenGain  = result.greenGain
+  settings.blueGain   = result.blueGain
   markCustomPreset()
   syncSlidersFromSettings()
   invalidateAll()
   scheduleProcess()
-  showAutoTuneDebug(result.debug)
+  showColorTuneDebug(result.debug)
 
-  btnAutoTune.disabled = false
-  btnAutoTune.textContent = 'Auto-tune'
+  btnColorTune.disabled = false
+  btnColorTune.textContent = 'Color-tune'
+})
+
+btnHueTune.addEventListener('click', async () => {
+  if (!activeId) return
+  const img = images.find(i => i.id === activeId)
+  if (!img) return
+
+  btnHueTune.disabled = true
+  btnHueTune.textContent = 'Tuning…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
+  const srcBitmap = await createImageBitmap(img.original)
+  const result = hueTune({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
+  srcBitmap.close()
+
+  settings.hueSatBands = result.hueSatBands
+  markCustomPreset()
+  syncSlidersFromSettings()
+  invalidateAll()
+  scheduleProcess()
+  showHueTuneDebug(result.debug)
+
+  btnHueTune.disabled = false
+  btnHueTune.textContent = 'Hue-tune'
+})
+
+btnAutoExpose.addEventListener('click', async () => {
+  if (!activeId) return
+  const img = images.find(i => i.id === activeId)
+  if (!img) return
+
+  btnAutoExpose.disabled = true
+  btnAutoExpose.textContent = 'Exposing…'
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
+  const srcBitmap = await createImageBitmap(img.original)
+  const result = autoExpose({
+    source: srcBitmap,
+    srcWidth: img.original.width,
+    srcHeight: img.original.height,
+    dstWidth: displayWidth,
+    dstHeight: displayHeight,
+    resizeMode,
+    palette,
+    settings,
+  })
+  srcBitmap.close()
+
+  settings.exposure          = result.exposure
+  settings.saturation        = result.saturation
+  settings.contrast          = result.contrast
+  settings.strength          = result.strength
+  settings.shadowBoost       = result.shadowBoost
+  settings.highlightCompress = result.highlightCompress
+  settings.midpoint          = result.midpoint
+  settings.redGain           = result.redGain
+  settings.greenGain         = result.greenGain
+  settings.blueGain          = result.blueGain
+  settings.compressDynamicRange = result.compressDynamicRange
+
+  markCustomPreset()
+  syncSlidersFromSettings()
+  invalidateAll()
+  scheduleProcess()
+  showAutoExposeDebug(result.debug)
+
+  btnAutoExpose.disabled = false
+  btnAutoExpose.textContent = 'Auto Expose'
 })
 
 toneModeSelect.addEventListener('change', () => {
@@ -898,7 +1155,9 @@ algorithmSelect.addEventListener('change', () => {
 })
 
 function applyColorPreset(value: string) {
-  const [errSpace, distSpace] = value.split('_') as [import('./types').ColorSpace, import('./types').ColorSpace]
+  const sep = value.indexOf('_')
+  const errSpace  = value.slice(0, sep)       as import('./types').ColorSpace
+  const distSpace = value.slice(sep + 1)      as import('./types').ColorSpace
   settings.errorSpace = errSpace
   settings.distSpace  = distSpace
   errorSpaceSel.textContent = colorSpaceLabel[errSpace]
@@ -936,9 +1195,15 @@ previewToggleBtns.forEach(btn => {
 function syncSlidersFromSettings() {
   setSlider('sliderExposure', 'valExposure', settings.exposure * 100, settings.exposure)
   setSlider('sliderSaturation', 'valSaturation', settings.saturation * 100, settings.saturation)
+  setSlider('sliderClarity', 'valClarity', settings.clarity * 100, settings.clarity)
+  el<HTMLInputElement>('sliderClarityRadius').value = String(settings.clarityRadius)
+  el<HTMLSpanElement>('valClarityRadius').textContent = String(settings.clarityRadius)
   setSlider('sliderRedGain',   'valRedGain',   settings.redGain   * 100, settings.redGain)
   setSlider('sliderGreenGain', 'valGreenGain', settings.greenGain * 100, settings.greenGain)
   setSlider('sliderBlueGain',  'valBlueGain',  settings.blueGain  * 100, settings.blueGain)
+  HUE_BAND_NAMES.forEach((name, idx) => {
+    setSlider(`sliderHueSat${name}`, `valHueSat${name}`, settings.hueSatBands[idx] * 100, settings.hueSatBands[idx])
+  })
   setSlider('sliderContrast', 'valContrast', settings.contrast * 100, settings.contrast)
   setSlider('sliderStrength', 'valStrength', settings.strength * 100, settings.strength)
   setSlider('sliderShadowBoost', 'valShadowBoost', settings.shadowBoost * 100, settings.shadowBoost)
@@ -993,11 +1258,38 @@ function setSlider(sliderId: string, valId: string, sliderVal: number, displayVa
 
 function invalidateAll() {
   for (const img of images) img.dithered = null
+  debugAutoExpose.hidden = true
+  debugColorTune.hidden = true
+  debugHueTune.hidden = true
 }
 
 // ── Auto-tune debug panel ─────────────────────────────────────────────────
 
-function showAutoTuneDebug(d: AutoTuneDebug) {
+function showAutoExposeDebug(d: AutoExposeDebug) {
+  const f3 = (n: number) => n.toFixed(3)
+  const pct = (n: number) => (n * 100).toFixed(1) + '%'
+  const txt = (id: string, v: string) => { (document.getElementById(id) as HTMLElement).textContent = v }
+
+  txt('dbgExpMeanL',          f3(d.meanL))
+  txt('dbgExpStdL',           f3(d.stddevL))
+  txt('dbgExpShadowL',        f3(d.shadowMeanL))
+  txt('dbgExpHighlights',     pct(d.highlightFraction))
+  txt('dbgExpExposure',       f3(settings.exposure))
+  txt('dbgExpContrast',       f3(settings.contrast))
+  txt('dbgExpStrength',       f3(settings.strength))
+  txt('dbgExpShadowBoost',    f3(settings.shadowBoost))
+  txt('dbgExpHighlightCompress', f3(settings.highlightCompress))
+
+  const isContrast = settings.toneMode === 'contrast'
+  ;(document.getElementById('dbgExpContrastRow') as HTMLElement).hidden = !isContrast
+  ;(document.getElementById('dbgExpStrengthRow') as HTMLElement).hidden = isContrast
+  ;(document.getElementById('dbgExpShadowRow') as HTMLElement).hidden = isContrast
+  ;(document.getElementById('dbgExpHighlightRow') as HTMLElement).hidden = isContrast
+
+  debugAutoExpose.hidden = false
+}
+
+function showColorTuneDebug(d: ColorTuneDebug) {
   const f3 = (n: number) => n.toFixed(3)
   const f2 = (n: number) => n.toFixed(2)
 
@@ -1007,19 +1299,13 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
     : `${iters} iteration${iters !== 1 ? 's' : ''} · ${d.converged ? 'converged' : 'hit limit'}`
   dbgSummary.textContent = statusLabel
 
-  dbgRefL.textContent    = f3(d.refStats.meanL)
   dbgRefC.textContent    = f3(d.refStats.meanC)
-  dbgRefStdL.textContent = f3(d.refStats.stddevL)
   dbgRefA.textContent    = f3(d.refStats.meanA)
   dbgRefBok.textContent  = f3(d.refStats.meanBv)
-  dbgInitL.textContent   = f3(d.initialStats.meanL)
   dbgInitC.textContent   = f3(d.initialStats.meanC)
-  dbgInitStdL.textContent = f3(d.initialStats.stddevL)
   dbgInitA.textContent   = f3(d.initialStats.meanA)
   dbgInitBok.textContent = f3(d.initialStats.meanBv)
-  dbgFinalL.textContent  = f3(d.finalStats.meanL)
   dbgFinalC.textContent  = f3(d.finalStats.meanC)
-  dbgFinalStdL.textContent = f3(d.finalStats.stddevL)
   dbgFinalA.textContent  = f3(d.finalStats.meanA)
   dbgFinalBok.textContent = f3(d.finalStats.meanBv)
   dbgInitLoss.textContent  = f3(d.initialLoss)
@@ -1027,24 +1313,6 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
 
   dbgSatBefore.textContent = f2(d.initialSaturation)
   dbgSatAfter.textContent  = f2(d.finalSaturation)
-  dbgExpBefore.textContent = f2(d.initialExposure)
-  dbgExpAfter.textContent  = f2(d.finalExposure)
-
-  dbgContrastRow.hidden = d.toneMode !== 'contrast'
-  dbgContrastBefore.textContent = f2(d.initialContrast)
-  dbgContrastAfter.textContent  = f2(d.finalContrast)
-
-  dbgStrengthRow.hidden = d.toneMode !== 'scurve'
-  dbgStrengthBefore.textContent = f2(d.initialStrength)
-  dbgStrengthAfter.textContent  = f2(d.finalStrength)
-
-  dbgShadowBoostRow.hidden = d.toneMode !== 'scurve'
-  dbgShadowBoostBefore.textContent = f2(d.initialShadowBoost)
-  dbgShadowBoostAfter.textContent  = f2(d.finalShadowBoost)
-
-  dbgHCRow.hidden = d.toneMode !== 'scurve'
-  dbgHCBefore.textContent = f2(d.initialHighlightCompress)
-  dbgHCAfter.textContent  = f2(d.finalHighlightCompress)
 
   dbgRedGainBefore.textContent   = f2(d.initialRedGain)
   dbgRedGainAfter.textContent    = f2(d.finalRedGain)
@@ -1055,7 +1323,42 @@ function showAutoTuneDebug(d: AutoTuneDebug) {
 
   dbgLossHistory.textContent = d.lossHistory.map(f3).join(' → ')
 
-  debugAutoTune.hidden = false
+  debugColorTune.hidden = false
+}
+
+function showHueTuneDebug(d: HueTuneDebug) {
+  const f2 = (n: number) => n.toFixed(2)
+  const f3 = (n: number) => n.toFixed(3)
+
+  const iters = d.iterationsRun
+  const statusLabel = iters === 0
+    ? 'no change (already optimal)'
+    : `${iters} iteration${iters !== 1 ? 's' : ''} · ${d.converged ? 'converged' : 'hit limit'}`
+  el<HTMLSpanElement>('dbgHueSummary').textContent = statusLabel
+
+  const bandIds = ['Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta'] as const
+  for (const band of d.bands) {
+    const name = band.name as typeof bandIds[number]
+    if (band.pixelCount < 50) {
+      el<HTMLTableCellElement>(`dbgHueRef${name}`).textContent       = '—'
+      el<HTMLTableCellElement>(`dbgHueInit${name}`).textContent      = '—'
+      el<HTMLTableCellElement>(`dbgHueFinal${name}`).textContent     = '—'
+      el<HTMLTableCellElement>(`dbgHueBandInit${name}`).textContent  = '—'
+      el<HTMLTableCellElement>(`dbgHueBandFinal${name}`).textContent = '—'
+      el<HTMLTableCellElement>(`dbgHueCnt${name}`).textContent       = String(band.pixelCount)
+    } else {
+      el<HTMLTableCellElement>(`dbgHueRef${name}`).textContent       = f3(band.refMeanC)
+      el<HTMLTableCellElement>(`dbgHueInit${name}`).textContent      = f3(band.initialMeanC)
+      el<HTMLTableCellElement>(`dbgHueFinal${name}`).textContent     = f3(band.finalMeanC)
+      el<HTMLTableCellElement>(`dbgHueBandInit${name}`).textContent  = f2(band.initialBandValue)
+      el<HTMLTableCellElement>(`dbgHueBandFinal${name}`).textContent = f2(band.finalBandValue)
+      el<HTMLTableCellElement>(`dbgHueCnt${name}`).textContent       = String(band.pixelCount)
+    }
+  }
+
+  el<HTMLSpanElement>('dbgHueLossHistory').textContent = d.lossHistory.map(f3).join(' → ')
+
+  debugHueTune.hidden = false
 }
 
 // ── Palette badge ─────────────────────────────────────────────────────────
@@ -1218,8 +1521,21 @@ btnUploadDevice.addEventListener('click', async () => {
     return
   }
 
+  const preset = DISPLAY_PRESETS.find(p => p.id === presetSelect.value)
+  if (preset && preset.id !== 'custom') {
+    const deg = parseInt(bleRotation.value)
+    const outW = (deg === 90 || deg === 270) ? displayHeight : displayWidth
+    const outH = (deg === 90 || deg === 270) ? displayWidth  : displayHeight
+    if (outW !== preset.width || outH !== preset.height) {
+      const ok = confirm(
+        `Rotation mismatch: the current rotation outputs ${outW}×${outH} px but the device expects ${preset.width}×${preset.height} px.\n\nUpload anyway?`
+      )
+      if (!ok) return
+    }
+  }
+
   const originalLabel = btnUploadDevice.textContent ?? '↑ OpenDisplay BLE'
-  btnUploadDevice.disabled = true
+  btnUploadDevice.classList.add('btn-sending')
   btnUploadDeviceArrow.disabled = true
 
   const isConnected = () => bleState?.protocol === 'opendisplay'
@@ -1233,6 +1549,7 @@ btnUploadDevice.addEventListener('click', async () => {
       btnUploadDevice.textContent = '↑ Connecting…'
       await doConnect()
       if (!bleState) {
+        btnUploadDevice.classList.remove('btn-sending')
         btnUploadDevice.textContent = originalLabel
         updateExportButtons()
         return
@@ -1256,6 +1573,7 @@ btnUploadDevice.addEventListener('click', async () => {
       bleState.conn.device.gatt?.disconnect()
     }
 
+    btnUploadDevice.classList.remove('btn-sending')
     btnUploadDevice.textContent = '✓ Sent'
     setTimeout(() => {
       btnUploadDevice.textContent = originalLabel
@@ -1265,6 +1583,7 @@ btnUploadDevice.addEventListener('click', async () => {
     bleState = null
     setBleConnected(false)
     const msg = err instanceof Error ? err.message : String(err)
+    btnUploadDevice.classList.remove('btn-sending')
     if (!msg.toLowerCase().includes('cancel') && !msg.toLowerCase().includes('user')) {
       btnUploadDevice.textContent = '✗ Error'
       setTimeout(() => {
@@ -1495,4 +1814,27 @@ renderSwatches()
 buildCascadeMenu()
 presetSelect.value = 'seeed-reterminal-e1002'
 updatePresetLabel()
+
+// ── Tooltips ──────────────────────────────────────────────────────────────────
+{
+  const tt = document.createElement('div')
+  tt.id = 'tooltip'
+  tt.hidden = true
+  document.body.appendChild(tt)
+  let cur: HTMLElement | null = null
+
+  document.addEventListener('mouseover', e => {
+    const t = (e.target as Element).closest<HTMLElement>('[data-tooltip]')
+    if (t === cur) return
+    cur = t ?? null
+    tt.hidden = true
+    if (!t) return
+    tt.textContent = t.dataset.tooltip!
+    const r = t.getBoundingClientRect()
+    const left = Math.max(4, Math.min(r.left, window.innerWidth - 244))
+    tt.style.left = `${left}px`
+    tt.style.top = `${r.bottom + 5}px`
+    tt.hidden = false
+  })
+}
 setDimsEditable(false)

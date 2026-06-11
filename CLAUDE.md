@@ -43,14 +43,15 @@ To add a calibration variant to an existing palette, add another `Palette` entry
 Implemented in `src/processing/pipeline.ts`:
 
 1. **Resize** — cover / contain / stretch / none (`src/processing/resize.ts`)
-2. **Dynamic range compression** — maps luminance into the display's actual `[black_Y, white_Y]` range using Rec. 709 coefficients and sRGB↔linear conversion
-3. **Tone mapping** — contrast mode (scale around midpoint) or S-curve (strength / shadowBoost / highlightCompress / midpoint)
-4. **Saturation** — HSL-space channel scaling
-5. **Exposure** — linear multiply + clamp
-6. **Channel gains** — per-channel R/G/B multipliers for color grading (`redGain`, `greenGain`, `blueGain`)
-7. **Dithering** — selected algorithm against `measured` palette colors (or expanded palette if `expandPalette` is on)
-7. **Remap primaries** — if `expandPalette` was used, pixels that landed on a pure primary are remapped back to the nearest original measured color before export or preview
-8. **Palette swap** — measured → ideal (export only)
+2. **Clarity** — midtone-weighted unsharp mask (`applyClarity` in `src/processing/tone.ts`); weight peaks at 50% grey and fades at black/white so quantised extremes are unaffected; positive = sharpen, negative = blur; applied before DRC so tone compression doesn't amplify sharpening artefacts
+3. **Dynamic range compression** — maps luminance into the display's actual `[black_Y, white_Y]` range using Rec. 709 coefficients and sRGB↔linear conversion
+4. **Tone mapping** — contrast mode (scale around midpoint) or S-curve (strength / shadowBoost / highlightCompress / midpoint)
+5. **Saturation** — HSL-space channel scaling, followed immediately by `applyHueSatBands` (per-hue saturation multipliers for Red / Yellow / Green / Cyan / Blue / Magenta)
+6. **Exposure** — linear multiply + clamp
+7. **Channel gains** — per-channel R/G/B multipliers for color grading (`redGain`, `greenGain`, `blueGain`)
+8. **Dithering** — selected algorithm against `measured` palette colors (or expanded palette if `expandPalette` is on)
+8. **Remap primaries** — if `expandPalette` was used, pixels that landed on a pure primary are remapped back to the nearest original measured color before export or preview
+9. **Palette swap** — measured → ideal (export only)
 
 The **Balanced**, **Vivid**, and **Soft** presets match the corresponding presets in `aitjcize/esp32-photoframe` `@aitjcize/epaper-image-convert` exactly (tone mapping, algorithm, and color method). The **Grayscale** preset diverges intentionally: aitjcize uses `scurve` + LAB + floyd-steinberg; OpenDithering uses `contrast` + OKLab + Dizzy.
 
@@ -86,10 +87,12 @@ src/
 │   └── knox.ts                # Eschbach & Knox: tone-dependent error diffusion in OKLab with fringe-field and cross-edge suppression (standalone)
 ├── processing/
 │   ├── colorspace.ts          # sRGB↔linear, RGB→L*a*b*, RGB→OKLab, deltaE_rgb/lab/oklab, rec709Luminance
-│   ├── tone.ts                # compressDynamicRange, applyToneMapping, applySaturation, applyExposure, applyChannelGains
+│   ├── tone.ts                # compressDynamicRange, applyToneMapping, applySaturation, applyHueSatBands, applyExposure, applyChannelGains, applyClarity, boxBlur
 │   ├── resize.ts              # resizeImage (cover/contain/stretch/none)
 │   ├── pipeline.ts            # runPipeline() — orchestrates all steps, returns {measured, ideal}
-│   └── autotune.ts            # autoTune() — convergence-checked optimizer for tone params (saturation, exposure, contrast/strength/shadowBoost/highlightCompress, redGain/greenGain/blueGain)
+│   ├── autoexpose.ts          # autoExpose() — one-shot histogram-based tone normalisation; derives exposure and contrast/s-curve params from OKLab luminance statistics of the DRC-adjusted source
+│   ├── colortune.ts           # colorTune() — convergence-checked optimizer for RGB channel gains; chroma-only loss (|ΔmeanC| + |ΔmeanA| + |ΔmeanBv|)
+│   └── huetune.ts             # hueTune() — convergence-checked optimizer for per-hue saturation bands (Red/Yellow/Green/Cyan/Blue/Magenta)
 ├── ble/
 │   ├── opendisplay.ts         # OpenDisplay BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
 │   └── gicisky.ts             # Gicisky BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
@@ -103,7 +106,7 @@ src/
 
 **Add a dithering algorithm:** create `src/dithering/<name>.ts` exporting a `DitheringAlgorithm`, register it in `src/dithering/index.ts`. Kernel-based error-diffusion algorithms only need to call `errorDiffuse(src, palette, errorSpace, distSpace, strength, kernel, divisor)`. Algorithms with custom traversal order (e.g. Riemersma, Bayer, Eschbach & Knox) implement `dither()` standalone — import color-space helpers directly from `../processing/colorspace` and reuse the `findNearestColor` export from `error-diffusion.ts` if needed.
 
-**Algorithm-specific parameters:** the `dither()` signature accepts an optional `extraParams?: Record<string, number>` as its last argument. The pipeline always passes all algorithm param keys; algorithms ignore the ones they don't use. Current keys:
+**Algorithm-specific parameters:** the `dither()` signature is `dither(src, palette, errorSpace, distSpace, strength, localVariance?, extraParams?)`. `localVariance` is a boolean passed from `ProcessingSettings.localVarianceDetection`; `extraParams` is an optional `Record<string, number>`. The pipeline always passes all algorithm param keys; algorithms ignore the ones they don't use. Current keys:
 
 | Key | Algorithm | Default | Notes |
 |-----|-----------|---------|-------|
@@ -125,9 +128,13 @@ To add a new algorithm-specific UI control: add a slider to `index.html` (inside
 - `errorSpace: ColorSpace` — the space in which quantization error is accumulated and diffused to neighbours. The `errorDiffuse()` float buffer is stored in this space.
 - `distSpace: ColorSpace` — the space used to find the nearest palette color. Can differ from `errorSpace`.
 
-`ColorSpace` is `'rgb' | 'cielab' | 'oklab'`. For Bayer (ordered) dithering only `distSpace` applies — there is no error buffer.
+`ColorSpace` is `'rgb' | 'cielab' | 'oklab' | 'oklab-chroma'`. For Bayer (ordered) dithering only `distSpace` applies — there is no error buffer.
 
-The UI exposes five named presets via a "Color matching" dropdown: RGB (full), CIELAB distance, CIELAB (full), OKLab distance, OKLab (full). Below the dropdown, two read-only text fields show the active spaces — "Find color using" (`distSpace`) and "Diffuse error in" (`errorSpace`) — and update automatically when the preset changes. There is no manual/advanced mode; all valid combinations are covered by the presets. `deltaE_lab` uses `2·dL² + da² + db²` (L weighted double) for CIELAB distance; `deltaE_oklab` uses plain Euclidean.
+The UI exposes six named presets via a "Color matching" dropdown: RGB (full), CIELAB distance, CIELAB (full), OKLab distance, OKLab (full), OKLab chroma-aware. Below the dropdown, two read-only text fields show the active spaces — "Find color using" (`distSpace`) and "Diffuse error in" (`errorSpace`) — and update automatically when the preset changes. There is no manual/advanced mode; all valid combinations are covered by the presets. `deltaE_lab` uses `2·dL² + da² + db²` (L weighted double) for CIELAB distance; `deltaE_oklab` uses plain Euclidean; `oklab-chroma` uses `dL² + (da² + db²) × (1 + C×10)` where C is the source pixel's OKLab chroma — saturated source pixels strongly prefer chromatic palette entries over neutral ones of similar lightness.
+
+**Clarity** (`clarity: number`, −1–1; `clarityRadius: number`, 1–4): midtone-weighted unsharp mask applied before DRC. `clarity` controls strength (0 = off, positive = sharpen, negative = blur); `clarityRadius` controls the box-blur radius (larger = coarser features affected). The midtone weight `4L(1−L)` peaks at L=0.5 and falls to zero at black/white.
+
+**Per-hue saturation bands** (`hueSatBands: [number, number, number, number, number, number]`): saturation multipliers for Red, Yellow, Green, Cyan, Blue, and Magenta hue segments. Applied after the global saturation step. Default `[1, 1, 1, 1, 1, 1]`. Slider range 0.25–4.0.
 
 **Expand palette** (`expandPalette: boolean`): before dithering, six pure primaries (`[0,0,0]`, `[255,255,255]`, `[255,0,0]`, `[0,255,0]`, `[0,0,255]`, `[255,255,0]`) are appended to the working palette as extra snap-points. After dithering, `remapToOriginalPalette()` replaces any pixel that landed on a primary with the nearest original measured color, so the preview and export are unaffected.
 
@@ -146,28 +153,51 @@ The UI exposes five named presets via a "Color matching" dropdown: RGB (full), C
 
 The `ideal` values are the nominal RGB codes the firmware expects (e.g. pure `[255,0,0]` for red). The `measured` values vary by variant — see variant sources listed under "Palette groups and calibration variants" above. When adding real device measurements, add a new named variant rather than overwriting an existing one.
 
-### Auto-tune
+### Auto Expose
 
-Implemented in `src/processing/autotune.ts`. `autoTune()` adjusts tone and colour parameters to make the dithered output match the source image as closely as possible, measured by L1 distance across five OKLab stats: `|ΔmeanL| + |ΔmeanC| + |ΔstddevL| + |ΔmeanA| + |ΔmeanBv|`.
-
-**Parameters tuned per mode:**
-- **Both modes:** `saturation`, `exposure`, `redGain`, `greenGain`, `blueGain` (channel gains driven by per-channel sRGB mean ratios)
-- **Contrast mode:** `contrast` (driven by stddevL ratio)
-- **S-curve mode:** `strength` (driven by stddevL ratio), `shadowBoost` (driven by shadow-zone meanL ratio), `highlightCompress` (driven by highlight-pixel fraction)
+Implemented in `src/processing/autoexpose.ts`. `autoExpose()` is a **one-shot** (non-iterative) tone normaliser. It resets all tone, saturation, and gain parameters to neutral, then derives exposure and contrast/s-curve settings from OKLab luminance statistics of the DRC-adjusted source image. Intended as a starting point before optionally running Color-tune or Auto-tune.
 
 **Algorithm:**
-1. Resize the source to the display dimensions and compute reference stats (`refStats`: meanL, meanC, stddevL, highlightFraction, shadowMeanL).
-2. Run the pipeline once with the current settings to establish a baseline loss.
-3. Each iteration: compute ratio-based candidate adjustments (50% damping on saturation, 30% on all others, ±15% per-run caps relative to the initial values), run the pipeline with the candidate settings, compute the new loss. If `newLoss >= prevLoss`, revert to the last best and stop. Otherwise commit and continue.
-4. Maximum 8 iterations; early termination via the convergence check is the normal stopping condition.
+1. Resize the source and apply DRC so luminance stats match the pipeline's fixed tone range.
+2. Compute meanL, stddevL, shadowMeanL (pixels below L=0.35), and highlightFraction (pixels above L=0.85).
+3. Derive `exposure = TARGET_MEAN_L / meanL` (target 0.55, clamped 0.5–2.0).
+4. In contrast mode: `contrast = TARGET_STDDEV_L / stddevL` (target 0.27, clamped 0.5–2.0). In s-curve mode: derive `strength`, `shadowBoost`, and `highlightCompress` from the same stats.
 
-**Zero-initial guard:** for `shadowBoost` and `strength`, when the initial value is ≤ 0.001, the per-run cap falls back to an absolute `[0, 0.15]` range instead of a relative one, so the optimizer can bootstrap from zero.
+**Return value:** `AutoExposeResult` — `{ exposure, saturation, contrast, strength, shadowBoost, highlightCompress, midpoint, redGain, greenGain, blueGain, compressDynamicRange, debug: AutoExposeDebug }`. All gain and saturation fields are reset to 1.0; `compressDynamicRange` is always `true`. The debug struct carries `{ meanL, stddevL, shadowMeanL, highlightFraction }`. The debug panel (`#debugAutoExpose`) renders this after each Auto Expose or Auto-tune run.
 
-**Idempotency:** pressing Auto-tune a second time runs the baseline pass and tries one candidate — if the candidate doesn't improve, it breaks immediately and returns unchanged settings. This means repeated clicks are a no-op once the algorithm has converged.
+### Color-tune
 
-**Saturation and the discrete-palette floor:** the dithered output's mean chroma will always be ≤ the source's, because palette quantization clips the range. The ±15% per-run saturation cap prevents unbounded drift; the convergence check catches the point where further increases no longer improve the dithered output.
+Implemented in `src/processing/colortune.ts`. `colorTune()` iteratively adjusts **RGB channel gains** to match the dithered output's chroma to the source image, measured by `|ΔmeanC| + |ΔmeanA| + |ΔmeanBv|` in OKLab. Tone parameters (exposure, contrast, s-curve) are not touched — use Auto Expose for those.
 
-**Return value:** `AutoTuneResult` — `{ saturation, exposure, contrast, strength, shadowBoost, highlightCompress, debug: AutoTuneDebug }`. The `AutoTuneDebug` struct carries `iterationsRun`, `converged`, `refStats`, `initialStats`, `finalStats` (each with meanL/meanC/stddevL), `initialLoss`, `finalLoss`, `lossHistory` (baseline + loss after each committed iteration), and the before/after values for all six parameters. The debug panel in the UI (`#debugAutoTune`) renders this after each run; tone-mode-specific rows are hidden when not applicable.
+**Algorithm:**
+1. Resize the source and apply DRC to build reference stats (meanC, meanA, meanBv, and per-channel sRGB means).
+2. Reset redGain, greenGain, blueGain to 1.0 and establish a baseline loss from there.
+3. Each iteration: compute ratio-based gain adjustments (30% damping, ±15% per-run cap relative to the reset values, absolute bounds 0.5–2.0). Run the pipeline, compute new loss. If `newLoss >= prevLoss − 1e-4`, revert and stop. Otherwise commit and continue.
+4. Maximum 12 iterations.
+
+**Return value:** `ColorTuneResult` — `{ saturation, redGain, greenGain, blueGain, debug: ColorTuneDebug }`. `saturation` is always returned unchanged (not optimised). The debug struct carries `iterationsRun`, `converged`, `refStats`/`initialStats`/`finalStats` (each with meanC/meanA/meanBv), `initialLoss`, `finalLoss`, `lossHistory`, and before/after values for the three gain parameters. The debug panel (`#debugColorTune`) renders this after each run.
+
+### Hue-tune
+
+Implemented in `src/processing/huetune.ts`. `hueTune()` iteratively adjusts the six **per-hue saturation band multipliers** (`hueSatBands`: Red/Yellow/Green/Cyan/Blue/Magenta) so that the mean OKLab chroma of each hue segment in the dithered output matches the source. Loss is the sum of `|refMeanC − dithMeanC|` across all active hue bands (bands with fewer than `minPixels` pixels are skipped).
+
+**Algorithm:**
+1. Resize the source, optionally apply DRC, then segment pixels into 6 hue bands using RGB hue angle. Ignore achromatic pixels (RGB span < 0.05).
+2. Establish a baseline loss.
+3. Each iteration: check early-exit — if every active band already has its multiplier pressed against its absolute bound in the direction of the gradient (palette-limited), break and mark `converged = true`. Otherwise compute ratio-based candidate multipliers (30% damping, ±25% per-step relative cap, absolute bounds 0.25–4.0). Run the pipeline with a box-blurred dithered output for stable statistics. If `newLoss >= prevLoss − 1e-4`, revert and stop. Otherwise commit.
+4. Maximum 20 iterations.
+
+**Return value:** `HueTuneResult` — `{ hueSatBands, debug: HueTuneDebug }`. The debug struct carries `iterationsRun`, `converged`, `bands` (array of `HueTuneBandDebug` with per-band pixel count, refMeanC, initialMeanC, finalMeanC, initialBandValue, finalBandValue), `initialLoss`, `finalLoss`, `lossHistory`. The debug panel (`#debugHueTune`) renders this after each run.
+
+### Auto-tune
+
+The **Auto-tune** button (`btnAutoTune`) chains all three optimisers in sequence on the same image and settings:
+
+1. **Auto Expose** — resets tone/gain/saturation to neutral and derives exposure + contrast/s-curve from luminance statistics
+2. **Color-tune** — adjusts RGB channel gains to match dithered chroma to the source
+3. **Hue-tune** — independently adjusts per-hue saturation bands to match per-segment chroma
+
+Each step feeds its output settings into the next. After all three complete, all three debug panels (`#debugAutoExpose`, `#debugColorTune`, `#debugHueTune`) are rendered and `syncSlidersFromSettings()` is called to reflect the final values in the UI.
 
 ### OpenDisplay BLE upload
 

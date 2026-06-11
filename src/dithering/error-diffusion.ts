@@ -32,7 +32,7 @@ type Triple = [number, number, number]
 
 function convertToSpace(r: number, g: number, b: number, space: ColorSpace): Triple {
   if (space === 'cielab') return rgbToLab(r, g, b)
-  if (space === 'oklab')  return rgbToOklab(r, g, b)
+  if (space === 'oklab' || space === 'oklab-chroma') return rgbToOklab(r, g, b)
   return [r, g, b]
 }
 
@@ -40,6 +40,13 @@ function distanceInSpace(p: Triple, c: Triple, space: ColorSpace): number {
   const d0 = p[0] - c[0], d1 = p[1] - c[1], d2 = p[2] - c[2]
   // Weight L channel double for CIELAB to compensate for its non-linearity
   if (space === 'cielab') return 2 * d0 * d0 + d1 * d1 + d2 * d2
+  // Boost chroma (a,b) penalty proportional to source saturation so saturated
+  // pixels prefer chromatic palette entries over neutral ones of similar lightness
+  if (space === 'oklab-chroma') {
+    const sourceChroma = Math.sqrt(p[1] * p[1] + p[2] * p[2])
+    const boost = 1 + sourceChroma * 10
+    return d0 * d0 + (d1 * d1 + d2 * d2) * boost
+  }
   return d0 * d0 + d1 * d1 + d2 * d2
 }
 
@@ -111,7 +118,7 @@ export function errorDiffuse(
         e0 = Math.min(255, Math.max(0, e0))
         e1 = Math.min(255, Math.max(0, e1))
         e2 = Math.min(255, Math.max(0, e2))
-      } else if (errorSpace === 'oklab') {
+      } else if (errorSpace === 'oklab' || errorSpace === 'oklab-chroma') {
         e0 = Math.min(1,    Math.max(0,    e0))
         e1 = Math.min(0.5,  Math.max(-0.5, e1))
         e2 = Math.min(0.5,  Math.max(-0.5, e2))
