@@ -12,7 +12,7 @@ This app is an experiment to find the optimal dithering algorithm and settings f
 
 - **Dithering algorithms** — to figure out what works best, we're trying classics like Floyd-Steinberg, Atkinson, Jarvis-Judice-Ninke, Stucki, Burkes and Sierra. But also less well-known or more recent algorithms like Riemersma (Hilbert-curve), Blue noise (void and cluster), Yliluoma II, Eschbach & Knox, and Dizzy
 - **Palette-accurate output** — each palette carries both *measured* colors (how the panel actually looks) and *ideal* colors (what the device expects); dithering runs against calibrated, export uses ideal
-- **Calibration variants** — choose from different color profiles per panel type, based on estimations or measurements
+- **Calibration variants** — choose from different color profiles per panel type: community estimations, datasheet typicals (GooDisplay GDEP133C02), and real colorimeter measurements (CR30, 5-sample CIELAB averages)
 - **Multiple display presets** — Seeed reTerminal, TRMNL, Waveshare PhotoPainter, Pimoroni Inky Impression, Soldered Inkplate, Solum M3 ESL, Gicisky ESL, or custom dimensions and panels
 - **Image adjustments** — tone mapping, saturation, exposure, clarity (midtone unsharp mask), dynamic range compression, per-channel RGB gains, and per-hue saturation bands
 - **Auto Expose** — one-click histogram-based tone normalisation; derives exposure and contrast from OKLab luminance statistics as a starting point

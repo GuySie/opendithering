@@ -281,6 +281,12 @@ The rotation select is excluded from the `dims-readonly` CSS rule so it remains 
 
 When an image is activated or a display preset is changed, `autoOrientDisplay()` compares the image's aspect ratio to the display's aspect ratio. If they don't match (one is portrait, the other landscape), it swaps `displayWidth` and `displayHeight` internally and sets the Rotation dropdown to 270°. The width/height input fields are intentionally **not** updated — showing both swapped dims and a non-zero rotation would be confusing.
 
+### Device preset cascade menu
+
+The Device preset dropdown is a custom two-level cascade (`#presetCascade` trigger + a `position: fixed` menu/submenus appended to `document.body`, built in `buildCascadeMenu()` in `src/main.ts`). Manufacturers are top-level items; their models open in a flyout submenu. Selection goes through the hidden `#presetSelect` element so existing change handlers keep working.
+
+**Do not use `mouseenter`/`mouseleave` for the submenus:** some Chromium-based browsers (Arc) fail to synthesize hover boundary events over fixed-position overlays, only delivering the deferred enter event on click. Hover detection is therefore a delegated `pointermove` listener on the menu, clicking a manufacturer always opens (never toggles) its submenu, and the hide timer resets rather than stacks. Submenus flip to the left / clamp vertically when they would overflow the viewport (Arc's sidebar narrows it).
+
 ### Zoom / pan
 
 Clicking either preview canvas zooms to 1:1 pixels, centered on the click point. Dragging pans both canvases in sync. Clicking again returns to fit view. Changing any setting exits zoom mode. Implemented via `position: absolute` canvas inside an `overflow: hidden` `.canvas-viewport` div; both canvases receive the same `transform: translate()`.
