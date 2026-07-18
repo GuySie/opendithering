@@ -231,23 +231,35 @@ document.body.appendChild(cascadeMenu)
 
 let activeSubmenu: HTMLElement | null = null
 let hideSubTimer: ReturnType<typeof setTimeout> | null = null
+const submenuFor = new Map<HTMLElement, HTMLElement>()
+
+function cancelSubHide() {
+  if (hideSubTimer) { clearTimeout(hideSubTimer); hideSubTimer = null }
+}
 
 function showSub(item: HTMLElement, sub: HTMLElement) {
-  if (hideSubTimer) { clearTimeout(hideSubTimer); hideSubTimer = null }
+  cancelSubHide()
   if (activeSubmenu && activeSubmenu !== sub) activeSubmenu.hidden = true
   const rect = item.getBoundingClientRect()
-  sub.style.top  = `${rect.top}px`
-  sub.style.left = `${rect.right + 3}px`
   sub.hidden = false
+  const subW = sub.offsetWidth
+  const subH = sub.offsetHeight
+  let left = rect.right + 3
+  if (left + subW > window.innerWidth - 4) left = Math.max(4, rect.left - subW - 3)
+  let top = rect.top
+  if (top + subH > window.innerHeight - 4) top = Math.max(4, window.innerHeight - subH - 4)
+  sub.style.top  = `${top}px`
+  sub.style.left = `${left}px`
   activeSubmenu = sub
 }
 
 function scheduleSub() {
+  cancelSubHide()
   hideSubTimer = setTimeout(() => {
     if (activeSubmenu) activeSubmenu.hidden = true
     activeSubmenu = null
     hideSubTimer = null
-  }, 80)
+  }, 200)
 }
 
 function closeCascade() {
@@ -300,13 +312,26 @@ function buildCascadeMenu() {
         sub.appendChild(opt)
       }
 
-      item.addEventListener('mouseenter', () => showSub(item, sub))
-      item.addEventListener('mouseleave', () => scheduleSub())
-      sub.addEventListener('mouseenter', () => { if (hideSubTimer) { clearTimeout(hideSubTimer); hideSubTimer = null } })
-      sub.addEventListener('mouseleave', () => scheduleSub())
+      submenuFor.set(item, sub)
+      item.addEventListener('click', e => { e.stopPropagation(); showSub(item, sub) })
+      sub.addEventListener('pointermove', () => cancelSubHide())
+      sub.addEventListener('pointerleave', () => scheduleSub())
     }
     cascadeMenu.appendChild(item)
   }
+
+  // Hover handling is delegated via pointermove rather than per-item
+  // mouseenter/mouseleave: some browsers (Arc) fail to synthesize boundary
+  // events over fixed-position overlays, but continuous move events still fire.
+  cascadeMenu.addEventListener('pointermove', e => {
+    const item = (e.target as HTMLElement).closest<HTMLElement>('.cascade-item')
+    if (!item) return
+    const sub = submenuFor.get(item)
+    if (!sub) { scheduleSub(); return }
+    if (activeSubmenu === sub && !sub.hidden) cancelSubHide()
+    else showSub(item, sub)
+  })
+  cascadeMenu.addEventListener('pointerleave', () => scheduleSub())
 }
 
 function applyPreset(id: string) {
