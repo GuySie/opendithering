@@ -30,7 +30,7 @@ The UI shows a **Calibration** dropdown (always visible) and a row of **color sw
 **Variant naming convention:** use the source name as the variant name (e.g. `EPDOptimize`, `aitjcize`). If the origin is unknown, use `Estimated`. The auto-generated variant is always named `Ideal`. Do not use "Default".
 
 **Current variant sources:**
-- `spectra6` — **OpenDisplay**: `OpenDisplay/epaper-dithering` `measured_palettes.rs` (`SPECTRA_7_3_6COLOR_V2`), iPhone 15 Pro Max ProRAW + Affinity v3, A4 paper white reference, 2026-03-15, 7.3" panel; **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`spectra6` entry); **aitjcize**: `aitjcize/esp32-photoframe` `main/color_palette.c` (`color_palette_get_defaults`); **Wenting**: `mattcarter11/eink-dithering-tester` `src/config.js` (`wenting` const); **EPDOptimize (Legacy)**: independently confirmed by Rayman, Parallax forums post 177818 (2026-01-11), `SPECTRA6_REAL_WORD_RGB`
+- `spectra6` — **OpenDisplay**: `OpenDisplay/epaper-dithering` `measured_palettes.rs` (`SPECTRA_7_3_6COLOR_V2`), iPhone 15 Pro Max ProRAW + Affinity v3, A4 paper white reference, 2026-03-15, 7.3" panel; **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`spectra6` entry); **aitjcize**: `aitjcize/esp32-photoframe` `main/color_palette.c` (`color_palette_get_defaults`); **Wenting**: `mattcarter11/eink-dithering-tester` `src/config.js` (`wenting` const); **EPDOptimize (Legacy)**: independently confirmed by Rayman, Parallax forums post 177818 (2026-01-11), `SPECTRA6_REAL_WORD_RGB`; **guysie**: CR30 colorimeter, D65/2°, 5 samples per color averaged in CIELAB, absolute Lab→sRGB conversion (no white normalisation), 26.5 °C ambient, 2026-07-18, 7.3" panel; **GooDisplay**: GDEP133C02 13.3" datasheet rev 1.0 (2024-05-30) §8.1 typical L\*a\*b\* values (Eye-One Pro3 Plus spectrophotometer, 25 °C), absolute D65/2° Lab→sRGB conversion
 - `acep` — **EPDOptimize**: `paperlesspaper/epdoptimize` `default-palettes.json` (`acep` entry)
 - `bw`, `bwr`, `grayscale4`, `grayscale8` — **Estimated**: origin unknown; do not label as calibrated
 - `bwry` — **OpenDisplay**: `OpenDisplay/epaper-dithering` `measured_palettes.rs` (`BWRY_3_97`), iPhone RAW, paper reference, 2026-03-06, EP397YR 3.97" 800×480 panel; **Estimated**: origin unknown; do not label as calibrated
@@ -280,6 +280,12 @@ The rotation select is excluded from the `dims-readonly` CSS rule so it remains 
 ### Auto-orientation
 
 When an image is activated or a display preset is changed, `autoOrientDisplay()` compares the image's aspect ratio to the display's aspect ratio. If they don't match (one is portrait, the other landscape), it swaps `displayWidth` and `displayHeight` internally and sets the Rotation dropdown to 270°. The width/height input fields are intentionally **not** updated — showing both swapped dims and a non-zero rotation would be confusing.
+
+### Device preset cascade menu
+
+The Device preset dropdown is a custom two-level cascade (`#presetCascade` trigger + a `position: fixed` menu/submenus appended to `document.body`, built in `buildCascadeMenu()` in `src/main.ts`). Manufacturers are top-level items; their models open in a flyout submenu. Selection goes through the hidden `#presetSelect` element so existing change handlers keep working.
+
+**Do not use `mouseenter`/`mouseleave` for the submenus:** some Chromium-based browsers (Arc) fail to synthesize hover boundary events over fixed-position overlays, only delivering the deferred enter event on click. Hover detection is therefore a delegated `pointermove` listener on the menu, clicking a manufacturer always opens (never toggles) its submenu, and the hide timer resets rather than stacks. Submenus flip to the left / clamp vertically when they would overflow the viewport (Arc's sidebar narrows it).
 
 ### Zoom / pan
 

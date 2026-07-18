@@ -316,6 +316,13 @@
             </div>
           </div>
         </div>
+        <div id="odKeyRow">
+          <label for="odKeyInput" data-tooltip="Paste the opendisplay.org/l/… URL from the device QR code, or the 32-char hex key directly. Saved across sessions.">OpenDisplay Encryption Key</label>
+          <div class="od-key-input-row">
+            <input type="text" id="odKeyInput" placeholder="opendisplay.org/l/… or 32-char hex" autocomplete="off" spellcheck="false">
+            <span id="odKeyStatus"></span>
+          </div>
+        </div>
         <p class="ble-status" id="bleStatus"><span class="ble-dot"></span><span id="bleStatusText">Not connected</span></p>
         <p class="export-hint" id="bleCompatHint">BLE upload requires a compatible browser (Chrome or Edge). Firefox and Safari are not supported.</p>
       </section>

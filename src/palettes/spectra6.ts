@@ -53,6 +53,32 @@ export const spectra6Group: PaletteGroup = {
       ],
     },
     {
+      // CR30 colorimeter, D65/2°, 5 samples per color averaged, absolute Lab→sRGB
+      id: 'spectra6-guysie',
+      name: 'guysie',
+      colors: [
+        { name: 'black',  measured: [30, 24, 35],    ideal: [0, 0, 0] },
+        { name: 'white',  measured: [144, 153, 151], ideal: [255, 255, 255] },
+        { name: 'green',  measured: [36, 81, 57],    ideal: [0, 255, 0] },
+        { name: 'blue',   measured: [0, 79, 128],    ideal: [0, 0, 255] },
+        { name: 'red',    measured: [110, 26, 18],   ideal: [255, 0, 0] },
+        { name: 'yellow', measured: [162, 147, 3],   ideal: [255, 255, 0] },
+      ],
+    },
+    {
+      // GDEP133C02 datasheet typical L*a*b* (Eye-One Pro3), D65/2° absolute Lab→sRGB
+      id: 'spectra6-goodisplay',
+      name: 'GooDisplay',
+      colors: [
+        { name: 'black',  measured: [33, 29, 47],    ideal: [0, 0, 0] },
+        { name: 'white',  measured: [154, 164, 162], ideal: [255, 255, 255] },
+        { name: 'green',  measured: [52, 91, 58],    ideal: [0, 255, 0] },
+        { name: 'blue',   measured: [24, 82, 139],   ideal: [0, 0, 255] },
+        { name: 'red',    measured: [123, 25, 19],   ideal: [255, 0, 0] },
+        { name: 'yellow', measured: [161, 153, 3],   ideal: [255, 255, 0] },
+      ],
+    },
+    {
       id: 'spectra6-epdoptimize-legacy',
       name: 'EPDOptimize (Legacy)',
       colors: [

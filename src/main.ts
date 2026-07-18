@@ -13,6 +13,7 @@ import type { AutoExposeDebug } from './processing/autoexpose'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
+import { type OdSession, authenticate as odAuthenticate, parseMasterKey } from './ble/opendisplay-crypto'
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -29,10 +30,11 @@ let showIdealPreview = false
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
 let bleProtocol: 'opendisplay' | 'gicisky' = 'opendisplay'
 type BleState =
-  | { protocol: 'opendisplay'; char: BluetoothRemoteGATTCharacteristic }
+  | { protocol: 'opendisplay'; char: BluetoothRemoteGATTCharacteristic; session: OdSession | null }
   | { protocol: 'gicisky';     conn: GiciskyConnection }
   | null
 let bleState: BleState = null
+let odMasterKey: Uint8Array | null = null
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -92,6 +94,8 @@ const bleStatus             = el<HTMLParagraphElement>('bleStatus')
 const bleStatusText         = el<HTMLSpanElement>('bleStatusText')
 const bleCompatHint         = el<HTMLParagraphElement>('bleCompatHint')
 const bleRotation           = el<HTMLSelectElement>('bleRotation')
+const odKeyInput            = el<HTMLInputElement>('odKeyInput')
+const odKeyStatus           = el<HTMLSpanElement>('odKeyStatus')
 const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
 
 ;(() => {
@@ -227,23 +231,35 @@ document.body.appendChild(cascadeMenu)
 
 let activeSubmenu: HTMLElement | null = null
 let hideSubTimer: ReturnType<typeof setTimeout> | null = null
+const submenuFor = new Map<HTMLElement, HTMLElement>()
+
+function cancelSubHide() {
+  if (hideSubTimer) { clearTimeout(hideSubTimer); hideSubTimer = null }
+}
 
 function showSub(item: HTMLElement, sub: HTMLElement) {
-  if (hideSubTimer) { clearTimeout(hideSubTimer); hideSubTimer = null }
+  cancelSubHide()
   if (activeSubmenu && activeSubmenu !== sub) activeSubmenu.hidden = true
   const rect = item.getBoundingClientRect()
-  sub.style.top  = `${rect.top}px`
-  sub.style.left = `${rect.right + 3}px`
   sub.hidden = false
+  const subW = sub.offsetWidth
+  const subH = sub.offsetHeight
+  let left = rect.right + 3
+  if (left + subW > window.innerWidth - 4) left = Math.max(4, rect.left - subW - 3)
+  let top = rect.top
+  if (top + subH > window.innerHeight - 4) top = Math.max(4, window.innerHeight - subH - 4)
+  sub.style.top  = `${top}px`
+  sub.style.left = `${left}px`
   activeSubmenu = sub
 }
 
 function scheduleSub() {
+  cancelSubHide()
   hideSubTimer = setTimeout(() => {
     if (activeSubmenu) activeSubmenu.hidden = true
     activeSubmenu = null
     hideSubTimer = null
-  }, 80)
+  }, 200)
 }
 
 function closeCascade() {
@@ -296,13 +312,26 @@ function buildCascadeMenu() {
         sub.appendChild(opt)
       }
 
-      item.addEventListener('mouseenter', () => showSub(item, sub))
-      item.addEventListener('mouseleave', () => scheduleSub())
-      sub.addEventListener('mouseenter', () => { if (hideSubTimer) { clearTimeout(hideSubTimer); hideSubTimer = null } })
-      sub.addEventListener('mouseleave', () => scheduleSub())
+      submenuFor.set(item, sub)
+      item.addEventListener('click', e => { e.stopPropagation(); showSub(item, sub) })
+      sub.addEventListener('pointermove', () => cancelSubHide())
+      sub.addEventListener('pointerleave', () => scheduleSub())
     }
     cascadeMenu.appendChild(item)
   }
+
+  // Hover handling is delegated via pointermove rather than per-item
+  // mouseenter/mouseleave: some browsers (Arc) fail to synthesize boundary
+  // events over fixed-position overlays, but continuous move events still fire.
+  cascadeMenu.addEventListener('pointermove', e => {
+    const item = (e.target as HTMLElement).closest<HTMLElement>('.cascade-item')
+    if (!item) return
+    const sub = submenuFor.get(item)
+    if (!sub) { scheduleSub(); return }
+    if (activeSubmenu === sub && !sub.hidden) cancelSubHide()
+    else showSub(item, sub)
+  })
+  cascadeMenu.addEventListener('pointerleave', () => scheduleSub())
 }
 
 function applyPreset(id: string) {
@@ -1467,8 +1496,20 @@ async function doConnect() {
   try {
     if (bleProtocol === 'opendisplay') {
       const char = await bleConnect()
-      bleState = { protocol: 'opendisplay', char }
+      let session: OdSession | null = null
+      let authFailed = false
+      if (odMasterKey) {
+        try {
+          session = await odAuthenticate(char, odMasterKey)
+        } catch (err) {
+          console.warn('OpenDisplay auth failed, continuing without encryption:', err)
+          authFailed = true
+        }
+      }
+      bleState = { protocol: 'opendisplay', char, session }
       setBleConnected(true)
+      if (session) bleStatusText.textContent = 'Connected (encrypted)'
+      else if (authFailed) bleStatusText.textContent = 'Connected (auth failed)'
       char.service.device.addEventListener('gattserverdisconnected', () => {
         bleState = null
         setBleConnected(false)
@@ -1559,8 +1600,9 @@ btnUploadDevice.addEventListener('click', async () => {
     const toEncode = rotatePixels(img.ideal.data, img.width, img.height, parseInt(bleRotation.value))
 
     if (bleState.protocol === 'opendisplay') {
+      if (odMasterKey && !bleState.session) throw new Error('Encryption required but auth failed — check your key')
       const imageBytes = bleEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId)
-      await bleSend(bleState.char, imageBytes, (sent, total) => {
+      await bleSend(bleState.char, imageBytes, bleState.session ?? undefined, (sent, total) => {
         btnUploadDevice.textContent = `↑ Sending ${Math.round((sent / total) * 100)}%…`
       })
     } else {
@@ -1802,6 +1844,35 @@ document.addEventListener('mouseup', () => {
   viewportOrig.classList.remove('dragging')
   viewportDith.classList.remove('dragging')
 })
+
+// ── OpenDisplay key input ──────────────────────────────────────────────────
+
+function applyOdKey(value: string) {
+  const key = parseMasterKey(value)
+  odMasterKey = key
+  if (!value.trim()) {
+    odKeyStatus.textContent = ''
+    odKeyStatus.style.color = ''
+    localStorage.removeItem('odMasterKey')
+  } else if (key) {
+    odKeyStatus.textContent = '✓'
+    odKeyStatus.style.color = '#4caf50'
+    localStorage.setItem('odMasterKey', value.trim())
+  } else {
+    odKeyStatus.textContent = '✗'
+    odKeyStatus.style.color = 'var(--danger)'
+    localStorage.removeItem('odMasterKey')
+  }
+}
+
+odKeyInput.addEventListener('input', () => applyOdKey(odKeyInput.value))
+
+// Restore key from previous session
+const savedKey = localStorage.getItem('odMasterKey')
+if (savedKey) {
+  odKeyInput.value = savedKey
+  applyOdKey(savedKey)
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
