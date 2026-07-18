@@ -89,7 +89,7 @@ label {
 }
 label:first-child { margin-top: 0; }
 
-select, input[type="number"] {
+select, input[type="number"], input[type="text"] {
   width: 100%;
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -319,6 +319,16 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   font-size: 0.75rem;
   line-height: 1.5;
 }
+#odKeyRow { margin-top: 0.75rem; }
+
+.od-key-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.od-key-input-row input { flex: 1; }
+.od-key-input-row span { font-size: 0.85rem; color: var(--text-muted); min-width: 1em; text-align: center; }
+
 .ble-status {
   display: flex;
   align-items: center;

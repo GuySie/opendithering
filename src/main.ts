@@ -13,6 +13,7 @@ import type { AutoExposeDebug } from './processing/autoexpose'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
+import { type OdSession, authenticate as odAuthenticate, parseMasterKey } from './ble/opendisplay-crypto'
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -29,10 +30,11 @@ let showIdealPreview = false
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
 let bleProtocol: 'opendisplay' | 'gicisky' = 'opendisplay'
 type BleState =
-  | { protocol: 'opendisplay'; char: BluetoothRemoteGATTCharacteristic }
+  | { protocol: 'opendisplay'; char: BluetoothRemoteGATTCharacteristic; session: OdSession | null }
   | { protocol: 'gicisky';     conn: GiciskyConnection }
   | null
 let bleState: BleState = null
+let odMasterKey: Uint8Array | null = null
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -92,6 +94,8 @@ const bleStatus             = el<HTMLParagraphElement>('bleStatus')
 const bleStatusText         = el<HTMLSpanElement>('bleStatusText')
 const bleCompatHint         = el<HTMLParagraphElement>('bleCompatHint')
 const bleRotation           = el<HTMLSelectElement>('bleRotation')
+const odKeyInput            = el<HTMLInputElement>('odKeyInput')
+const odKeyStatus           = el<HTMLSpanElement>('odKeyStatus')
 const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
 
 ;(() => {
@@ -1467,8 +1471,20 @@ async function doConnect() {
   try {
     if (bleProtocol === 'opendisplay') {
       const char = await bleConnect()
-      bleState = { protocol: 'opendisplay', char }
+      let session: OdSession | null = null
+      let authFailed = false
+      if (odMasterKey) {
+        try {
+          session = await odAuthenticate(char, odMasterKey)
+        } catch (err) {
+          console.warn('OpenDisplay auth failed, continuing without encryption:', err)
+          authFailed = true
+        }
+      }
+      bleState = { protocol: 'opendisplay', char, session }
       setBleConnected(true)
+      if (session) bleStatusText.textContent = 'Connected (encrypted)'
+      else if (authFailed) bleStatusText.textContent = 'Connected (auth failed)'
       char.service.device.addEventListener('gattserverdisconnected', () => {
         bleState = null
         setBleConnected(false)
@@ -1559,8 +1575,9 @@ btnUploadDevice.addEventListener('click', async () => {
     const toEncode = rotatePixels(img.ideal.data, img.width, img.height, parseInt(bleRotation.value))
 
     if (bleState.protocol === 'opendisplay') {
+      if (odMasterKey && !bleState.session) throw new Error('Encryption required but auth failed — check your key')
       const imageBytes = bleEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId)
-      await bleSend(bleState.char, imageBytes, (sent, total) => {
+      await bleSend(bleState.char, imageBytes, bleState.session ?? undefined, (sent, total) => {
         btnUploadDevice.textContent = `↑ Sending ${Math.round((sent / total) * 100)}%…`
       })
     } else {
@@ -1802,6 +1819,35 @@ document.addEventListener('mouseup', () => {
   viewportOrig.classList.remove('dragging')
   viewportDith.classList.remove('dragging')
 })
+
+// ── OpenDisplay key input ──────────────────────────────────────────────────
+
+function applyOdKey(value: string) {
+  const key = parseMasterKey(value)
+  odMasterKey = key
+  if (!value.trim()) {
+    odKeyStatus.textContent = ''
+    odKeyStatus.style.color = ''
+    localStorage.removeItem('odMasterKey')
+  } else if (key) {
+    odKeyStatus.textContent = '✓'
+    odKeyStatus.style.color = '#4caf50'
+    localStorage.setItem('odMasterKey', value.trim())
+  } else {
+    odKeyStatus.textContent = '✗'
+    odKeyStatus.style.color = 'var(--danger)'
+    localStorage.removeItem('odMasterKey')
+  }
+}
+
+odKeyInput.addEventListener('input', () => applyOdKey(odKeyInput.value))
+
+// Restore key from previous session
+const savedKey = localStorage.getItem('odMasterKey')
+if (savedKey) {
+  odKeyInput.value = savedKey
+  applyOdKey(savedKey)
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────
 

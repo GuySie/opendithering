@@ -1,5 +1,9 @@
+import { type OdSession, decryptResponse, encryptCommand } from './opendisplay-crypto'
+
 const SERVICE_UUID = 0x2446
 const CHUNK_SIZE = 230
+// Encrypted packet overhead: cmd(2)+nonce(16)+len(1)+tag(12) = 31 bytes on top of payload
+const ENCRYPTED_CHUNK_SIZE = 154
 
 // Palette groups that have no matching OpenDisplay color scheme
 const UNSUPPORTED_PALETTES = new Set(['acep'])
@@ -160,7 +164,18 @@ export async function connectDevice(): Promise<BluetoothRemoteGATTCharacteristic
 }
 
 export function sendImage(
-  characteristic: BluetoothRemoteGATTCharacteristic,
+  char: BluetoothRemoteGATTCharacteristic,
+  imageBytes: Uint8Array,
+  session?: OdSession,
+  onProgress?: (sent: number, total: number) => void
+): Promise<void> {
+  return session
+    ? sendImageEncrypted(char, imageBytes, session, onProgress)
+    : sendImagePlaintext(char, imageBytes, onProgress)
+}
+
+function sendImagePlaintext(
+  char: BluetoothRemoteGATTCharacteristic,
   imageBytes: Uint8Array,
   onProgress?: (sent: number, total: number) => void
 ): Promise<void> {
@@ -173,65 +188,123 @@ export function sendImage(
     let chunkIndex = 0
     let done = false
 
+    // Timeout waiting for the start ACK — catches devices that silently drop plaintext commands
+    const startTimer = setTimeout(() => {
+      if (done) return
+      cleanup(); done = true
+      reject(new Error('BLE timeout: no response to start command (device may require encryption)'))
+    }, 15000)
+
     const cleanup = () => {
-      characteristic.removeEventListener('characteristicvaluechanged', onNotification)
+      clearTimeout(startTimer)
+      char.removeEventListener('characteristicvaluechanged', onNotification)
     }
 
     const sendChunk = async () => {
       if (chunkIndex >= chunks.length) {
-        // All chunks sent — send end command
-        const end = new Uint8Array([0x00, 0x72])
-        await characteristic.writeValueWithoutResponse(end)
+        await char.writeValueWithoutResponse(new Uint8Array([0x00, 0x72]))
         return
       }
       const chunk = chunks[chunkIndex]
       const cmd = new Uint8Array(2 + chunk.length)
-      cmd[0] = 0x00
-      cmd[1] = 0x71
+      cmd[0] = 0x00; cmd[1] = 0x71
       cmd.set(chunk, 2)
-      await characteristic.writeValueWithoutResponse(cmd)
+      await char.writeValueWithoutResponse(cmd)
       onProgress?.(chunkIndex + 1, chunks.length)
       chunkIndex++
     }
 
     const onNotification = (event: Event) => {
       if (done) return
+      clearTimeout(startTimer)  // any notification means device is alive
       const value = (event.target as BluetoothRemoteGATTCharacteristic).value!
       if (value.byteLength < 2) return
-
       const b0 = value.getUint8(0)
       const b1 = value.getUint8(1)
-
-      // Accept both [0x00, 0xNN] and [0xNN, 0x00] byte orders
+      // Accept [0x00, 0xNN] and [0xNN, 0x00] byte orders
       let responseCmd: number | null = null
-      if (b0 === 0x00 && (b1 >= 0x70 && b1 <= 0x74)) responseCmd = b1
-      else if (b1 === 0x00 && (b0 >= 0x70 && b0 <= 0x74)) responseCmd = b0
-
+      if (b0 === 0x00 && b1 >= 0x70 && b1 <= 0x74) responseCmd = b1
+      else if (b1 === 0x00 && b0 >= 0x70 && b0 <= 0x74) responseCmd = b0
       if (responseCmd === null) return
 
       if (responseCmd === 0x70) {
-        // Start ack — begin sending chunks
         sendChunk().catch(err => { cleanup(); done = true; reject(err) })
       } else if (responseCmd === 0x71) {
-        // Chunk ack — send next
         sendChunk().catch(err => { cleanup(); done = true; reject(err) })
       } else if (responseCmd === 0x72) {
-        // End ack — display is refreshing, wait for 0x73
+        // end ack — wait for refresh complete
       } else if (responseCmd === 0x73) {
-        // Refresh complete
-        cleanup()
-        done = true
-        resolve()
+        cleanup(); done = true; resolve()
       }
     }
 
-    characteristic.addEventListener('characteristicvaluechanged', onNotification)
-
-    // Send start command
-    const start = new Uint8Array([0x00, 0x70])
-    characteristic.writeValueWithoutResponse(start).catch(err => {
-      cleanup()
-      reject(err)
+    char.addEventListener('characteristicvaluechanged', onNotification)
+    char.writeValueWithoutResponse(new Uint8Array([0x00, 0x70])).catch(err => {
+      cleanup(); reject(err)
     })
   })
+}
+
+function waitForNotification(
+  char: BluetoothRemoteGATTCharacteristic,
+  timeoutMs = 10000
+): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      char.removeEventListener('characteristicvaluechanged', handler)
+      reject(new Error('BLE notification timeout'))
+    }, timeoutMs)
+    function handler(event: Event) {
+      clearTimeout(timer)
+      char.removeEventListener('characteristicvaluechanged', handler)
+      const dv = (event.target as BluetoothRemoteGATTCharacteristic).value!
+      resolve(new Uint8Array(dv.buffer))
+    }
+    char.addEventListener('characteristicvaluechanged', handler)
+  })
+}
+
+async function sendImageEncrypted(
+  char: BluetoothRemoteGATTCharacteristic,
+  imageBytes: Uint8Array,
+  session: OdSession,
+  onProgress?: (sent: number, total: number) => void
+): Promise<void> {
+  const chunks: Uint8Array[] = []
+  for (let i = 0; i < imageBytes.length; i += ENCRYPTED_CHUNK_SIZE) {
+    chunks.push(imageBytes.slice(i, i + ENCRYPTED_CHUNK_SIZE))
+  }
+
+  // Send start
+  const startBytes = await encryptCommand(session, 0x0070, new Uint8Array(0))
+  await char.writeValueWithoutResponse(startBytes as unknown as Uint8Array<ArrayBuffer>)
+  const startAck = await waitForNotification(char)
+  const { cmd: startCmd } = await decryptResponse(session, startAck)
+  if ((startCmd & 0x7FFF) !== 0x0070) throw new Error(`Unexpected start ACK: 0x${startCmd.toString(16)}`)
+
+  // Send chunks
+  for (let i = 0; i < chunks.length; i++) {
+    const chunkBytes = await encryptCommand(session, 0x0071, chunks[i])
+    await char.writeValueWithoutResponse(chunkBytes as unknown as Uint8Array<ArrayBuffer>)
+    const ack = await waitForNotification(char)
+    const { cmd: ackCmd } = await decryptResponse(session, ack)
+    if ((ackCmd & 0x7FFF) !== 0x0071) throw new Error(`Unexpected chunk ACK: 0x${ackCmd.toString(16)}`)
+    onProgress?.(i + 1, chunks.length)
+  }
+
+  // Send end
+  const endBytes = await encryptCommand(session, 0x0072, new Uint8Array(0))
+  await char.writeValueWithoutResponse(endBytes as unknown as Uint8Array<ArrayBuffer>)
+  // Await end ACK then refresh-complete notification (both encrypted)
+  const endAck = await waitForNotification(char)
+  const { cmd: endCmd } = await decryptResponse(session, endAck)
+  if ((endCmd & 0x7FFF) !== 0x0072 && (endCmd & 0x7FFF) !== 0x0073) {
+    throw new Error(`Unexpected end ACK: 0x${endCmd.toString(16)}`)
+  }
+  if ((endCmd & 0x7FFF) === 0x0073) return  // some firmware sends 0x73 directly
+
+  // Await refresh complete
+  const refreshAck = await waitForNotification(char, 30000)
+  const { cmd: refreshCmd } = await decryptResponse(session, refreshAck)
+  if ((refreshCmd & 0x7FFF) !== 0x0073) throw new Error(`Unexpected refresh notification: 0x${refreshCmd.toString(16)}`)
 }
