@@ -1,4 +1,5 @@
 import type { Palette, PaletteGroup } from '../types'
+import { labToRgb } from '../processing/colorspace'
 import { bwGroup } from './bw'
 import { bwrGroup } from './bwr'
 import { bwryGroup } from './bwry'
@@ -21,7 +22,22 @@ function makeIdealVariant(group: PaletteGroup): Palette {
   }
 }
 
-function registerPaletteGroup(group: PaletteGroup): void {
+// Lab measurements are the source of truth: when a color carries measuredLab,
+// its measured sRGB is derived here so all Lab-sourced variants share one conversion.
+function resolveMeasured(group: PaletteGroup): PaletteGroup {
+  return {
+    ...group,
+    variants: group.variants.map(v => ({
+      ...v,
+      colors: v.colors.map(c =>
+        c.measuredLab ? { ...c, measured: labToRgb(...c.measuredLab) } : c,
+      ),
+    })),
+  }
+}
+
+function registerPaletteGroup(rawGroup: PaletteGroup): void {
+  const group = resolveMeasured(rawGroup)
   const withIdeal: PaletteGroup = { ...group, variants: [...group.variants, makeIdealVariant(group)] }
   PALETTE_GROUPS.set(group.id, withIdeal)
   for (const v of withIdeal.variants) VARIANT_MAP.set(v.id, v)

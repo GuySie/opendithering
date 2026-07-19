@@ -4,7 +4,7 @@ export const DISPLAY_PRESETS: DisplayPreset[] = [
   { id: 'seeed-reterminal-e1001',     name: 'reTerminal E1001',         manufacturer: 'Seeed Studio',  width: 800,  height: 480,  paletteGroupId: 'bw' },
   { id: 'seeed-reterminal-e1002',     name: 'reTerminal E1002',         manufacturer: 'Seeed Studio',  width: 800,  height: 480,  paletteGroupId: 'spectra6' },
   { id: 'seeed-reterminal-e1003',     name: 'reTerminal E1003',         manufacturer: 'Seeed Studio',  width: 1872, height: 1404, paletteGroupId: 'grayscale16' },
-  { id: 'seeed-reterminal-e1004',     name: 'reTerminal E1004',         manufacturer: 'Seeed Studio',  width: 1600, height: 1200, paletteGroupId: 'spectra6' },
+  { id: 'seeed-reterminal-e1004',     name: 'reTerminal E1004',         manufacturer: 'Seeed Studio',  width: 1200, height: 1600, paletteGroupId: 'spectra6' },
   { id: 'trmnl-og',                    name: 'TRMNL OG',                  manufacturer: 'TRMNL',         width: 800,  height: 480,  paletteGroupId: 'bw' },
   { id: 'trmnl-og-2bpp',              name: 'TRMNL OG (2bpp)',           manufacturer: 'TRMNL',         width: 800,  height: 480,  paletteGroupId: 'grayscale4' },
   { id: 'trmnl-x',                    name: 'TRMNL X',                   manufacturer: 'TRMNL',         width: 1872, height: 1404, paletteGroupId: 'grayscale16' },
