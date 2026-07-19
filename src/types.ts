@@ -1,6 +1,7 @@
 export interface PaletteColor {
   name: string
   measured: [number, number, number] // sRGB as seen on physical device
+  measuredLab?: [number, number, number] // original instrument L*a*b* (D65/2°, absolute); when present, the registry derives `measured` from it
   ideal: [number, number, number]     // sRGB the firmware expects
 }
 

@@ -44,6 +44,27 @@ export function rgbToLab(r: number, g: number, b: number): [number, number, numb
   return [L, a, bStar]
 }
 
+// --- L*a*b* -> sRGB (absolute, D65/2°, no white normalisation) ---
+// Inverse of rgbToLab. Out-of-gamut components clamp to [0, 255].
+
+function fInv(t: number): number {
+  const t3 = t * t * t
+  return t3 > 0.008856 ? t3 : (t - 16 / 116) / 7.787
+}
+
+export function labToRgb(L: number, a: number, b: number): [number, number, number] {
+  const fy = (L + 16) / 116
+  const fx = fy + a / 500
+  const fz = fy - b / 200
+  const x = D65[0] * fInv(fx)
+  const y = D65[1] * fInv(fy)
+  const z = D65[2] * fInv(fz)
+  const lr =  3.2404542 * x - 1.5371385 * y - 0.4985314 * z
+  const lg = -0.9692660 * x + 1.8760108 * y + 0.0415560 * z
+  const lb =  0.0556434 * x - 0.2040259 * y + 1.0572252 * z
+  return [linearToSrgb(lr), linearToSrgb(lg), linearToSrgb(lb)]
+}
+
 // --- linear RGB -> OKLab ---
 
 export function rgbToOklab(r: number, g: number, b: number): [number, number, number] {
