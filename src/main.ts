@@ -24,7 +24,7 @@ let resizeMode: ResizeMode = 'cover'
 let displayWidth = 800
 let displayHeight = 480
 let paletteGroupId       = 'spectra6'
-let calibrationVariantId = 'spectra6-wenting'
+let calibrationVariantId = 'spectra6-guysie'
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let showIdealPreview = false
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
@@ -597,12 +597,12 @@ function resizeForPreview(src: ImageData, dw: number, dh: number, mode: ResizeMo
   } else if (mode === 'cover') {
     let tw: number, th: number
     if (sr > dr) { th = dh; tw = th * sr } else { tw = dw; th = tw / sr }
-    const ox = (dw - tw) / 2, oy = (dh - th) / 2
+    const ox = Math.round((dw - tw) / 2), oy = Math.round((dh - th) / 2)
     ctx.drawImage(bmp as unknown as CanvasImageSource, ox, oy, tw, th)
   } else {
     let tw: number, th: number
     if (sr > dr) { tw = dw; th = tw / sr } else { th = dh; tw = th * sr }
-    const ox = (dw - tw) / 2, oy = (dh - th) / 2
+    const ox = Math.round((dw - tw) / 2), oy = Math.round((dh - th) / 2)
     ctx.fillStyle = '#d5d3cc'; ctx.fillRect(0, 0, dw, dh)
     ctx.drawImage(bmp as unknown as CanvasImageSource, ox, oy, tw, th)
   }

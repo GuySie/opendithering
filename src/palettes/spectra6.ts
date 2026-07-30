@@ -5,6 +5,39 @@ export const spectra6Group: PaletteGroup = {
   name: 'Spectra 6 (6-color)',
   variants: [
     {
+      // CHNSpec CR30, 26 °C ambient, 7.3" panel. Measured directly as sRGB under D65/2°
+      // (colour.XYZ_to_sRGB on D65-integrated XYZ from raw reflectance spectra, via
+      // epaper-colorcal) — not Lab-sourced, so no measuredLab here. Average of 10 reads
+      // per color across two independent sessions (5 each), which agreed to within
+      // ΔE 0.1-0.5 per color (raw data: epaper-colorcal's
+      // reference/spectra_7_3_6color_cr30_*.json, field srgb_d65).
+      id: 'spectra6-guysie',
+      name: 'guysie',
+      colors: [
+        { name: 'black',  measured: [33, 23, 36],    ideal: [0, 0, 0] },
+        { name: 'white',  measured: [143, 154, 152], ideal: [255, 255, 255] },
+        { name: 'green',  measured: [34, 78, 63],    ideal: [0, 255, 0] },
+        { name: 'blue',   measured: [8, 71, 127],    ideal: [0, 0, 255] },
+        { name: 'red',    measured: [106, 23, 18],   ideal: [255, 0, 0] },
+        { name: 'yellow', measured: [158, 152, 18],  ideal: [255, 255, 0] },
+      ],
+    },
+    {
+      // GDEP133C02 datasheet rev 1.0 §8.1 typical L*a*b* (Eye-One Pro3 Plus, 25 °C).
+      // measuredLab is the source of truth; measured sRGB is derived by the registry
+      // (values shown here are that derivation, kept for reference).
+      id: 'spectra6-goodisplay',
+      name: 'GooDisplay',
+      colors: [
+        { name: 'black',  measuredLab: [12, 7, -11],    measured: [33, 29, 47],    ideal: [0, 0, 0] },
+        { name: 'white',  measuredLab: [66.5, -4, 0],   measured: [154, 164, 162], ideal: [255, 255, 255] },
+        { name: 'green',  measuredLab: [35, -22, 15],   measured: [52, 91, 58],    ideal: [0, 255, 0] },
+        { name: 'blue',   measuredLab: [34, 3.5, -37],  measured: [24, 82, 139],   ideal: [0, 0, 255] },
+        { name: 'red',    measuredLab: [26.5, 41, 30],  measured: [123, 25, 19],   ideal: [255, 0, 0] },
+        { name: 'yellow', measuredLab: [62, -11, 65],   measured: [161, 153, 3],   ideal: [255, 255, 0] },
+      ],
+    },
+    {
       id: 'spectra6-aitjcize',
       name: 'aitjcize',
       colors: [
@@ -50,37 +83,6 @@ export const spectra6Group: PaletteGroup = {
         { name: 'blue',   measured: [35, 63, 142],    ideal: [0, 0, 255] },
         { name: 'red',    measured: [98, 32, 30],     ideal: [255, 0, 0] },
         { name: 'yellow', measured: [193, 187, 30],   ideal: [255, 255, 0] },
-      ],
-    },
-    {
-      // CR30 colorimeter, D65/2°, 26.5 °C ambient, 7.3" panel. measuredLab is the
-      // average of 5 samples per color (raw data: reference/guysie-spectra6measurements.pdf);
-      // measured sRGB is derived by the registry (values here are that derivation, kept
-      // for reference). Blue is slightly outside sRGB gamut — R clamps to 0.
-      id: 'spectra6-guysie',
-      name: 'guysie',
-      colors: [
-        { name: 'black',  measuredLab: [9.414, 6.136, -6.848],    measured: [30, 24, 36],    ideal: [0, 0, 0] },
-        { name: 'white',  measuredLab: [62.566, -3.988, 0.262],   measured: [144, 153, 151], ideal: [255, 255, 255] },
-        { name: 'green',  measuredLab: [30.602, -21.66, 9.01],    measured: [36, 81, 57],    ideal: [0, 255, 0] },
-        { name: 'blue',   measuredLab: [31.754, -3.508, -34.162], measured: [0, 79, 128],    ideal: [0, 0, 255] },
-        { name: 'red',    measuredLab: [23.862, 36.28, 26.854],   measured: [110, 26, 18],   ideal: [255, 0, 0] },
-        { name: 'yellow', measuredLab: [60.494, -7.37, 63.85],    measured: [162, 147, 3],   ideal: [255, 255, 0] },
-      ],
-    },
-    {
-      // GDEP133C02 datasheet rev 1.0 §8.1 typical L*a*b* (Eye-One Pro3 Plus, 25 °C).
-      // measuredLab is the source of truth; measured sRGB is derived by the registry
-      // (values shown here are that derivation, kept for reference).
-      id: 'spectra6-goodisplay',
-      name: 'GooDisplay',
-      colors: [
-        { name: 'black',  measuredLab: [12, 7, -11],    measured: [33, 29, 47],    ideal: [0, 0, 0] },
-        { name: 'white',  measuredLab: [66.5, -4, 0],   measured: [154, 164, 162], ideal: [255, 255, 255] },
-        { name: 'green',  measuredLab: [35, -22, 15],   measured: [52, 91, 58],    ideal: [0, 255, 0] },
-        { name: 'blue',   measuredLab: [34, 3.5, -37],  measured: [24, 82, 139],   ideal: [0, 0, 255] },
-        { name: 'red',    measuredLab: [26.5, 41, 30],  measured: [123, 25, 19],   ideal: [255, 0, 0] },
-        { name: 'yellow', measuredLab: [62, -11, 65],   measured: [161, 153, 3],   ideal: [255, 255, 0] },
       ],
     },
     {
