@@ -34,6 +34,7 @@ export const DISPLAY_PRESETS: DisplayPreset[] = [
   { id: 'solum-m3-27-bwr',             name: 'M3 2.7" BWR',               manufacturer: 'Solum',         width: 200,  height: 300,  paletteGroupId: 'bwr' },
   { id: 'solum-m3-29-bwr',             name: 'M3 2.9" BWR',               manufacturer: 'Solum',         width: 168,  height: 384,  paletteGroupId: 'bwr' },
   { id: 'solum-m3-26-bwry',            name: 'M3 2.6" BWRY',              manufacturer: 'Solum',         width: 184,  height: 360,  paletteGroupId: 'bwry' },
+  { id: 'solum-m3-29-bwry',            name: 'M3 2.9" BWRY',              manufacturer: 'Solum',         width: 168,  height: 384,  paletteGroupId: 'bwry' },
   { id: 'solum-m3-35-bwry',            name: 'M3 3.5" BWRY',              manufacturer: 'Solum',         width: 184,  height: 384,  paletteGroupId: 'bwry' },
   { id: 'solum-m3-42-bwry',            name: 'M3 4.2" BWRY',              manufacturer: 'Solum',         width: 400,  height: 300,  paletteGroupId: 'bwry' },
   { id: 'custom',                     name: 'Custom',                    manufacturer: '',              width: 800, height: 480, paletteGroupId: 'spectra6' },
