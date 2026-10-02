@@ -27,7 +27,7 @@ export const spectra6Group: PaletteGroup = {
       // measuredLab is the source of truth; measured sRGB is derived by the registry
       // (values shown here are that derivation, kept for reference).
       id: 'spectra6-goodisplay',
-      name: 'GooDisplay',
+      name: 'GoodDisplay',
       colors: [
         { name: 'black',  measuredLab: [12, 7, -11],    measured: [33, 29, 47],    ideal: [0, 0, 0] },
         { name: 'white',  measuredLab: [66.5, -4, 0],   measured: [154, 164, 162], ideal: [255, 255, 255] },
