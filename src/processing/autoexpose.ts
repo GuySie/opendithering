@@ -34,7 +34,7 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 export function autoExpose(input: PipelineInput): AutoExposeResult {
-  const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, palette, settings } = input
+  const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings } = input
 
   const sorted = palette.colors
     .map(c => ({ L: rgbToOklab(c.measured[0], c.measured[1], c.measured[2])[0] }))
@@ -42,7 +42,7 @@ export function autoExpose(input: PipelineInput): AutoExposeResult {
   const blackL = sorted[sorted.length - 1].L
   const range  = sorted[0].L - blackL
 
-  const img = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode)
+  const img = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY)
   const d = img.data
 
   // Apply DRC so stats reflect the display's actual tone range

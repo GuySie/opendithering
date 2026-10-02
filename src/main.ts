@@ -4,6 +4,7 @@ import { DISPLAY_PRESETS } from './displays/presets'
 import { getAllPaletteGroups, getPaletteGroup, getPaletteVariant } from './palettes/index'
 import { getAllAlgorithms } from './dithering/index'
 import { runPipeline } from './processing/pipeline'
+import { getCropWindow } from './processing/resize'
 import { colorTune } from './processing/colortune'
 import { hueTune } from './processing/huetune'
 import { autoExpose } from './processing/autoexpose'
@@ -51,6 +52,10 @@ const paletteSelect       = el<HTMLSelectElement>('paletteSelect')
 const calibrationSelect   = el<HTMLSelectElement>('calibrationSelect')
 const paletteSwatches     = el<HTMLDivElement>('paletteSwatches')
 const resizeModeSelect = el<HTMLSelectElement>('resizeMode')
+const cropWidget         = el<HTMLDivElement>('cropWidget')
+const cropWidgetViewport = el<HTMLDivElement>('cropWidgetViewport')
+const cropWidgetCanvas   = el<HTMLCanvasElement>('cropWidgetCanvas')
+const cropBox            = el<HTMLDivElement>('cropBox')
 const toneModeSelect   = el<HTMLSelectElement>('toneMode')
 const panelContrast    = el<HTMLDivElement>('panelContrast')
 const panelScurve      = el<HTMLDivElement>('panelScurve')
@@ -396,6 +401,8 @@ async function loadFiles(fileList: FileList) {
       dithered: null,
       width: bitmap.width,
       height: bitmap.height,
+      cropOffsetX: 0.5,
+      cropOffsetY: 0.5,
     }
     images.push(img)
     addThumbnail(img, bitmap)
@@ -434,6 +441,7 @@ function activateImage(id: string) {
   const img = images.find(i => i.id === id)!
 
   autoOrientDisplay(img.original.width, img.original.height)
+  updateCropWidget()
 
   showOriginal(img.original)
 
@@ -559,13 +567,15 @@ async function processActive() {
     dstWidth: displayWidth,
     dstHeight: displayHeight,
     resizeMode,
+    cropOffsetX: img.cropOffsetX,
+    cropOffsetY: img.cropOffsetY,
     palette,
     settings,
   })
   srcBitmap.close()
 
   // Update original preview to show the resized version (so both panels match dimensions)
-  const resized = resizeForPreview(img.original, displayWidth, displayHeight, resizeMode)
+  const resized = resizeForPreview(img.original, displayWidth, displayHeight, resizeMode, img.cropOffsetX, img.cropOffsetY)
   putImageData(canvasOrig, resized)
 
   img.dithered = result.measured
@@ -579,7 +589,10 @@ async function processActive() {
   updateExportButtons()
 }
 
-function resizeForPreview(src: ImageData, dw: number, dh: number, mode: ResizeMode): ImageData {
+function resizeForPreview(
+  src: ImageData, dw: number, dh: number, mode: ResizeMode,
+  cropOffsetX: number, cropOffsetY: number,
+): ImageData {
   const bmp = imageDataToBitmap(src)
   // Use a synchronous canvas draw
   const c = document.createElement('canvas')
@@ -591,20 +604,21 @@ function resizeForPreview(src: ImageData, dw: number, dh: number, mode: ResizeMo
 
   if (mode === 'stretch') {
     ctx.drawImage(bmp as unknown as CanvasImageSource, 0, 0, dw, dh)
-  } else if (mode === 'none') {
-    const dx = Math.round((dw - sw) / 2), dy = Math.round((dh - sh) / 2)
-    ctx.drawImage(bmp as unknown as CanvasImageSource, dx, dy)
-  } else if (mode === 'cover') {
-    let tw: number, th: number
-    if (sr > dr) { th = dh; tw = th * sr } else { tw = dw; th = tw / sr }
-    const ox = Math.round((dw - tw) / 2), oy = Math.round((dh - th) / 2)
-    ctx.drawImage(bmp as unknown as CanvasImageSource, ox, oy, tw, th)
-  } else {
+  } else if (mode === 'contain') {
     let tw: number, th: number
     if (sr > dr) { tw = dw; th = tw / sr } else { th = dh; tw = th * sr }
     const ox = Math.round((dw - tw) / 2), oy = Math.round((dh - th) / 2)
     ctx.fillStyle = '#d5d3cc'; ctx.fillRect(0, 0, dw, dh)
     ctx.drawImage(bmp as unknown as CanvasImageSource, ox, oy, tw, th)
+  } else {
+    // cover / none: crop the chosen window out of the source, positioned by cropOffsetX/Y
+    const win = getCropWindow(sw, sh, dw, dh, mode, cropOffsetX, cropOffsetY)!
+    if (mode === 'cover') {
+      ctx.drawImage(bmp as unknown as CanvasImageSource, win.x, win.y, win.w, win.h, 0, 0, dw, dh)
+    } else {
+      const dx = Math.round((dw - win.w) / 2), dy = Math.round((dh - win.h) / 2)
+      ctx.drawImage(bmp as unknown as CanvasImageSource, win.x, win.y, win.w, win.h, dx, dy, win.w, win.h)
+    }
   }
   return ctx.getImageData(0, 0, dw, dh)
 }
@@ -615,6 +629,88 @@ function imageDataToBitmap(data: ImageData): HTMLCanvasElement {
   c.getContext('2d')!.putImageData(data, 0, 0)
   return c
 }
+
+// ── Crop position widget ────────────────────────────────────────────────────
+// Lets the user drag the crop window within the overflow when the image's
+// aspect ratio doesn't match the display's (cover/none resize modes only).
+
+const CROP_WIDGET_MAX_W = 248
+const CROP_WIDGET_MAX_H = 160
+
+function updateCropWidget() {
+  const img = images.find(i => i.id === activeId)
+  if (!img) { cropWidget.hidden = true; return }
+
+  const srcW = img.original.width, srcH = img.original.height
+  const win = getCropWindow(srcW, srcH, displayWidth, displayHeight, resizeMode, img.cropOffsetX, img.cropOffsetY)
+  if (!win || (win.w >= srcW && win.h >= srcH)) {
+    // contain/stretch (no crop), or the crop window already covers the whole
+    // source (aspect ratios match, or image is smaller than the frame) — nothing to drag
+    cropWidget.hidden = true
+    return
+  }
+  cropWidget.hidden = false
+
+  let fitW = CROP_WIDGET_MAX_W, fitH = fitW * srcH / srcW
+  if (fitH > CROP_WIDGET_MAX_H) { fitH = CROP_WIDGET_MAX_H; fitW = fitH * srcW / srcH }
+  cropWidgetViewport.style.width  = `${fitW}px`
+  cropWidgetViewport.style.height = `${fitH}px`
+
+  cropWidgetCanvas.width = fitW
+  cropWidgetCanvas.height = fitH
+  const ctx = cropWidgetCanvas.getContext('2d')!
+  const bmp = imageDataToBitmap(img.original)
+  ctx.drawImage(bmp as unknown as CanvasImageSource, 0, 0, fitW, fitH)
+
+  const scale = fitW / srcW // === fitH / srcH
+  cropBox.style.left   = `${win.x * scale}px`
+  cropBox.style.top    = `${win.y * scale}px`
+  cropBox.style.width  = `${win.w * scale}px`
+  cropBox.style.height = `${win.h * scale}px`
+}
+
+let cropDragStart: {
+  mouseX: number; mouseY: number
+  startOffsetX: number; startOffsetY: number
+  maxDx: number; maxDy: number // source-pixel range of travel for each axis
+  scale: number
+  imgId: string
+} | null = null
+
+cropWidgetViewport.addEventListener('mousedown', e => {
+  const img = images.find(i => i.id === activeId)
+  if (!img) return
+  const srcW = img.original.width, srcH = img.original.height
+  const win = getCropWindow(srcW, srcH, displayWidth, displayHeight, resizeMode, img.cropOffsetX, img.cropOffsetY)
+  if (!win) return
+  e.preventDefault()
+  cropDragStart = {
+    mouseX: e.clientX, mouseY: e.clientY,
+    startOffsetX: img.cropOffsetX, startOffsetY: img.cropOffsetY,
+    maxDx: srcW - win.w, maxDy: srcH - win.h,
+    scale: cropWidgetCanvas.width / srcW,
+    imgId: img.id,
+  }
+})
+
+document.addEventListener('mousemove', e => {
+  if (!cropDragStart) return
+  const img = images.find(i => i.id === cropDragStart!.imgId)
+  if (!img) return
+  const dx = (e.clientX - cropDragStart.mouseX) / cropDragStart.scale
+  const dy = (e.clientY - cropDragStart.mouseY) / cropDragStart.scale
+  img.cropOffsetX = cropDragStart.maxDx > 0
+    ? Math.min(1, Math.max(0, cropDragStart.startOffsetX + dx / cropDragStart.maxDx))
+    : 0.5
+  img.cropOffsetY = cropDragStart.maxDy > 0
+    ? Math.min(1, Math.max(0, cropDragStart.startOffsetY + dy / cropDragStart.maxDy))
+    : 0.5
+  updateCropWidget()
+  img.dithered = null
+  scheduleProcess()
+})
+
+document.addEventListener('mouseup', () => { cropDragStart = null })
 
 // ── UI wiring ─────────────────────────────────────────────────────────────
 
@@ -648,6 +744,7 @@ presetSelect.addEventListener('change', () => {
     if (activeImg) autoOrientDisplay(activeImg.original.width, activeImg.original.height)
     else checkRotationConflict()
   }
+  updateCropWidget()
   invalidateAll()
   scheduleProcess()
 })
@@ -657,11 +754,13 @@ bleRotation.addEventListener('change', () => checkRotationConflict())
 dimWidth.addEventListener('input', () => {
   displayWidth = parseInt(dimWidth.value) || 800
   checkRotationConflict()
+  updateCropWidget()
   invalidateAll(); scheduleProcess()
 })
 dimHeight.addEventListener('input', () => {
   displayHeight = parseInt(dimHeight.value) || 480
   checkRotationConflict()
+  updateCropWidget()
   invalidateAll(); scheduleProcess()
 })
 paletteSelect.addEventListener('change', () => {
@@ -681,6 +780,7 @@ calibrationSelect.addEventListener('change', () => {
 
 resizeModeSelect.addEventListener('change', () => {
   resizeMode = resizeModeSelect.value as ResizeMode
+  updateCropWidget()
   invalidateAll(); scheduleProcess()
 })
 
@@ -982,6 +1082,8 @@ btnAutoTune.addEventListener('click', async () => {
     dstWidth: displayWidth,
     dstHeight: displayHeight,
     resizeMode,
+    cropOffsetX: img.cropOffsetX,
+    cropOffsetY: img.cropOffsetY,
     palette,
     settings,
   })
@@ -1008,6 +1110,8 @@ btnAutoTune.addEventListener('click', async () => {
     dstWidth: displayWidth,
     dstHeight: displayHeight,
     resizeMode,
+    cropOffsetX: img.cropOffsetX,
+    cropOffsetY: img.cropOffsetY,
     palette,
     settings,
   })
@@ -1027,6 +1131,8 @@ btnAutoTune.addEventListener('click', async () => {
     dstWidth: displayWidth,
     dstHeight: displayHeight,
     resizeMode,
+    cropOffsetX: img.cropOffsetX,
+    cropOffsetY: img.cropOffsetY,
     palette,
     settings,
   })
@@ -1064,6 +1170,8 @@ btnColorTune.addEventListener('click', async () => {
     dstWidth: displayWidth,
     dstHeight: displayHeight,
     resizeMode,
+    cropOffsetX: img.cropOffsetX,
+    cropOffsetY: img.cropOffsetY,
     palette,
     settings,
   })
@@ -1101,6 +1209,8 @@ btnHueTune.addEventListener('click', async () => {
     dstWidth: displayWidth,
     dstHeight: displayHeight,
     resizeMode,
+    cropOffsetX: img.cropOffsetX,
+    cropOffsetY: img.cropOffsetY,
     palette,
     settings,
   })
@@ -1135,6 +1245,8 @@ btnAutoExpose.addEventListener('click', async () => {
     dstWidth: displayWidth,
     dstHeight: displayHeight,
     resizeMode,
+    cropOffsetX: img.cropOffsetX,
+    cropOffsetY: img.cropOffsetY,
     palette,
     settings,
   })
@@ -1655,6 +1767,8 @@ btnDownloadZip.addEventListener('click', async () => {
         dstWidth: displayWidth,
         dstHeight: displayHeight,
         resizeMode,
+        cropOffsetX: img.cropOffsetX,
+        cropOffsetY: img.cropOffsetY,
         palette,
         settings,
       })

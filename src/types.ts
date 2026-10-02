@@ -74,6 +74,8 @@ export interface ImageFile {
   ideal?: ImageData
   width: number   // display target width (after resize)
   height: number  // display target height (after resize)
+  cropOffsetX: number // 0–1, position of the crop window within the source image's horizontal overflow (cover/none modes only); 0.5 = centered
+  cropOffsetY: number // 0–1, same for vertical overflow
 }
 
 export const BALANCED_PRESET: ProcessingSettings = {

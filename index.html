@@ -70,6 +70,14 @@
           <option value="none">None (center-crop)</option>
         </select>
 
+        <div class="crop-widget" id="cropWidget" hidden>
+          <label data-tooltip="Drag to choose which part of the image is kept when it's cropped to fit the display.">Crop position</label>
+          <div class="crop-widget-viewport" id="cropWidgetViewport">
+            <canvas id="cropWidgetCanvas"></canvas>
+            <div class="crop-box" id="cropBox"></div>
+          </div>
+        </div>
+
         <label for="calibrationSelect" data-tooltip="Measured color calibration source. Dithering runs against these measured colors; the exported PNG uses the firmware's ideal values.">Calibration</label>
         <select id="calibrationSelect"></select>
         <div class="palette-swatches" id="paletteSwatches"></div>

@@ -35,9 +35,9 @@ export interface HueTuneResult {
 const BAND_NAMES = ['Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta'] as const
 
 export function hueTune(input: PipelineInput, iterations = 20): HueTuneResult {
-  const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, palette, settings } = input
+  const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings } = input
 
-  const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode)
+  const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY)
 
   // Apply DRC to reference so band stats reflect the same fixed transform the pipeline applies.
   if (settings.compressDynamicRange) {

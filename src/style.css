@@ -503,6 +503,28 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .dims-readonly input[type="number"],
 .dims-readonly select:not(#bleRotation) { opacity: 0.55; cursor: default; pointer-events: none; }
 
+/* ── Crop position widget ── */
+.crop-widget { margin: 0.5rem 0 0.75rem; }
+.crop-widget-viewport {
+  position: relative;
+  margin-top: 0.4rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  line-height: 0;
+}
+.crop-widget-viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.crop-box {
+  position: absolute;
+  box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.5);
+  border: 1px solid #fff;
+  cursor: move;
+}
+
 /* ── Palette swatches ── */
 .palette-swatches {
   display: flex;

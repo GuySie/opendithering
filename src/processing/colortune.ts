@@ -32,13 +32,13 @@ export interface ColorTuneResult {
 }
 
 export function colorTune(input: PipelineInput, iterations = 12): ColorTuneResult {
-  const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, palette, settings } = input
+  const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings } = input
 
   const sorted = palette.colors
     .map(c => ({ measured: c.measured, L: rgbToOklab(c.measured[0], c.measured[1], c.measured[2])[0] }))
     .sort((a, b) => b.L - a.L)
 
-  const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode)
+  const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY)
 
   // Apply DRC to the reference so refStats reflects the same fixed transform the pipeline applies.
   if (settings.compressDynamicRange) {

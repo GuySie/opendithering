@@ -10,6 +10,8 @@ export interface PipelineInput {
   dstWidth: number
   dstHeight: number
   resizeMode: ResizeMode
+  cropOffsetX?: number // 0–1, position within overflow for cover/none modes; default 0.5 (centered)
+  cropOffsetY?: number
   palette: Palette
   settings: ProcessingSettings
 }
@@ -22,10 +24,10 @@ export interface PipelineResult {
 }
 
 export function runPipeline(input: PipelineInput): PipelineResult {
-  const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, palette, settings } = input
+  const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings } = input
 
   // 1. Resize
-  const resized = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode)
+  const resized = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY)
 
   // 1.5 Clarity (midtone-weighted unsharp mask)
   if (settings.clarity !== 0) {
