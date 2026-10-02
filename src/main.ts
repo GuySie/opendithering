@@ -598,6 +598,8 @@ function resizeForPreview(
   const c = document.createElement('canvas')
   c.width = dw; c.height = dh
   const ctx = c.getContext('2d')!
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
 
   const sw = src.width, sh = src.height
   const sr = sw / sh, dr = dw / dh
