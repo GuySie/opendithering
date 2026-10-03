@@ -394,11 +394,20 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   width: 100%;
   max-width: 1400px;
   flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .preview-panel {
   flex: 1 1 0;
   min-width: 200px;
+  /* Stretch (the default cross-axis alignment in the row above) only grows
+     undersized items — it won't shrink one back down when its content is
+     taller than the line. An explicit height gives this column a real,
+     shrinkable main axis, so canvas-viewport's flex:1 below can actually
+     claim "whatever's left" instead of growing to the canvas's full size. */
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -452,15 +461,23 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 
 .canvas-viewport {
   position: relative;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  overflow: hidden;
   cursor: zoom-in;
   user-select: none;
   -webkit-user-select: none;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+/* Zoomed mode shows the canvas at natural pixel size, larger than the
+   viewport, panned via transform — the viewport itself is the clipping
+   "window" and frame here. */
 .canvas-viewport.zoomed {
   cursor: grab;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
 }
 .canvas-viewport.zoomed.no-pan {
   cursor: zoom-out;
@@ -471,9 +488,20 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 }
 .canvas-viewport canvas {
   display: block;
-  width: 100%;
-  height: auto;
   image-rendering: pixelated;
+}
+/* Unzoomed: shrink to fit both axes of the viewport (so a portrait image
+   never forces the pane taller than the available space), and frame the
+   canvas itself rather than its — generally larger — flex box, so the
+   border hugs the actual image instead of leaving a letterboxed gap that
+   reads as "this won't fill the display". */
+.canvas-viewport:not(.zoomed) canvas {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
 }
 .canvas-viewport.zoomed canvas {
   position: absolute;
