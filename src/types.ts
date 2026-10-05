@@ -261,6 +261,7 @@ export const PRE_DBS_PRESET: ProcessingSettings = {
   toneMode: 'contrast',
   contrast: 1.0,
   saturation: 1.0,
+  ditherAlgorithm: 'dizzy', // the error-diffusion result is DBS's starting point
 }
 
 export type PresetName = 'balanced' | 'predbs' | 'vivid' | 'soft' | 'grayscale' | 'none' | 'custom'
