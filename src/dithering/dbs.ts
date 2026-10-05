@@ -13,7 +13,7 @@
 // Pure module (no DOM beyond ImageData) so it can run in a Web Worker and in the Node benchmark.
 
 import type { Palette } from '../types'
-import { srgbToLinear, linearToXyz } from '../processing/colorspace'
+import { srgbToLinear, linearToYyCxCz } from '../processing/colorspace'
 
 export interface DbsParams {
   viewingDistanceCm: number
@@ -38,14 +38,9 @@ export interface DbsStats {
 const ALPHA_LUM = 0.193
 const ALPHA_CHROMA = 0.419
 
-// D65 white (matches colorspace.ts)
-const XN = 0.95047, ZN = 1.08883
-
 function toYyCxCz(r: number, g: number, b: number, out: Float64Array, o: number): void {
-  const [X, Y, Z] = linearToXyz(srgbToLinear(r), srgbToLinear(g), srgbToLinear(b))
-  out[o]     = 116 * Y
-  out[o + 1] = 500 * (X / XN - Y)
-  out[o + 2] = 200 * (Y - Z / ZN)
+  const [y, cx, cz] = linearToYyCxCz(srgbToLinear(r), srgbToLinear(g), srgbToLinear(b))
+  out[o] = y; out[o + 1] = cx; out[o + 2] = cz
 }
 
 /** Eye-model Gaussian σ in pixels for a CSF decay constant at the given viewing geometry. */

@@ -90,6 +90,8 @@ const localVarianceCheck  = el<HTMLInputElement>('localVarianceDetection')
 const expandPaletteCheck  = el<HTMLInputElement>('expandPalette')
 const gamutMappingCheck   = el<HTMLInputElement>('gamutMappingCheck')
 const panelGamutBalance   = el<HTMLDivElement>('panelGamutBalance')
+const gamutMethodSelect   = el<HTMLSelectElement>('gamutMethodSelect')
+const rowGamutBalance     = el<HTMLDivElement>('rowGamutBalance')
 const canvasOrig       = el<HTMLCanvasElement>('canvasOriginal')
 const canvasDith       = el<HTMLCanvasElement>('canvasDithered')
 const viewportOrig     = el<HTMLDivElement>('viewportOrig')
@@ -1418,6 +1420,11 @@ gamutMappingCheck.addEventListener('change', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 sliderSetup('sliderGamutBalance', 'valGamutBalance', 100, 'gamutMappingBalance')
+gamutMethodSelect.addEventListener('change', () => {
+  settings.gamutMappingMethod = gamutMethodSelect.value as ProcessingSettings['gamutMappingMethod']
+  rowGamutBalance.hidden = settings.gamutMappingMethod !== 'grey'
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
 
 expandPaletteCheck.addEventListener('change', () => {
   settings.expandPalette = expandPaletteCheck.checked
@@ -1492,6 +1499,8 @@ function syncSlidersFromSettings() {
   gamutMappingCheck.checked = settings.gamutMapping
   panelGamutBalance.hidden = !settings.gamutMapping
   setSlider('sliderGamutBalance', 'valGamutBalance', settings.gamutMappingBalance * 100, settings.gamutMappingBalance)
+  gamutMethodSelect.value = settings.gamutMappingMethod
+  rowGamutBalance.hidden = settings.gamutMappingMethod !== 'grey'
 }
 
 function setSlider(sliderId: string, valId: string, sliderVal: number, displayVal: number) {

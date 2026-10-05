@@ -18,7 +18,7 @@
 // unchanged — lightness is already handled by dynamic range compression there.
 
 import type { Palette } from '../types'
-import { srgbToLinear, linearToSrgb, linearToOklab, oklabToLinear } from './colorspace'
+import { srgbToLinear, linearToSrgb, linearToOklab, oklabToLinear, linearToYyCxCz, yyCxCzToLinear } from './colorspace'
 
 type Vec3 = [number, number, number]
 
@@ -26,6 +26,8 @@ interface Face { n: Vec3; d: number } // inside ⇔ n·x ≤ d (n unit length)
 
 export interface Gamut {
   faces: Face[]
+  tris: [Vec3, Vec3, Vec3][] // hull faces as triangles of palette colours, in YyCxCz (for nearest-colour clipping)
+  centroid: Vec3             // linear RGB mean of the palette colours (strictly inside the hull)
   black: Vec3        // linear RGB of the darkest palette colour
   white: Vec3        // linear RGB of the lightest palette colour
   axisL: Float64Array // OKLab L along black→white, sampled at AXIS_STEPS + 1 points
@@ -43,6 +45,7 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0
 export function buildGamut(palette: Palette): Gamut | null {
   const pts: Vec3[] = palette.colors.map(c => [srgbToLinear(c.measured[0]), srgbToLinear(c.measured[1]), srgbToLinear(c.measured[2])])
   const faces: Face[] = []
+  const triIdx: [number, number, number][] = []
   let hasVolume = false
 
   // Brute force: a triple of points spans a hull face iff all other points lie on one side of
@@ -62,6 +65,7 @@ export function buildGamut(palette: Palette): Gamut | null {
     if (above && below) continue
     if (above || below) hasVolume = true
     faces.push(above ? { n: [-n[0], -n[1], -n[2]], d: -d } : { n, d })
+    triIdx.push([i, j, k])
   }
   if (!hasVolume) return null
 
@@ -69,7 +73,11 @@ export function buildGamut(palette: Palette): Gamut | null {
   const black = byL[0].p, white = byL[byL.length - 1].p
   const axisL = new Float64Array(AXIS_STEPS + 1)
   for (let i = 0; i <= AXIS_STEPS; i++) axisL[i] = linearToOklab(...mix(black, white, i / AXIS_STEPS))[0]
-  return { faces, black, white, axisL }
+  // YyCxCz is a linear transform of linear RGB, so the hull's faces are the same palette triples there
+  const ycc = pts.map(p => linearToYyCxCz(...p))
+  const tris = triIdx.map(([i, j, k]) => [ycc[i], ycc[j], ycc[k]] as [Vec3, Vec3, Vec3])
+  const centroid = pts.reduce((s, p) => [s[0] + p[0] / pts.length, s[1] + p[1] / pts.length, s[2] + p[2] / pts.length] as Vec3, [0, 0, 0] as Vec3)
+  return { faces, tris, centroid, black, white, axisL }
 }
 
 function mix(a: Vec3, b: Vec3, t: number): Vec3 {
@@ -120,8 +128,61 @@ export function mapColor(g: Gamut, r: number, gr: number, b: number, balance: nu
   return rgb
 }
 
+// --- Nearest-colour clipping ('nearest' method) ---
+// Moves an out-of-gamut colour to the closest point on the hull in YyCxCz — the colour space DBS measures
+// error in. That's the reproducible colour DBS itself would settle on without gamut mapping (it trades
+// lightness for saturation: a light coral becomes a deeper red, where the panel's saturation is), so DBS
+// keeps its saturation, but the target is reproducible up front and there's no leftover error to push
+// across edges as halos. The 'grey' method (mapColor) moves towards the neutral axis instead, which keeps
+// lightness but gives up saturation the panel could show.
+
+function closestOnTriangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3): Vec3 {
+  // Ericson, Real-Time Collision Detection §5.1.5
+  const ab = sub(b, a), ac = sub(c, a), ap = sub(p, a)
+  const d1 = dot(ab, ap), d2 = dot(ac, ap)
+  if (d1 <= 0 && d2 <= 0) return a
+  const bp = sub(p, b), d3 = dot(ab, bp), d4 = dot(ac, bp)
+  if (d3 >= 0 && d4 <= d3) return b
+  const vc = d1 * d4 - d3 * d2
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return mix(a, b, d1 / (d1 - d3))
+  const cp = sub(p, c), d5 = dot(ab, cp), d6 = dot(ac, cp)
+  if (d6 >= 0 && d5 <= d6) return c
+  const vb = d5 * d2 - d1 * d6
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return mix(a, c, d2 / (d2 - d6))
+  const va = d3 * d6 - d5 * d4
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) return mix(b, c, (d4 - d3) / ((d4 - d3) + (d5 - d6)))
+  const den = 1 / (va + vb + vc)
+  const v = vb * den, w = vc * den
+  return [a[0] + ab[0] * v + ac[0] * w, a[1] + ab[1] * v + ac[1] * w, a[2] + ab[2] * v + ac[2] * w]
+}
+
+/** Map one sRGB colour to the closest reproducible colour (in YyCxCz). Unchanged when already inside. */
+export function mapColorNearest(g: Gamut, r: number, gr: number, b: number): Vec3 {
+  const lin: Vec3 = [srgbToLinear(r), srgbToLinear(gr), srgbToLinear(b)]
+  if (inGamut(g, lin)) return [r, gr, b]
+  const p = linearToYyCxCz(...lin)
+  let best = Infinity, q: Vec3 = p
+  for (const [a, bb, c] of g.tris) {
+    const t = closestOnTriangle(p, a, bb, c)
+    const d = (p[0] - t[0]) ** 2 + (p[1] - t[1]) ** 2 + (p[2] - t[2]) ** 2
+    if (d < best) { best = d; q = t }
+  }
+  // The boundary point can round to an 8-bit colour just outside the hull; step towards the palette's
+  // centroid until the rounded colour is inside, so no sliver of irreducible error remains.
+  const boundary = yyCxCzToLinear(...q)
+  let rgb: Vec3 = [0, 0, 0]
+  for (let t = 0; t <= 1; t += 0.002) {
+    const x = mix(boundary, g.centroid, t)
+    rgb = [linearToSrgb(x[0]), linearToSrgb(x[1]), linearToSrgb(x[2])]
+    if (inGamut(g, [srgbToLinear(rgb[0]), srgbToLinear(rgb[1]), srgbToLinear(rgb[2])])) break
+  }
+  return rgb
+}
+
+export type GamutMappingMethod = 'nearest' | 'grey'
+
 /** Map every pixel of an RGBA buffer into the palette's gamut, in place. No-op for flat gamuts. */
-export function applyGamutMapping(data: Uint8ClampedArray, palette: Palette, balance: number): void {
+export function applyGamutMapping(data: Uint8ClampedArray, palette: Palette, balance: number, method: GamutMappingMethod = 'nearest'): void {
   const g = buildGamut(palette)
   if (!g) return
   const cache = new Map<number, number>()
@@ -129,7 +190,9 @@ export function applyGamutMapping(data: Uint8ClampedArray, palette: Palette, bal
     const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]
     let v = cache.get(key)
     if (v === undefined) {
-      const [r, gr, b] = mapColor(g, data[i], data[i + 1], data[i + 2], balance)
+      const [r, gr, b] = method === 'nearest'
+        ? mapColorNearest(g, data[i], data[i + 1], data[i + 2])
+        : mapColor(g, data[i], data[i + 1], data[i + 2], balance)
       v = (r << 16) | (gr << 8) | b
       cache.set(key, v)
     }

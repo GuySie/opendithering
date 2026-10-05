@@ -336,7 +336,12 @@
         <label class="checkbox-label" data-tooltip="Adds pure RGB primaries as temporary dithering snap-points, then remaps them to the nearest real palette color after dithering."><input type="checkbox" id="expandPalette" /> Expand palette with pure primaries</label>
         <label class="checkbox-label" data-tooltip="Pulls colours the panel can't reproduce (outside the range of mixes of its measured colours) onto the nearest reproducible colour before dithering. Removes the leftover error that error diffusion smears and that DBS refine turns into halos along edges. Has no effect on BW, BWR and grayscale palettes."><input type="checkbox" id="gamutMappingCheck" /> Map colours into panel gamut</label>
         <div id="panelGamutBalance" hidden>
-          <div class="slider-row">
+          <label for="gamutMethodSelect" data-tooltip="Closest colour: moves each colour the panel can't show to the closest colour it can, measured the way DBS measures error. Keeps saturation by going darker where the panel's saturation is (light coral becomes deep red) — what DBS would do on its own, without the halos. Towards grey: moves colours towards the neutral axis instead; keeps lightness but gives up saturation the panel could show.">Method</label>
+          <select id="gamutMethodSelect">
+            <option value="nearest">Closest colour (keeps saturation)</option>
+            <option value="grey">Towards grey (lightness ↔ saturation)</option>
+          </select>
+          <div class="slider-row" id="rowGamutBalance">
             <label for="sliderGamutBalance" data-tooltip="How to compromise on colours the panel can't show. 0 = keep lightness and reduce saturation; 1 = keep more saturation by moving towards the panel's mid lightness.">Lightness ↔ saturation</label>
             <input type="range" id="sliderGamutBalance" min="0" max="100" value="50" />
             <span class="slider-val" id="valGamutBalance">0.50</span>

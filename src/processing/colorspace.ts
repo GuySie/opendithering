@@ -142,3 +142,35 @@ export function rec709Luminance(r: number, g: number, b: number): number {
          0.7151522 * srgbToLinear(g) +
          0.0721750 * srgbToLinear(b)
 }
+
+// --- linear RGB <-> YyCxCz (Flohr, Kolpatzik & Allebach) ---
+// A linear transform of XYZ (linearised CIELAB): Yy = 116·Y, Cx = 500·(X/Xn − Y), Cz = 200·(Y − Z/Zn).
+// The colour space DBS refine measures error in; gamut mapping's nearest-colour clip uses it too so both
+// agree on which reproducible colour is "closest".
+
+const YCC_FROM_LINEAR: number[][] = (() => {
+  const cols = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(([r, g, b]) => {
+    const [X, Y, Z] = linearToXyz(r, g, b)
+    return [116 * Y, 500 * (X / D65[0] - Y), 200 * (Y - Z / D65[2])]
+  })
+  return [0, 1, 2].map(i => [cols[0][i], cols[1][i], cols[2][i]])
+})()
+const LINEAR_FROM_YCC: number[][] = (() => {
+  const [[a, b, c], [d, e, f], [g, h, i]] = YCC_FROM_LINEAR
+  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g, det = a * A + b * B + c * C
+  return [
+    [A / det, -(b * i - c * h) / det, (b * f - c * e) / det],
+    [B / det, (a * i - c * g) / det, -(a * f - c * d) / det],
+    [C / det, -(a * h - b * g) / det, (a * e - b * d) / det],
+  ]
+})()
+
+export function linearToYyCxCz(r: number, g: number, b: number): [number, number, number] {
+  const m = YCC_FROM_LINEAR
+  return [m[0][0] * r + m[0][1] * g + m[0][2] * b, m[1][0] * r + m[1][1] * g + m[1][2] * b, m[2][0] * r + m[2][1] * g + m[2][2] * b]
+}
+
+export function yyCxCzToLinear(y: number, cx: number, cz: number): [number, number, number] {
+  const m = LINEAR_FROM_YCC
+  return [m[0][0] * y + m[0][1] * cx + m[0][2] * cz, m[1][0] * y + m[1][1] * cx + m[1][2] * cz, m[2][0] * y + m[2][1] * cx + m[2][2] * cz]
+}

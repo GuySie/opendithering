@@ -62,7 +62,8 @@ export interface ProcessingSettings {
   clarityRadius: number          // 1–4, box blur radius for unsharp mask (larger = coarser features sharpened)
   hueSatBands: [number, number, number, number, number, number]  // per-hue sat multipliers [Red, Yellow, Green, Cyan, Blue, Magenta], default [1,1,1,1,1,1]
   gamutMapping: boolean          // map out-of-gamut target colours onto the palette's hull before dithering
-  gamutMappingBalance: number    // 0–1: 0 = keep lightness (desaturate), 1 = keep saturation (move towards mid lightness)
+  gamutMappingBalance: number    // 0–1, 'grey' method only: 0 = keep lightness (desaturate), 1 = keep more saturation (move towards mid lightness)
+  gamutMappingMethod: 'nearest' | 'grey' // 'nearest' = closest reproducible colour in YyCxCz (keeps saturation, like DBS); 'grey' = move towards the neutral axis
 }
 
 export interface DitheringAlgorithm {
@@ -116,6 +117,7 @@ export const BALANCED_PRESET: ProcessingSettings = {
   drcMode: 'luminance',
   gamutMapping: false,
   gamutMappingBalance: 0.5,
+  gamutMappingMethod: 'nearest',
 }
 
 export const VIVID_PRESET: ProcessingSettings = {
@@ -149,6 +151,7 @@ export const VIVID_PRESET: ProcessingSettings = {
   drcMode: 'luminance',
   gamutMapping: false,
   gamutMappingBalance: 0.5,
+  gamutMappingMethod: 'nearest',
 }
 
 export const SOFT_PRESET: ProcessingSettings = {
@@ -182,6 +185,7 @@ export const SOFT_PRESET: ProcessingSettings = {
   drcMode: 'luminance',
   gamutMapping: false,
   gamutMappingBalance: 0.5,
+  gamutMappingMethod: 'nearest',
 }
 
 export const GRAYSCALE_PRESET: ProcessingSettings = {
@@ -215,6 +219,7 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   drcMode: 'luminance',
   gamutMapping: false,
   gamutMappingBalance: 0.5,
+  gamutMappingMethod: 'nearest',
 }
 
 export const NONE_PRESET: ProcessingSettings = {
@@ -248,6 +253,7 @@ export const NONE_PRESET: ProcessingSettings = {
   drcMode: 'luminance',
   gamutMapping: false,
   gamutMappingBalance: 0.5,
+  gamutMappingMethod: 'nearest',
 }
 
 // Starting point for the DBS refine workflow: Balanced, but with settings that mostly compensated for

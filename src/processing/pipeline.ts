@@ -108,7 +108,7 @@ export function applyAdjustments(img: ImageData, palette: Palette, settings: Pro
   applyChannelGains(img.data, settings.redGain, settings.greenGain, settings.blueGain)
 
   // 6.5 Gamut mapping — pull colours the panel can't reproduce onto its gamut boundary
-  if (settings.gamutMapping) applyGamutMapping(img.data, palette, settings.gamutMappingBalance)
+  if (settings.gamutMapping) applyGamutMapping(img.data, palette, settings.gamutMappingBalance, settings.gamutMappingMethod)
 }
 
 const PURE_PRIMARIES: [number, number, number][] = [
