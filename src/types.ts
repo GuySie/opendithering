@@ -250,10 +250,24 @@ export const NONE_PRESET: ProcessingSettings = {
   gamutMappingBalance: 0.5,
 }
 
-export type PresetName = 'balanced' | 'vivid' | 'soft' | 'grayscale' | 'none' | 'custom'
+// Starting point for the DBS refine workflow: Balanced, but with settings that mostly compensated for
+// error diffusion's flaws neutralised. DBS reproduces its target faithfully, so a 1.3 saturation boost
+// over-saturates and pushes out-of-gamut colours further out (more edge halos), and the panel white point
+// mapping makes white backgrounds reproducible. Contrast mode at 1.0 = no tone curve: in white point mode
+// the S-curve acts as a real contrast curve, so it's left for the user to add to taste.
+export const PRE_DBS_PRESET: ProcessingSettings = {
+  ...BALANCED_PRESET,
+  drcMode: 'whitepoint',
+  toneMode: 'contrast',
+  contrast: 1.0,
+  saturation: 1.0,
+}
+
+export type PresetName = 'balanced' | 'predbs' | 'vivid' | 'soft' | 'grayscale' | 'none' | 'custom'
 
 export const PRESETS: Record<Exclude<PresetName, 'custom'>, ProcessingSettings> = {
   balanced: BALANCED_PRESET,
+  predbs: PRE_DBS_PRESET,
   vivid: VIVID_PRESET,
   soft: SOFT_PRESET,
   grayscale: GRAYSCALE_PRESET,
