@@ -1,6 +1,6 @@
 import type { ProcessingSettings, Palette, ResizeMode } from '../types'
 import { resizeImage } from './resize'
-import { compressDynamicRange, applyToneMapping, applySaturation, applyHueSatBands, applyExposure, applyChannelGains, applyClarity } from './tone'
+import { compressDynamicRange, applyToneMapping, applySaturation, applyHueSatBands, applyExposure, applyChannelGains, applyClarity, mapToPanelWhitePoint } from './tone'
 import { getAlgorithm } from '../dithering/index'
 import { applyGamutMapping } from './gamut'
 
@@ -82,13 +82,20 @@ export function applyAdjustments(img: ImageData, palette: Palette, settings: Pro
     applyClarity(img.data, img.width, img.height, settings.clarity, settings.clarityRadius)
   }
 
-  // 2. Dynamic range compression
-  if (settings.compressDynamicRange) {
-    compressDynamicRange(img.data, palette)
-  }
+  if (settings.compressDynamicRange && settings.drcMode === 'whitepoint') {
+    // 2–3 (white point mode): tone curve on the full-range source first, so it can't dim white (255 stays
+    // 255), then adapt the colour balance to the panel's white and compress brightness into its range
+    applyToneMapping(img.data, settings)
+    mapToPanelWhitePoint(img.data, palette)
+  } else {
+    // 2. Dynamic range compression
+    if (settings.compressDynamicRange) {
+      compressDynamicRange(img.data, palette)
+    }
 
-  // 3. Tone mapping
-  applyToneMapping(img.data, settings)
+    // 3. Tone mapping
+    applyToneMapping(img.data, settings)
+  }
 
   // 4. Saturation
   applySaturation(img.data, settings.saturation)

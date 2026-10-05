@@ -130,6 +130,13 @@
           <input type="checkbox" id="checkCDR" checked />
           Compress dynamic range
         </label>
+        <div id="panelDrcMode">
+          <label for="drcModeSelect" data-tooltip="Brightness only: scales brightness into the panel's range and keeps the source's colour balance, so pure white becomes a neutral grey the panel can't show if its white is tinted. Panel white point (experimental): first adapts the colour balance to the panel's measured white, so pure white lands exactly on it and greys take its tint; the tone curve runs before the mapping, so it can't dim white — and it then acts as a real contrast curve, so lower S-curve strength for a look closer to Brightness only.">Mapping</label>
+          <select id="drcModeSelect">
+            <option value="luminance">Brightness only</option>
+            <option value="whitepoint">Panel white point</option>
+          </select>
+        </div>
 
         <div class="advanced-panel" id="panelColorGrading">
           <details>

@@ -29,12 +29,14 @@ export interface DisplayPreset {
 
 export type ResizeMode = 'cover' | 'contain' | 'stretch' | 'none'
 export type ToneMode = 'contrast' | 'scurve'
+export type DrcMode = 'luminance' | 'whitepoint'
 export type ColorSpace = 'rgb' | 'cielab' | 'oklab' | 'oklab-chroma'
 
 export interface ProcessingSettings {
   exposure: number              // 0.5–2.0, default 1.0
   saturation: number            // 0.5–2.0, default 1.0
   compressDynamicRange: boolean // default true
+  drcMode: DrcMode              // 'luminance' = scale brightness only (default); 'whitepoint' = adapt colour balance to the panel's measured white first, so source white lands exactly on it (tone curve runs first)
   toneMode: ToneMode
   contrast: number              // 0.5–2.0 (contrast mode)
   strength: number              // 0.0–1.0 (scurve mode)
@@ -111,6 +113,7 @@ export const BALANCED_PRESET: ProcessingSettings = {
   clarity: 0.0,
   clarityRadius: 2,
   hueSatBands: [1, 1, 1, 1, 1, 1],
+  drcMode: 'luminance',
   gamutMapping: false,
   gamutMappingBalance: 0.5,
 }
@@ -143,6 +146,7 @@ export const VIVID_PRESET: ProcessingSettings = {
   clarity: 0.0,
   clarityRadius: 2,
   hueSatBands: [1, 1, 1, 1, 1, 1],
+  drcMode: 'luminance',
   gamutMapping: false,
   gamutMappingBalance: 0.5,
 }
@@ -175,6 +179,7 @@ export const SOFT_PRESET: ProcessingSettings = {
   clarity: 0.0,
   clarityRadius: 2,
   hueSatBands: [1, 1, 1, 1, 1, 1],
+  drcMode: 'luminance',
   gamutMapping: false,
   gamutMappingBalance: 0.5,
 }
@@ -207,6 +212,7 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   clarity: 0.0,
   clarityRadius: 2,
   hueSatBands: [1, 1, 1, 1, 1, 1],
+  drcMode: 'luminance',
   gamutMapping: false,
   gamutMappingBalance: 0.5,
 }
@@ -239,6 +245,7 @@ export const NONE_PRESET: ProcessingSettings = {
   clarity: 0.0,
   clarityRadius: 2,
   hueSatBands: [1, 1, 1, 1, 1, 1],
+  drcMode: 'luminance',
   gamutMapping: false,
   gamutMappingBalance: 0.5,
 }

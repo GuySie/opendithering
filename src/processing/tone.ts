@@ -31,6 +31,71 @@ export function compressDynamicRange(data: Uint8ClampedArray, palette: Palette):
   }
 }
 
+// --- Panel white point mapping ---
+// Alternative to plain compressDynamicRange (settings.drcMode === 'whitepoint'). compressDynamicRange only
+// scales brightness and keeps the source's colour balance, so pure white becomes a *neutral* grey at the
+// panel's white luminance — a colour the panel can't show when its white is tinted (measured Spectra 6
+// whites are slightly green), which DBS then fakes with dots of other colours (a pink cast on white).
+// Here the colour balance is first adapted to the panel's white (Bradford chromatic adaptation from D65 to
+// the panel white's chromaticity), then brightness is compressed exactly as compressDynamicRange does.
+// Source white lands exactly on the panel's measured white; greys keep the panel white's tint.
+// The panel's *black* point is deliberately not mapped: black point compensation adds the panel black's
+// (purplish) tint to every colour and visibly desaturates dark saturated colours (hair chroma 0.095 → 0.074
+// on the test illustration), while the brightness-only scaling keeps them saturated.
+// Runs after tone mapping (see applyAdjustments) so the curve can't dim white.
+
+type Mat3 = number[][]
+const BRADFORD: Mat3 = [[0.8951, 0.2664, -0.1614], [-0.7502, 1.7135, 0.0367], [0.0389, -0.0685, 1.0296]]
+const RGB_TO_XYZ: Mat3 = [[0.4124564, 0.3575761, 0.1804375], [0.2126729, 0.7151522, 0.0721750], [0.0193339, 0.1191920, 0.9503041]]
+
+const mul3 = (a: Mat3, b: Mat3): Mat3 => a.map(row => [0, 1, 2].map(j => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]))
+const apply3 = (m: Mat3, v: number[]) => m.map(row => row[0] * v[0] + row[1] * v[1] + row[2] * v[2])
+function inv3(m: Mat3): Mat3 {
+  const [[a, b, c], [d, e, f], [g, h, i]] = m
+  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g
+  const det = a * A + b * B + c * C
+  return [
+    [A / det, -(b * i - c * h) / det, (b * f - c * e) / det],
+    [B / det, (a * i - c * g) / det, -(a * f - c * d) / det],
+    [C / det, -(a * h - b * g) / det, (a * e - b * d) / det],
+  ]
+}
+
+/** Chromatic adaptation (linear RGB matrix) from D65 white to the panel white's chromaticity, at Y = 1. */
+export function panelWhiteAdaptation(palette: Palette): Mat3 {
+  const whiteColor = palette.colors.find(c => c.name === 'white') ?? palette.colors[palette.colors.length - 1]
+  const wl = whiteColor.measured.map(srgbToLinear)
+  const Yw = 0.2126729 * wl[0] + 0.7151522 * wl[1] + 0.0721750 * wl[2]
+  const toLms = mul3(BRADFORD, RGB_TO_XYZ)
+  const ls = apply3(toLms, [1, 1, 1])
+  const lw = apply3(toLms, wl.map(v => v / Yw))
+  const diag: Mat3 = [0, 1, 2].map(i => [0, 1, 2].map(j => (i === j ? lw[i] / ls[i] : 0)))
+  return mul3(inv3(toLms), mul3(diag, toLms))
+}
+
+export function mapToPanelWhitePoint(data: Uint8ClampedArray, palette: Palette): void {
+  const A = panelWhiteAdaptation(palette)
+  // Brightness compression as in compressDynamicRange, but on the adapted float values: the adapted white
+  // exceeds 1.0 in some channels before compression, so an 8-bit round-trip in between would clip its hue.
+  const blackColor = palette.colors.find(c => c.name === 'black') ?? palette.colors[0]
+  const whiteColor = palette.colors.find(c => c.name === 'white') ?? palette.colors[palette.colors.length - 1]
+  const blackY = rec709Luminance(...blackColor.measured)
+  const range = rec709Luminance(...whiteColor.measured) - blackY
+  const cache = new Map<number, number>()
+  for (let i = 0; i < data.length; i += 4) {
+    const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]
+    let v = cache.get(key)
+    if (v === undefined) {
+      const o = apply3(A, [srgbToLinear(data[i]), srgbToLinear(data[i + 1]), srgbToLinear(data[i + 2])])
+      const Y = 0.2126729 * o[0] + 0.7151522 * o[1] + 0.0721750 * o[2]
+      const scale = Y < 1e-6 ? 0 : (blackY + Y * range) / Y
+      v = (linearToSrgb(o[0] * scale) << 16) | (linearToSrgb(o[1] * scale) << 8) | linearToSrgb(o[2] * scale)
+      cache.set(key, v)
+    }
+    data[i] = v >> 16; data[i + 1] = (v >> 8) & 255; data[i + 2] = v & 255
+  }
+}
+
 // --- Highlight lift (DBS refine target only) ---
 // Near-white colours usually land below the panel's white after DRC + tone mapping, and DBS — which
 // mixes in linear light, as the eye does — reproduces that faithfully with a sprinkling of dark dots,

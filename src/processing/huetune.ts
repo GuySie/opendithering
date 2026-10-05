@@ -37,7 +37,7 @@ export const BAND_NAMES = ['Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta'] 
 export function hueTune(input: PipelineInput, iterations = 20): HueTuneResult {
   const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings } = input
 
-  const reference = buildTuneReference(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings.compressDynamicRange)
+  const reference = buildTuneReference(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings)
 
   const minPixels = minBandPixels(reference)
   const resetBands: [number, number, number, number, number, number] = [1, 1, 1, 1, 1, 1]

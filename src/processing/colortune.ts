@@ -1,6 +1,8 @@
 import type { PipelineInput } from './pipeline'
 import { runPipeline } from './pipeline'
 import { resizeImage } from './resize'
+import { mapToPanelWhitePoint } from './tone'
+import type { ProcessingSettings } from '../types'
 import { rgbToOklab, oklabToRgb } from './colorspace'
 
 export interface ColorTuneDebug {
@@ -39,11 +41,22 @@ export interface ColorTuneResult {
 export function buildTuneReference(
   source: PipelineInput['source'], srcWidth: number, srcHeight: number, dstWidth: number, dstHeight: number,
   resizeMode: PipelineInput['resizeMode'], cropOffsetX: number | undefined, cropOffsetY: number | undefined,
-  palette: PipelineInput['palette'], compressDynamicRange: boolean,
+  palette: PipelineInput['palette'], settings: Pick<ProcessingSettings, 'compressDynamicRange' | 'drcMode'>,
 ): ImageData {
   const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY)
-  if (compressDynamicRange) applyTuneReferenceDrc(reference, palette)
+  applyTuneReferenceMapping(reference, palette, settings)
   return reference
+}
+
+/**
+ * The reference's dynamic range mapping, matching the pipeline's mode. In white point mode the reference
+ * must be white-point mapped too: otherwise Color-tune sees the deliberate shift towards the panel's white
+ * as a colour error and adjusts the gains to undo it.
+ */
+export function applyTuneReferenceMapping(img: ImageData, palette: PipelineInput['palette'], settings: Pick<ProcessingSettings, 'compressDynamicRange' | 'drcMode'>): void {
+  if (!settings.compressDynamicRange) return
+  if (settings.drcMode === 'whitepoint') mapToPanelWhitePoint(img.data, palette)
+  else applyTuneReferenceDrc(img, palette)
 }
 
 /** The tuners' DRC: remap OKLab L into the palette's measured lightness range, in place. */
@@ -64,7 +77,7 @@ export function applyTuneReferenceDrc(img: ImageData, palette: PipelineInput['pa
 export function colorTune(input: PipelineInput, iterations = 12): ColorTuneResult {
   const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings } = input
 
-  const reference = buildTuneReference(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings.compressDynamicRange)
+  const reference = buildTuneReference(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings)
 
   const refStats = imageStats(reference)
 

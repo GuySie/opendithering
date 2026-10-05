@@ -139,6 +139,8 @@ const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
     : `BLE upload is not supported in ${name}. Try Chrome or Edge.`
 })()
 const checkCDR         = el<HTMLInputElement>('checkCDR')
+const drcModeSelect    = el<HTMLSelectElement>('drcModeSelect')
+const panelDrcMode     = el<HTMLDivElement>('panelDrcMode')
 const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
 const btnColorTune     = el<HTMLButtonElement>('btnColorTune')
 const btnHueTune       = el<HTMLButtonElement>('btnHueTune')
@@ -1130,8 +1132,14 @@ el<HTMLInputElement>('sliderDbsLiftTol').addEventListener('dblclick', () => setD
 makeValEditable(el<HTMLSpanElement>('valDbsLiftTol'), 0, 0.08, 3, v => setDbsLiftTol(Math.round(v * 1000)))
 makeValEditable(el<HTMLSpanElement>('valDbsLift'), 0, 100, 0, v => setDbsLift(Math.round(v)), v => `${Math.round(v)}%`)
 
+drcModeSelect.addEventListener('change', () => {
+  settings.drcMode = drcModeSelect.value as ProcessingSettings['drcMode']
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+
 checkCDR.addEventListener('change', () => {
   settings.compressDynamicRange = checkCDR.checked
+  panelDrcMode.hidden = !settings.compressDynamicRange
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -1431,6 +1439,8 @@ function syncSlidersFromSettings() {
   setSlider('sliderHighlightCompress', 'valHighlightCompress', settings.highlightCompress * 100, settings.highlightCompress)
   setSlider('sliderMidpoint', 'valMidpoint', settings.midpoint * 100, settings.midpoint)
   checkCDR.checked = settings.compressDynamicRange
+  drcModeSelect.value = settings.drcMode
+  panelDrcMode.hidden = !settings.compressDynamicRange
   toneModeSelect.value = settings.toneMode
   panelContrast.hidden = settings.toneMode !== 'contrast'
   panelScurve.hidden   = settings.toneMode !== 'scurve'
@@ -1568,7 +1578,7 @@ btnRefineDbs.addEventListener('click', () => {
 async function showDbsDebug(img: ImageFile, before: ImageData, after: ImageData, palette: Palette, stats: DbsStats) {
   const bmp = await createImageBitmap(img.original)
   const reference = buildTuneReference(bmp, img.original.width, img.original.height, displayWidth, displayHeight,
-    resizeMode, img.cropOffsetX, img.cropOffsetY, palette, settings.compressDynamicRange)
+    resizeMode, img.cropOffsetX, img.cropOffsetY, palette, settings)
   bmp.close()
   if (!img.refined || img.dithered !== after) return // superseded while computing
 
