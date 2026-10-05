@@ -268,6 +268,8 @@ export const PRE_DBS_PRESET: ProcessingSettings = {
   contrast: 1.0,
   saturation: 1.0,
   ditherAlgorithm: 'dizzy', // the error-diffusion result is DBS's starting point
+  gamutMapping: true,       // closest-colour clip: keeps DBS's saturation, removes out-of-gamut edge halos
+  gamutMappingMethod: 'nearest',
 }
 
 export type PresetName = 'balanced' | 'predbs' | 'vivid' | 'soft' | 'grayscale' | 'none' | 'custom'
