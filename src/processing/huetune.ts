@@ -1,7 +1,7 @@
 import type { PipelineInput } from './pipeline'
 import { runPipeline } from './pipeline'
-import { resizeImage } from './resize'
-import { rgbToOklab, oklabToRgb } from './colorspace'
+import { rgbToOklab } from './colorspace'
+import { buildTuneReference } from './colortune'
 import { boxBlur } from './tone'
 
 const BLUR_RADIUS = 4
@@ -32,29 +32,14 @@ export interface HueTuneResult {
   debug: HueTuneDebug
 }
 
-const BAND_NAMES = ['Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta'] as const
+export const BAND_NAMES = ['Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta'] as const
 
 export function hueTune(input: PipelineInput, iterations = 20): HueTuneResult {
   const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings } = input
 
-  const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY)
+  const reference = buildTuneReference(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings.compressDynamicRange)
 
-  // Apply DRC to reference so band stats reflect the same fixed transform the pipeline applies.
-  if (settings.compressDynamicRange) {
-    const sorted = palette.colors
-      .map(c => ({ L: rgbToOklab(c.measured[0], c.measured[1], c.measured[2])[0] }))
-      .sort((a, b) => b.L - a.L)
-    const blackL = sorted[sorted.length - 1].L
-    const range  = sorted[0].L - blackL
-    const d = reference.data
-    for (let i = 0; i < d.length; i += 4) {
-      const [L, a, b] = rgbToOklab(d[i], d[i + 1], d[i + 2])
-      const [r, g, bv] = oklabToRgb(blackL + L * range, a, b)
-      d[i] = r; d[i + 1] = g; d[i + 2] = bv
-    }
-  }
-
-  const minPixels = Math.max(50, Math.round((reference.data.length / 4) * 0.001))
+  const minPixels = minBandPixels(reference)
   const resetBands: [number, number, number, number, number, number] = [1, 1, 1, 1, 1, 1]
   let bands: [number, number, number, number, number, number] = [...resetBands]
 
@@ -121,7 +106,7 @@ export function hueTune(input: PipelineInput, iterations = 20): HueTuneResult {
   }
 }
 
-interface BandStat {
+export interface BandStat {
   refMeanC: number
   dithMeanC: number
   count: number
@@ -189,4 +174,18 @@ function hueLoss(stats: BandStat[], minPixels: number): number {
 
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v
+}
+
+function minBandPixels(reference: ImageData): number {
+  return Math.max(50, Math.round((reference.data.length / 4) * 0.001))
+}
+
+/**
+ * Hue-tune's evaluation of one dithered image: per-band mean chroma (dithered output box-blurred
+ * exactly as Hue-tune does) and the resulting loss. Used by the DBS refine debug readout.
+ */
+export function evaluateHueBands(reference: ImageData, dithered: ImageData): { bands: BandStat[]; loss: number; minPixels: number } {
+  const minPixels = minBandPixels(reference)
+  const bands = computeBandStats(reference.data, boxBlur(dithered.data, dithered.width, dithered.height, BLUR_RADIUS))
+  return { bands, loss: hueLoss(bands, minPixels), minPixels }
 }

@@ -24,6 +24,7 @@ export interface DisplayPreset {
   width: number
   height: number
   paletteGroupId: string
+  diagonalInches?: number  // physical screen diagonal; used to derive PPI for DBS refine
 }
 
 export type ResizeMode = 'cover' | 'contain' | 'stretch' | 'none'
@@ -72,6 +73,8 @@ export interface ImageFile {
   original: ImageData
   dithered: ImageData | null
   ideal?: ImageData
+  target?: ImageData  // adjusted pre-dither image from the last pipeline run (DBS refine target)
+  refined?: boolean   // dithered/ideal hold a DBS-refined result (cleared by the next pipeline run)
   width: number   // display target width (after resize)
   height: number  // display target height (after resize)
   cropOffsetX: number // 0–1, position of the crop window within the source image's horizontal overflow (cover/none modes only); 0.5 = centered

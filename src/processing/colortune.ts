@@ -31,26 +31,40 @@ export interface ColorTuneResult {
   debug: ColorTuneDebug
 }
 
+/**
+ * The reference the tuners compare dithered output against: the resized source with only
+ * dynamic range compression applied (OKLab L remapped into the palette's lightness range).
+ * Shared by Color-tune, Hue-tune and the DBS refine debug readout.
+ */
+export function buildTuneReference(
+  source: PipelineInput['source'], srcWidth: number, srcHeight: number, dstWidth: number, dstHeight: number,
+  resizeMode: PipelineInput['resizeMode'], cropOffsetX: number | undefined, cropOffsetY: number | undefined,
+  palette: PipelineInput['palette'], compressDynamicRange: boolean,
+): ImageData {
+  const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY)
+  if (compressDynamicRange) applyTuneReferenceDrc(reference, palette)
+  return reference
+}
+
+/** The tuners' DRC: remap OKLab L into the palette's measured lightness range, in place. */
+export function applyTuneReferenceDrc(img: ImageData, palette: PipelineInput['palette']): void {
+  const sorted = palette.colors
+    .map(c => rgbToOklab(c.measured[0], c.measured[1], c.measured[2])[0])
+    .sort((a, b) => b - a)
+  const blackL = sorted[sorted.length - 1]
+  const range  = sorted[0] - blackL
+  const d = img.data
+  for (let i = 0; i < d.length; i += 4) {
+    const [L, a, b] = rgbToOklab(d[i], d[i + 1], d[i + 2])
+    const [r, g, bv] = oklabToRgb(blackL + L * range, a, b)
+    d[i] = r; d[i + 1] = g; d[i + 2] = bv
+  }
+}
+
 export function colorTune(input: PipelineInput, iterations = 12): ColorTuneResult {
   const { source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings } = input
 
-  const sorted = palette.colors
-    .map(c => ({ measured: c.measured, L: rgbToOklab(c.measured[0], c.measured[1], c.measured[2])[0] }))
-    .sort((a, b) => b.L - a.L)
-
-  const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY)
-
-  // Apply DRC to the reference so refStats reflects the same fixed transform the pipeline applies.
-  if (settings.compressDynamicRange) {
-    const blackL = sorted[sorted.length - 1].L
-    const range  = sorted[0].L - blackL
-    const d = reference.data
-    for (let i = 0; i < d.length; i += 4) {
-      const [L, a, b] = rgbToOklab(d[i], d[i + 1], d[i + 2])
-      const [r, g, bv] = oklabToRgb(blackL + L * range, a, b)
-      d[i] = r; d[i + 1] = g; d[i + 2] = bv
-    }
-  }
+  const reference = buildTuneReference(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY, palette, settings.compressDynamicRange)
 
   const refStats = imageStats(reference)
 
@@ -138,7 +152,7 @@ function adjustGain(current: number, refMean: number, prevMean: number, initialV
   return clamp(clamp(candidate, lo, hi), 0.5, 2.0)
 }
 
-function loss(ref: ImageStats, cur: ImageStats): number {
+export function loss(ref: ImageStats, cur: ImageStats): number {
   return (
     Math.abs(ref.meanC  - cur.meanC)  +
     Math.abs(ref.meanA  - cur.meanA)  +
@@ -146,7 +160,7 @@ function loss(ref: ImageStats, cur: ImageStats): number {
   )
 }
 
-interface ImageStats {
+export interface ImageStats {
   meanC: number
   meanA: number
   meanBv: number
@@ -155,7 +169,7 @@ interface ImageStats {
   meanBlue: number
 }
 
-function imageStats(img: ImageData): ImageStats {
+export function imageStats(img: ImageData): ImageStats {
   const data = img.data
   const n = data.length / 4
   let sumC = 0, sumA = 0, sumBv = 0

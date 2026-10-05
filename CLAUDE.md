@@ -9,6 +9,7 @@ npm install       # install dependencies
 npm run dev       # dev server at http://localhost:5173
 npm run build     # type-check + production build into dist/
 npm run preview   # serve the dist/ build locally
+npm run bench     # S-CIELAB benchmark of all algorithms + DBS (see "Benchmark" below)
 ```
 
 ## Architecture
@@ -55,6 +56,8 @@ Implemented in `src/processing/pipeline.ts`:
 8. **Remap primaries** — if `expandPalette` was used, pixels that landed on a pure primary are remapped back to the nearest original measured color before export or preview
 9. **Palette swap** — measured → ideal (export only)
 
+Steps 1.5–6 are `applyAdjustments(img, palette, settings)` and step 8 (incl. Expand palette) is `ditherStep(img, palette, settings)`, both exported so the benchmark runs the exact same code without the canvas-dependent resize. `runPipeline` also returns `target` — the adjusted image just before dithering — which is what DBS refine optimises towards.
+
 The **Balanced**, **Vivid**, and **Soft** presets match the corresponding presets in `aitjcize/esp32-photoframe` `@aitjcize/epaper-image-convert` exactly (tone mapping, algorithm, and color method). The **Grayscale** preset diverges intentionally: aitjcize uses `scurve` + LAB + floyd-steinberg; OpenDithering uses `contrast` + OKLab + Dizzy.
 
 ### File structure
@@ -86,7 +89,9 @@ src/
 │   ├── yliluoma2.ts           # Yliluoma 2 + Yliluoma 2 + Blue Noise: greedy 64-candidate list indexed by Bayer 8×8 or IGN (standalone)
 │   ├── riemersma.ts           # Hilbert-curve traversal + exponential error queue (standalone)
 │   ├── dizzy.ts               # Dizzy (2024, Liam Appelbe): Fisher-Yates random-order traversal, proportional error to orthogonal (w=1) + diagonal (configurable, default 0.1) unprocessed neighbours (standalone)
-│   └── knox.ts                # Eschbach & Knox: tone-dependent error diffusion in OKLab with fringe-field and cross-edge suppression (standalone)
+│   ├── knox.ts                # Eschbach & Knox: tone-dependent error diffusion in OKLab with fringe-field and cross-edge suppression (standalone)
+│   ├── dbs.ts                 # Colour DBS refine core: dbsRefine(), indicesFromMeasured(), measuredFromIndices() — NOT a registered algorithm, see "Colour DBS refine"
+│   └── dbs.worker.ts          # Web Worker wrapper around dbsRefine() (progress per pass; cancelled by terminate())
 ├── processing/
 │   ├── colorspace.ts          # sRGB↔linear, RGB→L*a*b*, RGB→OKLab, deltaE_rgb/lab/oklab, rec709Luminance
 │   ├── tone.ts                # compressDynamicRange, applyToneMapping, applySaturation, applyHueSatBands, applyExposure, applyChannelGains, applyClarity, boxBlur
@@ -100,6 +105,8 @@ src/
 │   └── gicisky.ts             # Gicisky BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
 ├── main.ts                    # All UI logic, state, event wiring
 └── style.css
+scripts/
+└── benchmark.ts               # S-CIELAB benchmark (npm run bench), runs in Node via tsx
 ```
 
 ### Extending the app
@@ -121,7 +128,7 @@ src/
 
 To add a new algorithm-specific UI control: add a slider to `index.html` (inside a hidden `<div id="panelXxx">`), add the field to `ProcessingSettings` in `src/types.ts` (with a default in `BALANCED_PRESET`), wire the slider listener and show/hide logic in `src/main.ts` (`algorithmSelect` change handler + `syncSlidersFromSettings`), and pass the value in the `extraParams` object in `src/processing/pipeline.ts`.
 
-**Add a display preset:** add an entry to the `DISPLAY_PRESETS` array in `src/displays/presets.ts`. Set `paletteGroupId` to the id of the relevant `PaletteGroup` (e.g. `'spectra6'`, `'acep'`, `'bw'`).
+**Add a display preset:** add an entry to the `DISPLAY_PRESETS` array in `src/displays/presets.ts`. Set `paletteGroupId` to the id of the relevant `PaletteGroup` (e.g. `'spectra6'`, `'acep'`, `'bw'`). Set `diagonalInches` when the physical screen size is known (from a datasheet or the product page, not guessed): `presetPpi()` derives PPI from it for DBS refine. Leave it out if unknown; the PPI slider then stays manual.
 
 ### Color space system
 
@@ -190,6 +197,24 @@ Implemented in `src/processing/huetune.ts`. `hueTune()` iteratively adjusts the 
 4. Maximum 20 iterations.
 
 **Return value:** `HueTuneResult` — `{ hueSatBands, debug: HueTuneDebug }`. The debug struct carries `iterationsRun`, `converged`, `bands` (array of `HueTuneBandDebug` with per-band pixel count, refMeanC, initialMeanC, finalMeanC, initialBandValue, finalBandValue), `initialLoss`, `finalLoss`, `lossHistory`. The debug panel (`#debugHueTune`) renders this after each run.
+
+### Colour DBS refine
+
+Direct Binary Search (Analoui & Allebach 1992; colour version per Agar & Allebach 2005) — an iterative optimiser, run on demand from the **Refine (DBS)** button in the Dithering section rather than from the algorithm dropdown (seconds per image, too slow for live preview). It starts from the currently shown error-diffusion result (`img.dithered`, mapped back to palette indices) and minimises perceived error against `img.target`.
+
+- **Colour space: YyCxCz** (Flohr, Kolpatzik & Allebach): `Yy = 116·Y`, `Cx = 500·(X/Xn − Y)`, `Cz = 200·(Y − Z/Zn)` from linear XYZ of the **measured** palette and the target. It must be linear: the eye averages *light*, so the blur only models what's seen when applied to linear values — OKLab/CIELAB are wrong here.
+- **Eye model:** one separable Gaussian per channel, narrow for luminance and wider for chrominance. σ comes from the Kolpatzik & Bouman exponential CSFs `exp(−α·f)` (luminance α = 1/(0.525·ln 11 + 3.91) ≈ 0.193 from the Näsänen model at 11 cd/m², chrominance α = 0.419 from Mullen; per Bouman's ECE 637 "Color Fidelity Metrics" notes; the luminance filter's angular dependence s(Θ) is ignored): `σ_px = (α/2π) / pixelAngleDeg`, with `pixelAngleDeg = (180/π)·(2.54/ppi)/distanceCm`. ≈1.07 / 2.33 px at 127 PPI, 40 cm.
+- **Search:** raster order; per pixel, try toggling to every other palette colour and swapping with each differing 8-neighbour; accept the most negative ΔE. ΔE is O(1) from the cached `c_pe = c_pp ∗ e` (`c_pp` = filter autocorrelation, separable since the filter is): toggle `ΔE = Σ_ch a²·c_pp(0) + 2a·c_pe(m)`, swap `ΔE = Σ_ch 2a²·(c_pp(0) − c_pp(n−m)) + 2a·(c_pe(m) − c_pe(n))`. On accept, `a·c_pp` is added into `c_pe` around the changed pixel(s). Error outside the image is zero, so edges are exact. Stops after a pass with no changes or 10 passes. `finalE` is recomputed from scratch (a check that the incremental update hasn't drifted).
+- **Worker:** `dbs.worker.ts` gets `{ target, initIdx, palette, params }`, posts `{type:'pass'}` per pass and `{type:'done', idx, stats}`. The search is synchronous, so cancelling = `worker.terminate()` (click the button while running, or any `scheduleProcess`/`invalidateAll`).
+- **Lifecycle:** the result replaces `img.dithered`/`img.ideal` and sets `img.refined`, so PNG/BMP export and BLE upload use it automatically. Any pipeline re-run discards it. ZIP export only contains a refinement for images that were refined individually.
+- **Viewing distance / Panel PPI** sliders live in module state in `main.ts` (`dbsViewingDistanceCm`, `dbsPpi`), not in `ProcessingSettings`, because they describe the panel, not the look — presets must not reset them. Panel PPI is set automatically (`applyPresetPpi`) on startup and on device-preset change when the preset has `diagonalInches` (√(w²+h²)/diagonal, square pixels assumed); Custom or unknown-size presets keep the current value. Double-clicking the PPI slider restores the preset's value.
+- **Interaction with Auto-tune:** the tuners never run DBS (30+ runs per Auto-tune would take minutes); they tune against error diffusion, then you Refine. Risk: tuners partly compensate for error diffusion's chroma loss, and DBS reproduces the boosted target more faithfully → possible overshoot. The `#debugDbs` panel shows the tuners' own metrics (Color-tune loss, Hue-tune loss, per-band mean chroma) for the error-diffusion result vs the DBS result, against the same DRC-only reference (`buildTuneReference` in `colortune.ts`, shared with both tuners).
+
+### Benchmark
+
+`npm run bench -- [--palette spectra6-guysie] [--preset balanced] [--ppi 127] [--distance 40] [--passes 10] [--no-synthetic] [images/*.png]` (`scripts/benchmark.ts`, Node via `tsx`, `pngjs` for input). Runs every registered algorithm plus DBS-from-Floyd-Steinberg on three synthetic images (grey ramp, hue sweep, sky/skin) and any PNGs given — which must already be at panel resolution, since the app's resize needs a browser canvas. Scores with **S-CIELAB** (Zhang & Wandell 1996: opponent transform → per-channel sum-of-Gaussians blur at the given px/° → CIELAB → per-pixel ΔE76, mean and p95) against two references: the adjusted **target** (how faithfully each algorithm reproduces its input) and the DRC-only **source** (what the tuners aim for). Filter details follow the reference implementation ([wandell/SCIELAB-1996](https://github.com/wandell/SCIELAB-1996) `separableFilters.m`/`gauss.m`): spreads are full widths at half maximum, every kernel is limited to a 1° window and normalised within it, and below 224 samples/° each tap is integrated over sub-samples (the reference upsamples instead).
+
+Caveat: DBS minimises an eye-filtered error too, so S-CIELAB is structurally inclined to favour it (the two eye models differ, which reduces but doesn't remove the bias). The physical panel is the final judge.
 
 ### Auto-tune
 

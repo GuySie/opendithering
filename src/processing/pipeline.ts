@@ -21,6 +21,8 @@ export interface PipelineResult {
   measured: ImageData
   /** Dithered image with ideal palette colors (for export — correct for firmware) */
   ideal: ImageData
+  /** The adjusted image just before dithering (input to the dithering step, and the DBS refine target) */
+  target: ImageData
 }
 
 export function runPipeline(input: PipelineInput): PipelineResult {
@@ -29,30 +31,21 @@ export function runPipeline(input: PipelineInput): PipelineResult {
   // 1. Resize
   const resized = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY)
 
-  // 1.5 Clarity (midtone-weighted unsharp mask)
-  if (settings.clarity !== 0) {
-    applyClarity(resized.data, resized.width, resized.height, settings.clarity, settings.clarityRadius)
-  }
-
-  // 2. Dynamic range compression
-  if (settings.compressDynamicRange) {
-    compressDynamicRange(resized.data, palette)
-  }
-
-  // 3. Tone mapping
-  applyToneMapping(resized.data, settings)
-
-  // 4. Saturation
-  applySaturation(resized.data, settings.saturation)
-  if (settings.hueSatBands.some(v => v !== 1)) applyHueSatBands(resized.data, settings.hueSatBands)
-
-  // 5. Exposure
-  applyExposure(resized.data, settings.exposure)
-
-  // 6. Channel gains (color grading)
-  applyChannelGains(resized.data, settings.redGain, settings.greenGain, settings.blueGain)
+  // 1.5–6. Tone and colour adjustments
+  applyAdjustments(resized, palette, settings)
+  const target = new ImageData(new Uint8ClampedArray(resized.data), resized.width, resized.height)
 
   // 8. Dithering — produces output with measured palette colors
+  const measured = ditherStep(resized, palette, settings)
+
+  // 9. Palette swap: measured → ideal (for export)
+  const ideal = swapToIdeal(measured, palette)
+
+  return { measured, ideal, target }
+}
+
+/** Step 8: dither the adjusted image with the selected algorithm (handles Expand palette). */
+export function ditherStep(img: ImageData, palette: Palette, settings: ProcessingSettings): ImageData {
   const algorithm = getAlgorithm(settings.ditherAlgorithm)
 
   // Optionally expand the palette with pure primaries for wider gamut snap-points.
@@ -61,7 +54,7 @@ export function runPipeline(input: PipelineInput): PipelineResult {
   // that preview and export are unaffected by the expansion.
   const workingPalette = settings.expandPalette ? expandWithPrimaries(palette) : palette
 
-  let measured = algorithm.dither(resized, workingPalette, settings.errorSpace, settings.distSpace, settings.ditherStrength, settings.localVarianceDetection, {
+  let measured = algorithm.dither(img, workingPalette, settings.errorSpace, settings.distSpace, settings.ditherStrength, settings.localVarianceDetection, {
     serpentine:          settings.serpentine           ? 1 : 0,
     knoxAlpha:           settings.knoxAlpha           ?? 0.5,
     knoxFringe:          settings.knoxFringe           ?? 0.04,
@@ -74,10 +67,37 @@ export function runPipeline(input: PipelineInput): PipelineResult {
     measured = remapToOriginalPalette(measured, palette)
   }
 
-  // 9. Palette swap: measured → ideal (for export)
-  const ideal = swapToIdeal(measured, palette)
+  return measured
+}
 
-  return { measured, ideal }
+/**
+ * Steps 1.5–6 of the pipeline (clarity, DRC, tone mapping, saturation + hue bands, exposure,
+ * channel gains), applied in place. Exported so DBS refine and the benchmark can rebuild the
+ * exact pre-dither target without going through resize.
+ */
+export function applyAdjustments(img: ImageData, palette: Palette, settings: ProcessingSettings): void {
+  // 1.5 Clarity (midtone-weighted unsharp mask)
+  if (settings.clarity !== 0) {
+    applyClarity(img.data, img.width, img.height, settings.clarity, settings.clarityRadius)
+  }
+
+  // 2. Dynamic range compression
+  if (settings.compressDynamicRange) {
+    compressDynamicRange(img.data, palette)
+  }
+
+  // 3. Tone mapping
+  applyToneMapping(img.data, settings)
+
+  // 4. Saturation
+  applySaturation(img.data, settings.saturation)
+  if (settings.hueSatBands.some(v => v !== 1)) applyHueSatBands(img.data, settings.hueSatBands)
+
+  // 5. Exposure
+  applyExposure(img.data, settings.exposure)
+
+  // 6. Channel gains (color grading)
+  applyChannelGains(img.data, settings.redGain, settings.greenGain, settings.blueGain)
 }
 
 const PURE_PRIMARIES: [number, number, number][] = [
@@ -133,7 +153,7 @@ function remapToOriginalPalette(dithered: ImageData, originalPalette: Palette): 
   return out
 }
 
-function swapToIdeal(src: ImageData, palette: Palette): ImageData {
+export function swapToIdeal(src: ImageData, palette: Palette): ImageData {
   // Build a Map from measured color key to ideal color for O(1) lookup
   const map = new Map<number, [number, number, number]>()
   for (const color of palette.colors) {

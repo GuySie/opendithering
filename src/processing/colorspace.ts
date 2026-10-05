@@ -15,7 +15,7 @@ export function linearToSrgb(c: number): number {
 
 // --- linear RGB -> XYZ (D65) ---
 
-function linearToXyz(r: number, g: number, b: number): [number, number, number] {
+export function linearToXyz(r: number, g: number, b: number): [number, number, number] {
   const x = r * 0.4124564 + g * 0.3575761 + b * 0.1804375
   const y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750
   const z = r * 0.0193339 + g * 0.1191920 + b * 0.9503041

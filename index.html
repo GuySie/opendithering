@@ -288,6 +288,21 @@
             <span id="errorSpaceSel"></span>
           </div>
         </div>
+        <div class="dbs-block">
+          <div class="autotune-row">
+            <button class="btn-secondary" id="btnRefineDbs" disabled data-tooltip="Direct Binary Search: iteratively improves the current dithered result by toggling and swapping pixels to minimise the error a human eye would see at the viewing distance below. Slow (seconds); click again while running to cancel. Any settings change discards the refinement. ZIP export refines nothing — only the image shown here.">Refine (DBS)</button>
+          </div>
+          <div class="slider-row">
+            <label for="sliderDbsDistance" data-tooltip="DBS: distance you view the panel from. Farther = the eye blurs more, so DBS tolerates finer grain in exchange for more accurate colour.">Viewing distance</label>
+            <input type="range" id="sliderDbsDistance" min="20" max="150" value="40" step="5" />
+            <span class="slider-val" id="valDbsDistance">40 cm</span>
+          </div>
+          <div class="slider-row">
+            <label for="sliderDbsPpi" data-tooltip="DBS: panel pixel density (pixels per inch). Set automatically from the device preset's screen size when known (double-click to restore); set it by hand for Custom. A 7.3&quot; 800×480 panel is ≈128 PPI.">Panel PPI</label>
+            <input type="range" id="sliderDbsPpi" min="50" max="300" value="127" step="1" />
+            <span class="slider-val" id="valDbsPpi">127</span>
+          </div>
+        </div>
       </section>
 
       <section class="section">
@@ -439,6 +454,11 @@
           </table>
         </div>
         <div class="debug-loss-row">Loss history: <span id="dbgHueLossHistory"></span></div>
+      </div>
+
+      <div id="debugDbs" class="debug-panel" hidden>
+        <div class="debug-header">DBS refine — <span id="dbgDbsSummary"></span></div>
+        <div class="debug-body" id="dbgDbsBody"></div>
       </div>
     </main>
   </div>

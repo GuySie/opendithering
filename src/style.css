@@ -253,6 +253,8 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   align-items: center;
 }
 .autotune-row + .autotune-row { margin-top: 0.5rem; }
+.dbs-block { margin-top: 0.875rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.dbs-block .autotune-row { margin-bottom: 0.5rem; }
 .export-row { margin-top: 0.875rem; }
 .export-row + .export-row { margin-top: 0.75rem; }
 .btn-primary, .btn-secondary {

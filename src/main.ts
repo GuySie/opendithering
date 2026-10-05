@@ -1,16 +1,20 @@
 import type { ProcessingSettings, ResizeMode, PresetName, ImageFile } from './types'
 import { PRESETS, BALANCED_PRESET } from './types'
-import { DISPLAY_PRESETS } from './displays/presets'
+import { DISPLAY_PRESETS, presetPpi } from './displays/presets'
 import { getAllPaletteGroups, getPaletteGroup, getPaletteVariant } from './palettes/index'
 import { getAllAlgorithms } from './dithering/index'
-import { runPipeline } from './processing/pipeline'
+import { runPipeline, swapToIdeal } from './processing/pipeline'
 import { getCropWindow } from './processing/resize'
-import { colorTune } from './processing/colortune'
-import { hueTune } from './processing/huetune'
+import { colorTune, buildTuneReference, imageStats, loss as colorTuneLoss } from './processing/colortune'
+import { hueTune, evaluateHueBands, BAND_NAMES } from './processing/huetune'
+import { indicesFromMeasured, measuredFromIndices } from './dithering/dbs'
+import type { DbsStats } from './dithering/dbs'
+import type { DbsJob } from './dithering/dbs.worker'
 import { autoExpose } from './processing/autoexpose'
 import type { ColorTuneDebug } from './processing/colortune'
 import type { HueTuneDebug } from './processing/huetune'
 import type { AutoExposeDebug } from './processing/autoexpose'
+import type { Palette } from './types'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
@@ -28,6 +32,12 @@ let paletteGroupId       = 'spectra6'
 let calibrationVariantId = 'spectra6-guysie'
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let showIdealPreview = false
+// DBS refine: viewing geometry describes the panel, not the look, so it lives outside
+// ProcessingSettings (presets don't reset it).
+let dbsViewingDistanceCm = 40
+let dbsPpi = 127
+const DBS_MAX_PASSES = 10
+let dbsWorker: Worker | null = null
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
 let bleProtocol: 'opendisplay' | 'gicisky' = 'opendisplay'
 type BleState =
@@ -131,6 +141,8 @@ const btnAutoExpose    = el<HTMLButtonElement>('btnAutoExpose')
 const debugAutoExpose  = el<HTMLDivElement>('debugAutoExpose')
 const debugColorTune   = el<HTMLDivElement>('debugColorTune')
 const debugHueTune     = el<HTMLDivElement>('debugHueTune')
+const debugDbs         = el<HTMLDivElement>('debugDbs')
+const btnRefineDbs     = el<HTMLButtonElement>('btnRefineDbs')
 const dbgSummary       = el<HTMLSpanElement>('dbgSummary')
 const dbgRefC          = el<HTMLTableCellElement>('dbgRefC')
 const dbgInitC         = el<HTMLTableCellElement>('dbgInitC')
@@ -456,6 +468,9 @@ function activateImage(id: string) {
   debugAutoExpose.hidden = true
   debugColorTune.hidden = true
   debugHueTune.hidden = true
+  debugDbs.hidden = true
+
+  updateRefineButton()
 }
 
 function checkRotationConflict() {
@@ -543,6 +558,7 @@ function refreshDitheredView() {
 // ── Processing ─────────────────────────────────────────────────────────────
 
 function scheduleProcess() {
+  cancelRefine()
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(processActive, 120)
 }
@@ -580,10 +596,13 @@ async function processActive() {
 
   img.dithered = result.measured
   img.ideal = result.ideal
+  img.target = result.target
+  img.refined = false
   img.width = displayWidth
   img.height = displayHeight
 
   refreshDitheredView()
+  updateRefineButton()
   updatePaletteBadge()
   renderSwatches()
   updateExportButtons()
@@ -738,6 +757,7 @@ presetSelect.addEventListener('change', () => {
     const group = getPaletteGroup(paletteGroupId)
     calibrationVariantId = group.variants[0].id
     populateCalibrationSelect(paletteGroupId)
+    applyPresetPpi(preset.id)
     renderSwatches()
     dimWidth.value = String(preset.width)
     dimHeight.value = String(preset.height)
@@ -1058,6 +1078,34 @@ makeValEditable(el<HTMLSpanElement>('valDizzyDiagonal'), 0, 1, 2, v => {
   settings.dizzyDiagonalWeight = v
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
+
+// DBS viewing geometry: only affects the next Refine, so no re-processing
+function setDbsDistance(v: number) {
+  dbsViewingDistanceCm = v
+  el<HTMLInputElement>('sliderDbsDistance').value = String(v)
+  el<HTMLSpanElement>('valDbsDistance').textContent = `${v} cm`
+}
+/** Set Panel PPI from the device preset's diagonal. Returns false when the preset has no known size. */
+function applyPresetPpi(presetId: string): boolean {
+  const preset = DISPLAY_PRESETS.find(p => p.id === presetId)
+  const ppi = preset && presetPpi(preset)
+  if (!ppi) return false
+  setDbsPpi(Math.round(ppi))
+  return true
+}
+function setDbsPpi(v: number) {
+  dbsPpi = v
+  el<HTMLInputElement>('sliderDbsPpi').value = String(v)
+  el<HTMLSpanElement>('valDbsPpi').textContent = String(v)
+}
+el<HTMLInputElement>('sliderDbsDistance').addEventListener('input', () =>
+  setDbsDistance(parseInt(el<HTMLInputElement>('sliderDbsDistance').value)))
+el<HTMLInputElement>('sliderDbsDistance').addEventListener('dblclick', () => setDbsDistance(40))
+makeValEditable(el<HTMLSpanElement>('valDbsDistance'), 20, 150, 0, v => setDbsDistance(Math.round(v)), v => `${Math.round(v)} cm`)
+el<HTMLInputElement>('sliderDbsPpi').addEventListener('input', () =>
+  setDbsPpi(parseInt(el<HTMLInputElement>('sliderDbsPpi').value)))
+el<HTMLInputElement>('sliderDbsPpi').addEventListener('dblclick', () => applyPresetPpi(presetSelect.value) || setDbsPpi(127))
+makeValEditable(el<HTMLSpanElement>('valDbsPpi'), 50, 300, 0, v => setDbsPpi(Math.round(v)))
 
 checkCDR.addEventListener('change', () => {
   settings.compressDynamicRange = checkCDR.checked
@@ -1400,10 +1448,127 @@ function setSlider(sliderId: string, valId: string, sliderVal: number, displayVa
 // ── Invalidation ──────────────────────────────────────────────────────────
 
 function invalidateAll() {
-  for (const img of images) img.dithered = null
+  cancelRefine()
+  for (const img of images) { img.dithered = null; img.refined = false }
   debugAutoExpose.hidden = true
   debugColorTune.hidden = true
   debugHueTune.hidden = true
+  debugDbs.hidden = true
+}
+
+// ── DBS refine ────────────────────────────────────────────────────────────
+
+function cancelRefine() {
+  if (!dbsWorker) return
+  dbsWorker.terminate() // the search is synchronous inside the worker, so terminate is the only cancel
+  dbsWorker = null
+  updateRefineButton()
+}
+
+function updateRefineButton() {
+  if (dbsWorker) return // label is driven by progress messages while running
+  const img = images.find(i => i.id === activeId)
+  btnRefineDbs.disabled = !img?.dithered || !img.target
+  btnRefineDbs.textContent = img?.refined ? '✓ Refined (DBS)' : 'Refine (DBS)'
+}
+
+btnRefineDbs.addEventListener('click', () => {
+  if (dbsWorker) { cancelRefine(); return }
+  const img = images.find(i => i.id === activeId)
+  if (!img?.dithered || !img.target) return
+
+  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
+  const before = img.dithered
+  const target = img.target
+  const initIdx = indicesFromMeasured(before, palette)
+
+  const worker = new Worker(new URL('./dithering/dbs.worker.ts', import.meta.url), { type: 'module' })
+  dbsWorker = worker
+  btnRefineDbs.textContent = 'Refining… (click to cancel)'
+
+  worker.onmessage = (e: MessageEvent) => {
+    if (worker !== dbsWorker) return // cancelled
+    const msg = e.data
+    if (msg.type === 'pass') {
+      btnRefineDbs.textContent = `Refining… pass ${msg.pass}/${DBS_MAX_PASSES} (cancel)`
+      return
+    }
+    worker.terminate()
+    dbsWorker = null
+    const stats = msg.stats as DbsStats
+    const measured = measuredFromIndices(msg.idx as Uint8Array, target.width, target.height, palette)
+    img.dithered = measured
+    img.ideal = swapToIdeal(measured, palette)
+    img.refined = true
+    console.info('DBS refine', stats)
+    if (img.id === activeId) {
+      refreshDitheredView()
+      void showDbsDebug(img, before, measured, palette, stats)
+    }
+    updateExportButtons()
+    updateRefineButton()
+  }
+  worker.onerror = (e: ErrorEvent) => {
+    console.error('DBS refine failed', e.message)
+    cancelRefine()
+    btnRefineDbs.textContent = '✗ Refine failed'
+    setTimeout(updateRefineButton, 2500)
+  }
+
+  const job: DbsJob = {
+    target,
+    initIdx,
+    palette,
+    params: { viewingDistanceCm: dbsViewingDistanceCm, ppi: dbsPpi, maxPasses: DBS_MAX_PASSES },
+  }
+  worker.postMessage(job, [initIdx.buffer])
+})
+
+/**
+ * Score the error-diffusion result and the DBS result with the tuners' own metrics against
+ * the tuners' DRC-only reference. DBS chroma landing above the reference where error
+ * diffusion was close means the tuners' compensation is overshooting under DBS.
+ */
+async function showDbsDebug(img: ImageFile, before: ImageData, after: ImageData, palette: Palette, stats: DbsStats) {
+  const bmp = await createImageBitmap(img.original)
+  const reference = buildTuneReference(bmp, img.original.width, img.original.height, displayWidth, displayHeight,
+    resizeMode, img.cropOffsetX, img.cropOffsetY, palette, settings.compressDynamicRange)
+  bmp.close()
+  if (!img.refined || img.dithered !== after) return // superseded while computing
+
+  const refStats = imageStats(reference), edStats = imageStats(before), dbsStats = imageStats(after)
+  const edHue = evaluateHueBands(reference, before), dbsHue = evaluateHueBands(reference, after)
+  const f3 = (n: number) => n.toFixed(3)
+
+  const reduction = (1 - stats.finalE / stats.initialE) * 100
+  el<HTMLSpanElement>('dbgDbsSummary').textContent =
+    `${stats.passes} pass${stats.passes !== 1 ? 'es' : ''} · perceived error −${reduction.toFixed(1)}% · ` +
+    `${(stats.ms / 1000).toFixed(1)} s · σ ${stats.sigmaLum.toFixed(2)}/${stats.sigmaChroma.toFixed(2)} px`
+
+  const bandColors = ['#e74c3c', '#f0c040', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6']
+  const bandRows = BAND_NAMES.map((name, i) => {
+    const ed = edHue.bands[i], db = dbsHue.bands[i]
+    const active = ed.count >= edHue.minPixels
+    const cell = (v: number) => `<td>${active ? f3(v) : '—'}</td>`
+    return `<tr><td><span style="color:${bandColors[i]}">●</span> ${name}</td>${cell(ed.refMeanC)}${cell(ed.dithMeanC)}${cell(db.dithMeanC)}<td>${Math.round(ed.count)}</td></tr>`
+  }).join('')
+
+  el<HTMLDivElement>('dbgDbsBody').innerHTML = `
+    <table class="debug-table">
+      <thead><tr><th></th><th>Target</th><th>Error diff.</th><th>DBS</th></tr></thead>
+      <tbody>
+        <tr><td>Mean C</td><td>${f3(refStats.meanC)}</td><td>${f3(edStats.meanC)}</td><td>${f3(dbsStats.meanC)}</td></tr>
+        <tr><td>Mean a</td><td>${f3(refStats.meanA)}</td><td>${f3(edStats.meanA)}</td><td>${f3(dbsStats.meanA)}</td></tr>
+        <tr><td>Mean b</td><td>${f3(refStats.meanBv)}</td><td>${f3(edStats.meanBv)}</td><td>${f3(dbsStats.meanBv)}</td></tr>
+        <tr><td>Color-tune loss</td><td class="debug-muted">—</td><td>${f3(colorTuneLoss(refStats, edStats))}</td><td>${f3(colorTuneLoss(refStats, dbsStats))}</td></tr>
+        <tr><td>Hue-tune loss</td><td class="debug-muted">—</td><td>${f3(edHue.loss)}</td><td>${f3(dbsHue.loss)}</td></tr>
+      </tbody>
+    </table>
+    <table class="debug-table">
+      <thead><tr><th></th><th>Target C</th><th>Error diff. C</th><th>DBS C</th><th>Pixels</th></tr></thead>
+      <tbody>${bandRows}</tbody>
+    </table>`
+  debugDbs.hidden = false
 }
 
 // ── Auto-tune debug panel ─────────────────────────────────────────────────
@@ -1777,6 +1942,8 @@ btnDownloadZip.addEventListener('click', async () => {
       bmp.close()
       img.dithered = r.measured
       img.ideal = r.ideal
+      img.target = r.target
+      img.refined = false
       img.width = displayWidth
       img.height = displayHeight
     }
@@ -2001,6 +2168,7 @@ renderSwatches()
 buildCascadeMenu()
 presetSelect.value = 'seeed-reterminal-e1002'
 updatePresetLabel()
+applyPresetPpi(presetSelect.value)
 
 // ── Tooltips ──────────────────────────────────────────────────────────────────
 {

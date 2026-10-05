@@ -11,6 +11,7 @@ This app is an experiment to find the optimal dithering algorithm and settings f
 ## Features
 
 - **Dithering algorithms** — to figure out what works best, we're trying classics like Floyd-Steinberg, Atkinson, Jarvis-Judice-Ninke, Stucki, Burkes and Sierra. But also less well-known or more recent algorithms like Riemersma (Hilbert-curve), Blue noise (void and cluster), Yliluoma II, Eschbach & Knox, and Dizzy
+- **DBS refine** — an optional, slower final step that improves the dithered result with colour Direct Binary Search: it repeatedly toggles and swaps pixels to minimise the error a human eye would see at a given viewing distance and panel pixel density (set automatically from the device preset). Runs in the background in a few seconds to a few minutes depending on resolution. Experimental: on colours the panel can't reproduce it can create halos along hard edges
 - **Palette-accurate output** — each palette carries both *measured* colors (how the panel actually looks) and *ideal* colors (what the device expects); dithering runs against calibrated, export uses ideal
 - **Calibration variants** — choose from different color profiles per panel type: community estimations, datasheet typicals (GoodDisplay GDEP133C02), and real colorimeter measurements (CR30, 5-sample CIELAB averages)
 - **Multiple display presets** — Seeed reTerminal, TRMNL, Waveshare PhotoPainter, Pimoroni Inky Impression, Soldered Inkplate, Solum M3 ESL, Gicisky ESL, GoodDisplay, or custom dimensions and panels
@@ -57,10 +58,11 @@ npm install
 npm run dev      # dev server at http://localhost:5173
 npm run build    # type-check + production build → dist/
 npm run preview  # serve the dist/ build locally
+npm run bench    # S-CIELAB benchmark comparing all algorithms and DBS on test images
 ```
 
 Requires Node 20+.
 
 ## Architecture notes
 
-The processing pipeline runs in order: resize → clarity → dynamic range compression → tone mapping → saturation + hue-sat bands → exposure → channel gains → dithering → palette swap (export only). See [CLAUDE.md](CLAUDE.md) for full architecture documentation.
+The processing pipeline runs in order: resize → clarity → dynamic range compression → tone mapping → saturation + hue-sat bands → exposure → channel gains → dithering → (optional DBS refine) → palette swap (export only). See [CLAUDE.md](CLAUDE.md) for full architecture documentation.
