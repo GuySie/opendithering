@@ -2,7 +2,7 @@
 // against two references, using a model of human viewing at a given distance and pixel density.
 //
 //   npm run bench -- [--palette spectra6-guysie] [--preset balanced] [--ppi 127] [--distance 40]
-//                    [--passes 10] [--gamut-mapping <balance 0–1>] [--highlight-lift <0–1>] [--no-synthetic] [images/*.png]
+//                    [--passes 10] [--gamut-mapping <balance 0–1>] [--highlight-lift <0–1>] [--lift-tolerance <chroma>] [--no-synthetic] [images/*.png]
 //
 // PNG inputs are used as-is (no resize — the app's resize needs a browser canvas), so scale
 // them to the panel resolution first. Three synthetic test images are always included unless
@@ -66,6 +66,7 @@ const distanceCm = parseFloat(opt('distance', '40'))
 const maxPasses = parseInt(opt('passes', '10'))
 const gamutBalance = opt('gamut-mapping', '')
 const highlightLift = parseFloat(opt('highlight-lift', '0'))
+const liftTolerance = opt('lift-tolerance', '')
 const noSynthetic = argv.includes('--no-synthetic')
 const files = argv.filter(a => !a.startsWith('--'))
 
@@ -271,7 +272,7 @@ for (const { name, img } of images) {
 
   // DBS refine starting from Floyd-Steinberg
   const dbsTarget = cloneImg(target)
-  applyHighlightLift(dbsTarget.data, palette, highlightLift)
+  applyHighlightLift(dbsTarget.data, palette, highlightLift, liftTolerance === '' ? undefined : parseFloat(liftTolerance))
   const { idx, stats } = dbsRefine(dbsTarget, indicesFromMeasured(fsOut!, palette), palette, { viewingDistanceCm: distanceCm, ppi, maxPasses })
   score(highlightLift > 0 ? `DBS (from Floyd-Steinberg, highlight lift ${highlightLift})` : 'DBS (from Floyd-Steinberg)', measuredFromIndices(idx, target.width, target.height, palette), stats.ms)
 

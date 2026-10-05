@@ -307,6 +307,11 @@
             <input type="range" id="sliderDbsLift" min="0" max="100" value="0" step="5" />
             <span class="slider-val" id="valDbsLift">0%</span>
           </div>
+          <div class="slider-row">
+            <label for="sliderDbsLiftTol" data-tooltip="DBS: how tinted a light colour may be and still count as white for Highlight lift (OKLab chroma at which the lift has faded out). Pure whites are ~0.000 and faint off-whites ~0.01; skin (~0.04) and pale blues (~0.03) stay untouched at the default 0.025. Raise it to also whiten more strongly tinted pale areas.">Lift tint tolerance</label>
+            <input type="range" id="sliderDbsLiftTol" min="0" max="80" value="25" step="5" />
+            <span class="slider-val" id="valDbsLiftTol">0.025</span>
+          </div>
         </div>
       </section>
 

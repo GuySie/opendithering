@@ -38,15 +38,17 @@ export function compressDynamicRange(data: Uint8ClampedArray, palette: Palette):
 // This knee blends colours in the top of the panel's lightness range towards the panel's measured
 // white, in OKLab: lightness rises and faint tints fade together, like printing near-white as paper
 // white. Only near-whites are affected: colours below HIGHLIGHT_KNEE of the black→white OKLab L range,
-// and clearly coloured ones (OKLab chroma fading out between HIGHLIGHT_CHROMA_LO and _HI), are untouched,
-// so light saturated colours (a sunlit green hill) keep their colour.
+// and clearly coloured ones, are untouched, so light colours with a real tint (skin, a pale blue sky, a
+// sunlit green hill) keep their colour. `tintTolerance` is the OKLab chroma at which the lift has faded out
+// completely; it starts fading at 60% of that. Whites are ~0.000, faintly tinted off-whites ~0.01, while
+// skin (~0.04) and pale blues (~0.03) need to stay above the tolerance.
 
 export const HIGHLIGHT_KNEE = 0.65
-export const HIGHLIGHT_CHROMA_LO = 0.03
-export const HIGHLIGHT_CHROMA_HI = 0.08
+export const HIGHLIGHT_TINT_TOLERANCE = 0.025
 
-export function applyHighlightLift(data: Uint8ClampedArray, palette: Palette, strength: number): void {
+export function applyHighlightLift(data: Uint8ClampedArray, palette: Palette, strength: number, tintTolerance = HIGHLIGHT_TINT_TOLERANCE): void {
   if (strength <= 0) return
+  const hi = Math.max(tintTolerance, 1e-4), lo = 0.6 * hi
   const labs = palette.colors.map(c => ({ c, L: rgbToOklab(...c.measured)[0] })).sort((a, b) => a.L - b.L)
   const Lb = labs[0].L
   const white = labs[labs.length - 1]
@@ -58,7 +60,7 @@ export function applyHighlightLift(data: Uint8ClampedArray, palette: Palette, st
     if (v === undefined) {
       const [L, a, b] = rgbToOklab(data[i], data[i + 1], data[i + 2])
       const t = Math.min(1, Math.max(0, ((L - Lb) / (Lw - Lb) - HIGHLIGHT_KNEE) / (1 - HIGHLIGHT_KNEE)))
-      const c = Math.min(1, Math.max(0, (Math.hypot(a, b) - HIGHLIGHT_CHROMA_LO) / (HIGHLIGHT_CHROMA_HI - HIGHLIGHT_CHROMA_LO)))
+      const c = Math.min(1, Math.max(0, (Math.hypot(a, b) - lo) / (hi - lo)))
       const u = strength * t * t * (3 - 2 * t) * (1 - c * c * (3 - 2 * c))
       if (u <= 0) {
         v = key

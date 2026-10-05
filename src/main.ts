@@ -4,7 +4,7 @@ import { DISPLAY_PRESETS, presetPpi } from './displays/presets'
 import { getAllPaletteGroups, getPaletteGroup, getPaletteVariant } from './palettes/index'
 import { getAllAlgorithms } from './dithering/index'
 import { runPipeline, swapToIdeal } from './processing/pipeline'
-import { applyHighlightLift } from './processing/tone'
+import { applyHighlightLift, HIGHLIGHT_TINT_TOLERANCE } from './processing/tone'
 import { getCropWindow } from './processing/resize'
 import { colorTune, buildTuneReference, imageStats, loss as colorTuneLoss } from './processing/colortune'
 import { hueTune, evaluateHueBands, BAND_NAMES } from './processing/huetune'
@@ -38,6 +38,7 @@ let showIdealPreview = false
 let dbsViewingDistanceCm = 40
 let dbsPpi = 127
 let dbsHighlightLift = 0 // 0–1, near-white lift applied to the refine target only
+let dbsLiftTolerance = HIGHLIGHT_TINT_TOLERANCE // OKLab chroma at which the lift has faded out
 const DBS_MAX_PASSES = 10
 let dbsWorker: Worker | null = null
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
@@ -1118,6 +1119,15 @@ function setDbsLift(pct: number) {
 el<HTMLInputElement>('sliderDbsLift').addEventListener('input', () =>
   setDbsLift(parseInt(el<HTMLInputElement>('sliderDbsLift').value)))
 el<HTMLInputElement>('sliderDbsLift').addEventListener('dblclick', () => setDbsLift(0))
+function setDbsLiftTol(thousandths: number) {
+  dbsLiftTolerance = thousandths / 1000
+  el<HTMLInputElement>('sliderDbsLiftTol').value = String(thousandths)
+  el<HTMLSpanElement>('valDbsLiftTol').textContent = dbsLiftTolerance.toFixed(3)
+}
+el<HTMLInputElement>('sliderDbsLiftTol').addEventListener('input', () =>
+  setDbsLiftTol(parseInt(el<HTMLInputElement>('sliderDbsLiftTol').value)))
+el<HTMLInputElement>('sliderDbsLiftTol').addEventListener('dblclick', () => setDbsLiftTol(Math.round(HIGHLIGHT_TINT_TOLERANCE * 1000)))
+makeValEditable(el<HTMLSpanElement>('valDbsLiftTol'), 0, 0.08, 3, v => setDbsLiftTol(Math.round(v * 1000)))
 makeValEditable(el<HTMLSpanElement>('valDbsLift'), 0, 100, 0, v => setDbsLift(Math.round(v)), v => `${Math.round(v)}%`)
 
 checkCDR.addEventListener('change', () => {
@@ -1505,7 +1515,7 @@ btnRefineDbs.addEventListener('click', () => {
   const target = img.target
   // Highlight lift only changes what DBS aims for; img.target itself stays the pipeline's output
   const dbsTarget = new ImageData(new Uint8ClampedArray(target.data), target.width, target.height)
-  applyHighlightLift(dbsTarget.data, palette, dbsHighlightLift)
+  applyHighlightLift(dbsTarget.data, palette, dbsHighlightLift, dbsLiftTolerance)
   const initIdx = indicesFromMeasured(before, palette)
 
   const worker = new Worker(new URL('./dithering/dbs.worker.ts', import.meta.url), { type: 'module' })
