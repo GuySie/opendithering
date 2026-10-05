@@ -68,9 +68,10 @@ export function labToRgb(L: number, a: number, b: number): [number, number, numb
 // --- linear RGB -> OKLab ---
 
 export function rgbToOklab(r: number, g: number, b: number): [number, number, number] {
-  const lr = srgbToLinear(r)
-  const lg = srgbToLinear(g)
-  const lb = srgbToLinear(b)
+  return linearToOklab(srgbToLinear(r), srgbToLinear(g), srgbToLinear(b))
+}
+
+export function linearToOklab(lr: number, lg: number, lb: number): [number, number, number] {
   let l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb
   let m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb
   let s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb
@@ -115,16 +116,23 @@ export function deltaE_oklab(
 // --- OKLab -> sRGB ---
 
 export function oklabToRgb(L: number, a: number, b: number): [number, number, number] {
+  const [lr, lg, lb] = oklabToLinear(L, a, b)
+  return [linearToSrgb(lr), linearToSrgb(lg), linearToSrgb(lb)]
+}
+
+/** OKLab → linear RGB, unclamped (out-of-gamut values may be negative or > 1). */
+export function oklabToLinear(L: number, a: number, b: number): [number, number, number] {
   const l_ = L + 0.3963377774 * a + 0.2158037573 * b
   const m_ = L - 0.1055613458 * a - 0.0638541728 * b
   const s_ = L - 0.0894841775 * a - 1.2914855480 * b
   const l = l_ * l_ * l_
   const m = m_ * m_ * m_
   const s = s_ * s_ * s_
-  const lr =  4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
-  const lg = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
-  const lb = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
-  return [linearToSrgb(lr), linearToSrgb(lg), linearToSrgb(lb)]
+  return [
+     4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+  ]
 }
 
 // --- Rec. 709 luminance (linear) ---

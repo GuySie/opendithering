@@ -2,6 +2,7 @@ import type { ProcessingSettings, Palette, ResizeMode } from '../types'
 import { resizeImage } from './resize'
 import { compressDynamicRange, applyToneMapping, applySaturation, applyHueSatBands, applyExposure, applyChannelGains, applyClarity } from './tone'
 import { getAlgorithm } from '../dithering/index'
+import { applyGamutMapping } from './gamut'
 
 export interface PipelineInput {
   source: HTMLImageElement | ImageBitmap
@@ -71,8 +72,8 @@ export function ditherStep(img: ImageData, palette: Palette, settings: Processin
 }
 
 /**
- * Steps 1.5–6 of the pipeline (clarity, DRC, tone mapping, saturation + hue bands, exposure,
- * channel gains), applied in place. Exported so DBS refine and the benchmark can rebuild the
+ * Steps 1.5–6.5 of the pipeline (clarity, DRC, tone mapping, saturation + hue bands, exposure,
+ * channel gains, gamut mapping), applied in place. Exported so DBS refine and the benchmark can rebuild the
  * exact pre-dither target without going through resize.
  */
 export function applyAdjustments(img: ImageData, palette: Palette, settings: ProcessingSettings): void {
@@ -98,6 +99,9 @@ export function applyAdjustments(img: ImageData, palette: Palette, settings: Pro
 
   // 6. Channel gains (color grading)
   applyChannelGains(img.data, settings.redGain, settings.greenGain, settings.blueGain)
+
+  // 6.5 Gamut mapping — pull colours the panel can't reproduce onto its gamut boundary
+  if (settings.gamutMapping) applyGamutMapping(img.data, palette, settings.gamutMappingBalance)
 }
 
 const PURE_PRIMARIES: [number, number, number][] = [

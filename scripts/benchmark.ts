@@ -2,7 +2,7 @@
 // against two references, using a model of human viewing at a given distance and pixel density.
 //
 //   npm run bench -- [--palette spectra6-guysie] [--preset balanced] [--ppi 127] [--distance 40]
-//                    [--passes 10] [--no-synthetic] [images/*.png]
+//                    [--passes 10] [--gamut-mapping <balance 0–1>] [--no-synthetic] [images/*.png]
 //
 // PNG inputs are used as-is (no resize — the app's resize needs a browser canvas), so scale
 // them to the panel resolution first. Three synthetic test images are always included unless
@@ -63,11 +63,13 @@ const presetName = opt('preset', 'balanced') as keyof typeof PRESETS
 const ppi = parseFloat(opt('ppi', '127'))
 const distanceCm = parseFloat(opt('distance', '40'))
 const maxPasses = parseInt(opt('passes', '10'))
+const gamutBalance = opt('gamut-mapping', '')
 const noSynthetic = argv.includes('--no-synthetic')
 const files = argv.filter(a => !a.startsWith('--'))
 
 const palette: Palette = getPalette(paletteId)
 const settings: ProcessingSettings = { ...PRESETS[presetName] }
+if (gamutBalance !== '') { settings.gamutMapping = true; settings.gamutMappingBalance = parseFloat(gamutBalance) }
 const W = 800, H = 480
 
 // ── Test images ──────────────────────────────────────────────────────────────
@@ -238,7 +240,7 @@ const cloneImg = (img: ImageData) => new ImageData(new Uint8ClampedArray(img.dat
 const f2 = (n: number) => n.toFixed(2)
 
 console.log(`# S-CIELAB benchmark\n`)
-console.log(`Palette **${palette.name}** (${paletteId}) · preset **${presetName}** · ${ppi} PPI at ${distanceCm} cm (${sampPerDeg.toFixed(1)} px/°) · DBS max ${maxPasses} passes\n`)
+console.log(`Palette **${palette.name}** (${paletteId}) · preset **${presetName}** · ${ppi} PPI at ${distanceCm} cm (${sampPerDeg.toFixed(1)} px/°) · DBS max ${maxPasses} passes · gamut mapping ${settings.gamutMapping ? `on (balance ${settings.gamutMappingBalance})` : 'off'}\n`)
 
 const totals = new Map<string, Row>()
 

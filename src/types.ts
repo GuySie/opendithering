@@ -59,6 +59,8 @@ export interface ProcessingSettings {
   clarity: number                // -1.0–1.0, unsharp mask strength (0 = off, positive = sharpen, negative = blur)
   clarityRadius: number          // 1–4, box blur radius for unsharp mask (larger = coarser features sharpened)
   hueSatBands: [number, number, number, number, number, number]  // per-hue sat multipliers [Red, Yellow, Green, Cyan, Blue, Magenta], default [1,1,1,1,1,1]
+  gamutMapping: boolean          // map out-of-gamut target colours onto the palette's hull before dithering
+  gamutMappingBalance: number    // 0–1: 0 = keep lightness (desaturate), 1 = keep saturation (move towards mid lightness)
 }
 
 export interface DitheringAlgorithm {
@@ -109,6 +111,8 @@ export const BALANCED_PRESET: ProcessingSettings = {
   clarity: 0.0,
   clarityRadius: 2,
   hueSatBands: [1, 1, 1, 1, 1, 1],
+  gamutMapping: false,
+  gamutMappingBalance: 0.5,
 }
 
 export const VIVID_PRESET: ProcessingSettings = {
@@ -139,6 +143,8 @@ export const VIVID_PRESET: ProcessingSettings = {
   clarity: 0.0,
   clarityRadius: 2,
   hueSatBands: [1, 1, 1, 1, 1, 1],
+  gamutMapping: false,
+  gamutMappingBalance: 0.5,
 }
 
 export const SOFT_PRESET: ProcessingSettings = {
@@ -169,6 +175,8 @@ export const SOFT_PRESET: ProcessingSettings = {
   clarity: 0.0,
   clarityRadius: 2,
   hueSatBands: [1, 1, 1, 1, 1, 1],
+  gamutMapping: false,
+  gamutMappingBalance: 0.5,
 }
 
 export const GRAYSCALE_PRESET: ProcessingSettings = {
@@ -199,6 +207,8 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   clarity: 0.0,
   clarityRadius: 2,
   hueSatBands: [1, 1, 1, 1, 1, 1],
+  gamutMapping: false,
+  gamutMappingBalance: 0.5,
 }
 
 export const NONE_PRESET: ProcessingSettings = {
@@ -229,6 +239,8 @@ export const NONE_PRESET: ProcessingSettings = {
   clarity: 0.0,
   clarityRadius: 2,
   hueSatBands: [1, 1, 1, 1, 1, 1],
+  gamutMapping: false,
+  gamutMappingBalance: 0.5,
 }
 
 export type PresetName = 'balanced' | 'vivid' | 'soft' | 'grayscale' | 'none' | 'custom'

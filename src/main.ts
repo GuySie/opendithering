@@ -84,6 +84,8 @@ const distSpaceSel        = el<HTMLSpanElement>('distSpaceSel')
 const colorSpaceLabel: Record<string, string> = { rgb: 'RGB', cielab: 'CIELAB', oklab: 'OKLab', 'oklab-chroma': 'OKLab chroma-aware' }
 const localVarianceCheck  = el<HTMLInputElement>('localVarianceDetection')
 const expandPaletteCheck  = el<HTMLInputElement>('expandPalette')
+const gamutMappingCheck   = el<HTMLInputElement>('gamutMappingCheck')
+const panelGamutBalance   = el<HTMLDivElement>('panelGamutBalance')
 const canvasOrig       = el<HTMLCanvasElement>('canvasOriginal')
 const canvasDith       = el<HTMLCanvasElement>('canvasDithered')
 const viewportOrig     = el<HTMLDivElement>('viewportOrig')
@@ -1370,6 +1372,13 @@ localVarianceCheck.addEventListener('change', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
+gamutMappingCheck.addEventListener('change', () => {
+  settings.gamutMapping = gamutMappingCheck.checked
+  panelGamutBalance.hidden = !settings.gamutMapping
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+sliderSetup('sliderGamutBalance', 'valGamutBalance', 100, 'gamutMappingBalance')
+
 expandPaletteCheck.addEventListener('change', () => {
   settings.expandPalette = expandPaletteCheck.checked
   markCustomPreset(); invalidateAll(); scheduleProcess()
@@ -1438,6 +1447,9 @@ function syncSlidersFromSettings() {
   colorPresetSel.value = `${settings.errorSpace}_${settings.distSpace}`
   localVarianceCheck.checked = settings.localVarianceDetection
   expandPaletteCheck.checked = settings.expandPalette
+  gamutMappingCheck.checked = settings.gamutMapping
+  panelGamutBalance.hidden = !settings.gamutMapping
+  setSlider('sliderGamutBalance', 'valGamutBalance', settings.gamutMappingBalance * 100, settings.gamutMappingBalance)
 }
 
 function setSlider(sliderId: string, valId: string, sliderVal: number, displayVal: number) {

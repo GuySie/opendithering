@@ -311,6 +311,14 @@
           <label class="checkbox-label" data-tooltip="Reduces diffusion strength in smooth image areas to avoid over-dithering in gradients and flat regions."><input type="checkbox" id="localVarianceDetection" /> Local variance (reduce diffusion in flat areas)</label>
         </div>
         <label class="checkbox-label" data-tooltip="Adds pure RGB primaries as temporary dithering snap-points, then remaps them to the nearest real palette color after dithering."><input type="checkbox" id="expandPalette" /> Expand palette with pure primaries</label>
+        <label class="checkbox-label" data-tooltip="Pulls colours the panel can't reproduce (outside the range of mixes of its measured colours) onto the nearest reproducible colour before dithering. Removes the leftover error that error diffusion smears and that DBS refine turns into halos along edges. Has no effect on BW, BWR and grayscale palettes."><input type="checkbox" id="gamutMappingCheck" /> Map colours into panel gamut</label>
+        <div id="panelGamutBalance" hidden>
+          <div class="slider-row">
+            <label for="sliderGamutBalance" data-tooltip="How to compromise on colours the panel can't show. 0 = keep lightness and reduce saturation; 1 = keep more saturation by moving towards the panel's mid lightness.">Lightness ↔ saturation</label>
+            <input type="range" id="sliderGamutBalance" min="0" max="100" value="50" />
+            <span class="slider-val" id="valGamutBalance">0.50</span>
+          </div>
+        </div>
       </section>
 
       <section class="section">
