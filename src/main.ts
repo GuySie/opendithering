@@ -39,7 +39,8 @@ let dbsViewingDistanceCm = 40
 let dbsPpi = 127
 let dbsHighlightLift = 0 // 0–1, near-white lift applied to the refine target only
 let dbsLiftTolerance = HIGHLIGHT_TINT_TOLERANCE // OKLab chroma at which the lift has faded out
-const DBS_MAX_PASSES = 10
+const DBS_DEFAULT_PASSES = 10
+let dbsMaxPasses = DBS_DEFAULT_PASSES // 1–30, upper bound on DBS passes (stops earlier if a pass changes nothing)
 let dbsWorker: Worker | null = null
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
 let bleProtocol: 'opendisplay' | 'gicisky' = 'opendisplay'
@@ -1121,6 +1122,16 @@ function setDbsLift(pct: number) {
 el<HTMLInputElement>('sliderDbsLift').addEventListener('input', () =>
   setDbsLift(parseInt(el<HTMLInputElement>('sliderDbsLift').value)))
 el<HTMLInputElement>('sliderDbsLift').addEventListener('dblclick', () => setDbsLift(0))
+function setDbsPasses(v: number) {
+  dbsMaxPasses = v
+  el<HTMLInputElement>('sliderDbsPasses').value = String(v)
+  el<HTMLSpanElement>('valDbsPasses').textContent = String(v)
+}
+el<HTMLInputElement>('sliderDbsPasses').addEventListener('input', () =>
+  setDbsPasses(parseInt(el<HTMLInputElement>('sliderDbsPasses').value)))
+el<HTMLInputElement>('sliderDbsPasses').addEventListener('dblclick', () => setDbsPasses(DBS_DEFAULT_PASSES))
+makeValEditable(el<HTMLSpanElement>('valDbsPasses'), 1, 30, 0, v => setDbsPasses(Math.round(v)))
+
 function setDbsLiftTol(thousandths: number) {
   dbsLiftTolerance = thousandths / 1000
   el<HTMLInputElement>('sliderDbsLiftTol').value = String(thousandths)
@@ -1527,6 +1538,7 @@ btnRefineDbs.addEventListener('click', () => {
   const dbsTarget = new ImageData(new Uint8ClampedArray(target.data), target.width, target.height)
   applyHighlightLift(dbsTarget.data, palette, dbsHighlightLift, dbsLiftTolerance)
   const initIdx = indicesFromMeasured(before, palette)
+  const maxPasses = dbsMaxPasses // captured so the progress label matches this run even if the slider moves
 
   const worker = new Worker(new URL('./dithering/dbs.worker.ts', import.meta.url), { type: 'module' })
   dbsWorker = worker
@@ -1536,7 +1548,7 @@ btnRefineDbs.addEventListener('click', () => {
     if (worker !== dbsWorker) return // cancelled
     const msg = e.data
     if (msg.type === 'pass') {
-      btnRefineDbs.textContent = `Refining… pass ${msg.pass}/${DBS_MAX_PASSES} (cancel)`
+      btnRefineDbs.textContent = `Refining… pass ${msg.pass}/${maxPasses} (cancel)`
       return
     }
     worker.terminate()
@@ -1565,7 +1577,7 @@ btnRefineDbs.addEventListener('click', () => {
     target: dbsTarget,
     initIdx,
     palette,
-    params: { viewingDistanceCm: dbsViewingDistanceCm, ppi: dbsPpi, maxPasses: DBS_MAX_PASSES },
+    params: { viewingDistanceCm: dbsViewingDistanceCm, ppi: dbsPpi, maxPasses },
   }
   worker.postMessage(job, [initIdx.buffer])
 })

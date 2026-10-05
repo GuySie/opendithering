@@ -301,6 +301,11 @@
             <button class="btn-secondary" id="btnRefineDbs" disabled data-tooltip="Direct Binary Search: iteratively improves the current dithered result by toggling and swapping pixels to minimise the error a human eye would see at the viewing distance below. Slow (seconds); click again while running to cancel. Any settings change discards the refinement. ZIP export refines nothing — only the image shown here.">Refine (DBS)</button>
           </div>
           <div class="slider-row">
+            <label for="sliderDbsPasses" data-tooltip="DBS: maximum number of passes over the image. Each pass revisits every pixel; DBS stops earlier if a pass changes nothing. More passes refine further (colourful images were still improving at 10) but take proportionally longer.">Passes</label>
+            <input type="range" id="sliderDbsPasses" min="1" max="30" value="10" step="1" />
+            <span class="slider-val" id="valDbsPasses">10</span>
+          </div>
+          <div class="slider-row">
             <label for="sliderDbsDistance" data-tooltip="DBS: distance you view the panel from. Farther = the eye blurs more, so DBS tolerates finer grain in exchange for more accurate colour.">Viewing distance</label>
             <input type="range" id="sliderDbsDistance" min="20" max="150" value="40" step="5" />
             <span class="slider-val" id="valDbsDistance">40 cm</span>
