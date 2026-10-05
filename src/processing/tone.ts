@@ -1,5 +1,5 @@
 import type { ProcessingSettings, Palette } from '../types'
-import { srgbToLinear, linearToSrgb, rec709Luminance } from './colorspace'
+import { srgbToLinear, linearToSrgb, rec709Luminance, rgbToOklab, oklabToRgb } from './colorspace'
 
 // --- Dynamic range compression ---
 // Maps pixel luminance into the display's actual [black, white] luminance range
@@ -28,6 +28,47 @@ export function compressDynamicRange(data: Uint8ClampedArray, palette: Palette):
     data[i]     = linearToSrgb(lr * scale)
     data[i + 1] = linearToSrgb(lg * scale)
     data[i + 2] = linearToSrgb(lb * scale)
+  }
+}
+
+// --- Highlight lift (DBS refine target only) ---
+// Near-white colours usually land below the panel's white after DRC + tone mapping, and DBS — which
+// mixes in linear light, as the eye does — reproduces that faithfully with a sprinkling of dark dots,
+// making light areas look dim and noisy (error diffusion in OKLab overshoots towards white instead).
+// This knee blends colours in the top of the panel's lightness range towards the panel's measured
+// white, in OKLab: lightness rises and faint tints fade together, like printing near-white as paper
+// white. Only near-whites are affected: colours below HIGHLIGHT_KNEE of the black→white OKLab L range,
+// and clearly coloured ones (OKLab chroma fading out between HIGHLIGHT_CHROMA_LO and _HI), are untouched,
+// so light saturated colours (a sunlit green hill) keep their colour.
+
+export const HIGHLIGHT_KNEE = 0.65
+export const HIGHLIGHT_CHROMA_LO = 0.03
+export const HIGHLIGHT_CHROMA_HI = 0.08
+
+export function applyHighlightLift(data: Uint8ClampedArray, palette: Palette, strength: number): void {
+  if (strength <= 0) return
+  const labs = palette.colors.map(c => ({ c, L: rgbToOklab(...c.measured)[0] })).sort((a, b) => a.L - b.L)
+  const Lb = labs[0].L
+  const white = labs[labs.length - 1]
+  const [Lw, aw, bw] = rgbToOklab(...white.c.measured)
+  const cache = new Map<number, number>()
+  for (let i = 0; i < data.length; i += 4) {
+    const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]
+    let v = cache.get(key)
+    if (v === undefined) {
+      const [L, a, b] = rgbToOklab(data[i], data[i + 1], data[i + 2])
+      const t = Math.min(1, Math.max(0, ((L - Lb) / (Lw - Lb) - HIGHLIGHT_KNEE) / (1 - HIGHLIGHT_KNEE)))
+      const c = Math.min(1, Math.max(0, (Math.hypot(a, b) - HIGHLIGHT_CHROMA_LO) / (HIGHLIGHT_CHROMA_HI - HIGHLIGHT_CHROMA_LO)))
+      const u = strength * t * t * (3 - 2 * t) * (1 - c * c * (3 - 2 * c))
+      if (u <= 0) {
+        v = key
+      } else {
+        const [r, g, bl] = oklabToRgb(L + (Lw - L) * u, a + (aw - a) * u, b + (bw - b) * u)
+        v = (r << 16) | (g << 8) | bl
+      }
+      cache.set(key, v)
+    }
+    data[i] = v >> 16; data[i + 1] = (v >> 8) & 255; data[i + 2] = v & 255
   }
 }
 

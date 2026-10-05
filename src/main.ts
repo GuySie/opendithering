@@ -4,6 +4,7 @@ import { DISPLAY_PRESETS, presetPpi } from './displays/presets'
 import { getAllPaletteGroups, getPaletteGroup, getPaletteVariant } from './palettes/index'
 import { getAllAlgorithms } from './dithering/index'
 import { runPipeline, swapToIdeal } from './processing/pipeline'
+import { applyHighlightLift } from './processing/tone'
 import { getCropWindow } from './processing/resize'
 import { colorTune, buildTuneReference, imageStats, loss as colorTuneLoss } from './processing/colortune'
 import { hueTune, evaluateHueBands, BAND_NAMES } from './processing/huetune'
@@ -36,6 +37,7 @@ let showIdealPreview = false
 // ProcessingSettings (presets don't reset it).
 let dbsViewingDistanceCm = 40
 let dbsPpi = 127
+let dbsHighlightLift = 0 // 0–1, near-white lift applied to the refine target only
 const DBS_MAX_PASSES = 10
 let dbsWorker: Worker | null = null
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
@@ -1108,6 +1110,15 @@ el<HTMLInputElement>('sliderDbsPpi').addEventListener('input', () =>
   setDbsPpi(parseInt(el<HTMLInputElement>('sliderDbsPpi').value)))
 el<HTMLInputElement>('sliderDbsPpi').addEventListener('dblclick', () => applyPresetPpi(presetSelect.value) || setDbsPpi(127))
 makeValEditable(el<HTMLSpanElement>('valDbsPpi'), 50, 300, 0, v => setDbsPpi(Math.round(v)))
+function setDbsLift(pct: number) {
+  dbsHighlightLift = pct / 100
+  el<HTMLInputElement>('sliderDbsLift').value = String(pct)
+  el<HTMLSpanElement>('valDbsLift').textContent = `${pct}%`
+}
+el<HTMLInputElement>('sliderDbsLift').addEventListener('input', () =>
+  setDbsLift(parseInt(el<HTMLInputElement>('sliderDbsLift').value)))
+el<HTMLInputElement>('sliderDbsLift').addEventListener('dblclick', () => setDbsLift(0))
+makeValEditable(el<HTMLSpanElement>('valDbsLift'), 0, 100, 0, v => setDbsLift(Math.round(v)), v => `${Math.round(v)}%`)
 
 checkCDR.addEventListener('change', () => {
   settings.compressDynamicRange = checkCDR.checked
@@ -1492,6 +1503,9 @@ btnRefineDbs.addEventListener('click', () => {
   const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
   const before = img.dithered
   const target = img.target
+  // Highlight lift only changes what DBS aims for; img.target itself stays the pipeline's output
+  const dbsTarget = new ImageData(new Uint8ClampedArray(target.data), target.width, target.height)
+  applyHighlightLift(dbsTarget.data, palette, dbsHighlightLift)
   const initIdx = indicesFromMeasured(before, palette)
 
   const worker = new Worker(new URL('./dithering/dbs.worker.ts', import.meta.url), { type: 'module' })
@@ -1528,7 +1542,7 @@ btnRefineDbs.addEventListener('click', () => {
   }
 
   const job: DbsJob = {
-    target,
+    target: dbsTarget,
     initIdx,
     palette,
     params: { viewingDistanceCm: dbsViewingDistanceCm, ppi: dbsPpi, maxPasses: DBS_MAX_PASSES },

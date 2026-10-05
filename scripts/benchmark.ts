@@ -2,7 +2,7 @@
 // against two references, using a model of human viewing at a given distance and pixel density.
 //
 //   npm run bench -- [--palette spectra6-guysie] [--preset balanced] [--ppi 127] [--distance 40]
-//                    [--passes 10] [--gamut-mapping <balance 0–1>] [--no-synthetic] [images/*.png]
+//                    [--passes 10] [--gamut-mapping <balance 0–1>] [--highlight-lift <0–1>] [--no-synthetic] [images/*.png]
 //
 // PNG inputs are used as-is (no resize — the app's resize needs a browser canvas), so scale
 // them to the panel resolution first. Three synthetic test images are always included unless
@@ -42,6 +42,7 @@ const { getAllAlgorithms } = await import('../src/dithering/index')
 const { dbsRefine, indicesFromMeasured, measuredFromIndices } = await import('../src/dithering/dbs')
 const { applyAdjustments, ditherStep } = await import('../src/processing/pipeline')
 const { applyTuneReferenceDrc } = await import('../src/processing/colortune')
+const { applyHighlightLift } = await import('../src/processing/tone')
 const { getPalette } = await import('../src/palettes/index')
 const { srgbToLinear, linearToXyz } = await import('../src/processing/colorspace')
 const { PRESETS } = await import('../src/types')
@@ -64,6 +65,7 @@ const ppi = parseFloat(opt('ppi', '127'))
 const distanceCm = parseFloat(opt('distance', '40'))
 const maxPasses = parseInt(opt('passes', '10'))
 const gamutBalance = opt('gamut-mapping', '')
+const highlightLift = parseFloat(opt('highlight-lift', '0'))
 const noSynthetic = argv.includes('--no-synthetic')
 const files = argv.filter(a => !a.startsWith('--'))
 
@@ -240,7 +242,7 @@ const cloneImg = (img: ImageData) => new ImageData(new Uint8ClampedArray(img.dat
 const f2 = (n: number) => n.toFixed(2)
 
 console.log(`# S-CIELAB benchmark\n`)
-console.log(`Palette **${palette.name}** (${paletteId}) · preset **${presetName}** · ${ppi} PPI at ${distanceCm} cm (${sampPerDeg.toFixed(1)} px/°) · DBS max ${maxPasses} passes · gamut mapping ${settings.gamutMapping ? `on (balance ${settings.gamutMappingBalance})` : 'off'}\n`)
+console.log(`Palette **${palette.name}** (${paletteId}) · preset **${presetName}** · ${ppi} PPI at ${distanceCm} cm (${sampPerDeg.toFixed(1)} px/°) · DBS max ${maxPasses} passes · gamut mapping ${settings.gamutMapping ? `on (balance ${settings.gamutMappingBalance})` : 'off'} · DBS highlight lift ${highlightLift}\n`)
 
 const totals = new Map<string, Row>()
 
@@ -268,8 +270,10 @@ for (const { name, img } of images) {
   }
 
   // DBS refine starting from Floyd-Steinberg
-  const { idx, stats } = dbsRefine(target, indicesFromMeasured(fsOut!, palette), palette, { viewingDistanceCm: distanceCm, ppi, maxPasses })
-  score('DBS (from Floyd-Steinberg)', measuredFromIndices(idx, target.width, target.height, palette), stats.ms)
+  const dbsTarget = cloneImg(target)
+  applyHighlightLift(dbsTarget.data, palette, highlightLift)
+  const { idx, stats } = dbsRefine(dbsTarget, indicesFromMeasured(fsOut!, palette), palette, { viewingDistanceCm: distanceCm, ppi, maxPasses })
+  score(highlightLift > 0 ? `DBS (from Floyd-Steinberg, highlight lift ${highlightLift})` : 'DBS (from Floyd-Steinberg)', measuredFromIndices(idx, target.width, target.height, palette), stats.ms)
 
   rows.sort((a, b) => a.targetMean - b.targetMean)
   console.log(`## ${name} (${img.width}×${img.height})\n`)
