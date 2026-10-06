@@ -99,7 +99,6 @@ src/
 │   ├── resize.ts              # resizeImage (cover/contain/stretch/none)
 │   ├── pipeline.ts            # runPipeline() — orchestrates all steps, returns {measured, ideal, target}
 │   ├── gamut.ts               # buildGamut() / applyGamutMapping() — convex hull of the measured palette in linear RGB; maps out-of-gamut colours onto it (closest colour in YyCxCz, or towards grey)
-│   ├── autoexpose.ts          # autoExpose() — one-shot histogram-based tone normalisation; derives exposure and contrast/s-curve params from OKLab luminance statistics of the DRC-adjusted source
 │   ├── colortune.ts           # colorTune() (not in UI) — optimizer for RGB channel gains; also the shared tuner/DBS-debug reference (buildTuneReference, imageStats, loss)
 │   └── huetune.ts             # hueTune() (not in UI) — optimizer for per-hue saturation bands; evaluateHueBands() used by the DBS debug panel
 ├── ble/
@@ -156,7 +155,7 @@ Findings (illustration with a pure white background, guysie palette, DBS without
 - **The panel's black point is deliberately not mapped.** Full relative colorimetric with black point compensation (black → panel black too) was tried first: it adds the panel black's purplish tint to every colour and cut hair chroma 0.095 → 0.074.
 - **In brightness-only mode the S-curve is nearly dormant.** It runs on values already compressed below its midpoint, so Balanced's S-curve mostly just dims white (79.3% white with it, 92.3% without) and barely touches other colours. In white point mode it runs on the full-range source and acts as a real contrast curve: at Balanced's 0.9 it darkens skin (L 0.567 → 0.525) and mutes hair (0.095 → 0.071). At **S-curve strength 0** the look stays close to brightness-only + Balanced (skin 0.564/0.042/79° vs 0.567/0.035/76°, backpack chroma 0.118 vs 0.117, hair 0.088 vs 0.095) with 99% white backgrounds.
 - Cost: dark anti-aliased outline pixels take the panel white's (greenish) tint instead of sitting near the panel's (purplish) black, so DBS black outlines are a little less clean (65.8% → 55.8% pure black).
-- The tuners' reference uses the same mapping (`applyTuneReferenceMapping` in `colortune.ts`); otherwise Color-tune would see the deliberate shift towards the panel white as a colour error and adjust the gains to undo it. Auto Expose keeps its own OKLab-based compression for its statistics.
+- The tuners' reference uses the same mapping (`applyTuneReferenceMapping` in `colortune.ts`); otherwise Color-tune would see the deliberate shift towards the panel white as a colour error and adjust the gains to undo it. 
 - Benchmark: `--drc whitepoint`. Its "vs source" scores aren't comparable across modes, since the reference is mapped the same way.
 
 **Gamut mapping** (`gamutMapping: boolean`, default off; `gamutMappingMethod: 'nearest' | 'grey'`, default `'nearest'`; `gamutMappingBalance: number`, 0–1, default 0.5, `'grey'` only): the colours a panel can show on average are all mixes of its measured colours, i.e. the convex hull of the measured palette in **linear** RGB (the eye averages light). `buildGamut()` finds the hull faces by brute force over palette triples; a flat hull (BW, BWR, grayscale) returns null and mapping is a no-op. Two methods. **Closest colour** (`'nearest'`, `mapColorNearest()`): projects the colour onto the nearest point of the hull in **YyCxCz** — the space DBS measures error in, shared via `linearToYyCxCz()` in `colorspace.ts`. Hull faces are the same palette triples in YyCxCz (a linear transform), so the projection is the minimum over `closestOnTriangle()` per face (Ericson §5.1.5); the result is then nudged towards the palette centroid until its 8-bit rounding is inside. It reproduces the choice DBS makes on its own without mapping — trading lightness for saturation where the panel's saturation is (a light coral becomes deep red) — so DBS keeps its saturation (night-scene illustration, Pre-DBS: coral chroma 0.086 vs 0.083 for DBS unmapped and 0.060 for towards-grey at balance 1; moon 0.066 vs 0.066 vs 0.045), but the target is reproducible up front, so the halo mechanism is removed (synthetic edge at 282 PPI: DBS halo 0.92/1.50 vs 4.00/8.75 unmapped). **Towards grey** (`'grey'`, `mapColor()`): picks an anchor on the panel's own black→white axis and bisects along the straight OKLab line anchor → pixel (constant hue) for the last point inside the hull, then steps back until the 8-bit-rounded result is still inside. The anchor's lightness is the trade-off: balance 0 = the pixel's own lightness (keep lightness, lose saturation), 1 = the panel's mid lightness (keep more saturation). Results are cached per RGB value.
@@ -180,17 +179,9 @@ Closest colour is the default because towards-grey gives up saturation the panel
 
 The `ideal` values are the nominal RGB codes the firmware expects (e.g. pure `[255,0,0]` for red). The `measured` values vary by variant — see variant sources listed under "Palette groups and calibration variants" above. When adding real device measurements, add a new named variant rather than overwriting an existing one.
 
-### Auto Expose
+### Auto Expose (removed)
 
-Implemented in `src/processing/autoexpose.ts`. `autoExpose()` is a **one-shot** (non-iterative) tone normaliser. It resets all tone, saturation, and gain parameters to neutral, then derives exposure and contrast/s-curve settings from OKLab luminance statistics of the DRC-adjusted source image. Intended as a starting point for manual tone adjustment.
-
-**Algorithm:**
-1. Resize the source and apply DRC so luminance stats match the pipeline's fixed tone range.
-2. Compute meanL, stddevL, shadowMeanL (pixels below L=0.35), and highlightFraction (pixels above L=0.85).
-3. Derive `exposure = TARGET_MEAN_L / meanL` (target 0.55, clamped 0.5–2.0).
-4. In contrast mode: `contrast = TARGET_STDDEV_L / stddevL` (target 0.27, clamped 0.5–2.0). In s-curve mode: derive `strength`, `shadowBoost`, and `highlightCompress` from the same stats.
-
-**Return value:** `AutoExposeResult` — `{ exposure, saturation, contrast, strength, shadowBoost, highlightCompress, midpoint, redGain, greenGain, blueGain, compressDynamicRange, debug: AutoExposeDebug }`. All gain and saturation fields are reset to 1.0; `compressDynamicRange` is always `true`. The debug struct carries `{ meanL, stddevL, shadowMeanL, highlightFraction }`. The debug panel (`#debugAutoExpose`) renders this after each Auto Expose or Auto-tune run.
+The **Auto Expose** button and `src/processing/autoexpose.ts` were removed (see git history). It aimed for an OKLab lightness mean of 0.55 and spread (std) of 0.27, measured after its own simple compression — but a panel's whole lightness range is narrow (guysie Spectra 6: 0.22–0.68, so the largest possible spread is ~0.23). The contrast target was unreachable, so it always demanded maximum contrast (clamped at 2.0), clipping detail before dithering (night-scene illustration: 59% of target pixels clipped vs 0% without; girl illustration 12.6% vs 2.8%), and its exposure undid Panel white point (pure white dimmed from the panel's white 143,154,152 to 128,138,137). Error diffusion's soft output partly hid this; DBS reproduces the clipped target faithfully.
 
 ### Color-tune (no longer in the UI)
 
@@ -244,7 +235,7 @@ The **Auto Tune** button (`btnAutoTune`, Tone section) applies the **Pre-DBS** p
 
 The **Auto-tune**, **Color-tune** and **Hue-tune** buttons (and their `#debugColorTune` / `#debugHueTune` panels) were removed from the UI. They measured the *error-diffusion* output against the source and adjusted gains and hue bands to compensate for error diffusion's chroma losses; under DBS refine, which reproduces its target faithfully, that compensation over-saturates (see "Pre-DBS" and "Interaction with the tuners" under Colour DBS refine). The old Auto-tune chained Auto Expose → Color-tune → Hue-tune; the current **Auto Tune** button (above) is a different feature.
 
-`colortune.ts` and `huetune.ts` stay: `colorTune()` / `hueTune()` are no longer called from the UI, but their helpers are used elsewhere — `buildTuneReference()` / `applyTuneReferenceMapping()`, `imageStats()` and `loss()` by the DBS debug panel and the benchmark's source reference, `evaluateHueBands()` / `BAND_NAMES` by the DBS debug panel. **Auto Expose** remains as a button.
+`colortune.ts` and `huetune.ts` stay: `colorTune()` / `hueTune()` are no longer called from the UI, but their helpers are used elsewhere — `buildTuneReference()` / `applyTuneReferenceMapping()`, `imageStats()` and `loss()` by the DBS debug panel and the benchmark's source reference, `evaluateHueBands()` / `BAND_NAMES` by the DBS debug panel.
 
 ### OpenDisplay BLE upload
 

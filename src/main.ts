@@ -11,8 +11,6 @@ import { evaluateHueBands, BAND_NAMES } from './processing/huetune'
 import { indicesFromMeasured, measuredFromIndices } from './dithering/dbs'
 import type { DbsStats } from './dithering/dbs'
 import type { DbsJob } from './dithering/dbs.worker'
-import { autoExpose } from './processing/autoexpose'
-import type { AutoExposeDebug } from './processing/autoexpose'
 import type { Palette } from './types'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
@@ -142,9 +140,7 @@ const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
 const checkCDR         = el<HTMLInputElement>('checkCDR')
 const drcModeSelect    = el<HTMLSelectElement>('drcModeSelect')
 const panelDrcMode     = el<HTMLDivElement>('panelDrcMode')
-const btnAutoExpose    = el<HTMLButtonElement>('btnAutoExpose')
 const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
-const debugAutoExpose  = el<HTMLDivElement>('debugAutoExpose')
 const debugDbs         = el<HTMLDivElement>('debugDbs')
 const btnRefineDbs     = el<HTMLButtonElement>('btnRefineDbs')
 
@@ -448,7 +444,6 @@ function activateImage(id: string) {
 
   emptyState.hidden = true
   previewPanels.hidden = false
-  debugAutoExpose.hidden = true
   debugDbs.hidden = true
 
   updateRefineButton()
@@ -1127,53 +1122,6 @@ checkCDR.addEventListener('change', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
-btnAutoExpose.addEventListener('click', async () => {
-  if (!activeId) return
-  const img = images.find(i => i.id === activeId)
-  if (!img) return
-
-  btnAutoExpose.disabled = true
-  btnAutoExpose.textContent = 'Exposing…'
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-
-  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
-  const srcBitmap = await createImageBitmap(img.original)
-  const result = autoExpose({
-    source: srcBitmap,
-    srcWidth: img.original.width,
-    srcHeight: img.original.height,
-    dstWidth: displayWidth,
-    dstHeight: displayHeight,
-    resizeMode,
-    cropOffsetX: img.cropOffsetX,
-    cropOffsetY: img.cropOffsetY,
-    palette,
-    settings,
-  })
-  srcBitmap.close()
-
-  settings.exposure          = result.exposure
-  settings.saturation        = result.saturation
-  settings.contrast          = result.contrast
-  settings.strength          = result.strength
-  settings.shadowBoost       = result.shadowBoost
-  settings.highlightCompress = result.highlightCompress
-  settings.midpoint          = result.midpoint
-  settings.redGain           = result.redGain
-  settings.greenGain         = result.greenGain
-  settings.blueGain          = result.blueGain
-  settings.compressDynamicRange = result.compressDynamicRange
-
-  markCustomPreset()
-  syncSlidersFromSettings()
-  invalidateAll()
-  scheduleProcess()
-  showAutoExposeDebug(result.debug)
-
-  btnAutoExpose.disabled = false
-  btnAutoExpose.textContent = 'Auto Expose'
-})
-
 toneModeSelect.addEventListener('change', () => {
   settings.toneMode = toneModeSelect.value as 'contrast' | 'scurve'
   panelContrast.hidden = settings.toneMode !== 'contrast'
@@ -1319,7 +1267,6 @@ function setSlider(sliderId: string, valId: string, sliderVal: number, displayVa
 function invalidateAll() {
   cancelRefine()
   for (const img of images) { img.dithered = null; img.refined = false }
-  debugAutoExpose.hidden = true
   debugDbs.hidden = true
 }
 
@@ -1469,32 +1416,6 @@ async function showDbsDebug(img: ImageFile, before: ImageData, after: ImageData,
       <tbody>${bandRows}</tbody>
     </table>`
   debugDbs.hidden = false
-}
-
-// ── Auto-tune debug panel ─────────────────────────────────────────────────
-
-function showAutoExposeDebug(d: AutoExposeDebug) {
-  const f3 = (n: number) => n.toFixed(3)
-  const pct = (n: number) => (n * 100).toFixed(1) + '%'
-  const txt = (id: string, v: string) => { (document.getElementById(id) as HTMLElement).textContent = v }
-
-  txt('dbgExpMeanL',          f3(d.meanL))
-  txt('dbgExpStdL',           f3(d.stddevL))
-  txt('dbgExpShadowL',        f3(d.shadowMeanL))
-  txt('dbgExpHighlights',     pct(d.highlightFraction))
-  txt('dbgExpExposure',       f3(settings.exposure))
-  txt('dbgExpContrast',       f3(settings.contrast))
-  txt('dbgExpStrength',       f3(settings.strength))
-  txt('dbgExpShadowBoost',    f3(settings.shadowBoost))
-  txt('dbgExpHighlightCompress', f3(settings.highlightCompress))
-
-  const isContrast = settings.toneMode === 'contrast'
-  ;(document.getElementById('dbgExpContrastRow') as HTMLElement).hidden = !isContrast
-  ;(document.getElementById('dbgExpStrengthRow') as HTMLElement).hidden = isContrast
-  ;(document.getElementById('dbgExpShadowRow') as HTMLElement).hidden = isContrast
-  ;(document.getElementById('dbgExpHighlightRow') as HTMLElement).hidden = isContrast
-
-  debugAutoExpose.hidden = false
 }
 
 // ── Palette badge ─────────────────────────────────────────────────────────

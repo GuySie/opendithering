@@ -101,7 +101,6 @@
 
         <div class="autotune-row">
           <button class="btn-secondary" id="btnAutoTune" data-tooltip="Applies the Pre-DBS preset (Panel white point, no tone curve, saturation 1.0, closest-colour gamut mapping) and then runs a 10-pass DBS refine using the DBS settings below (viewing distance, PPI, highlight lift). Progress and cancel are on the Refine (DBS) button.">Auto Tune</button>
-          <button class="btn-secondary" id="btnAutoExpose" data-tooltip="One-shot tone normaliser: resets all tone settings, then derives exposure and contrast from the image's luminance statistics.">Auto Expose</button>
         </div>
         <div class="slider-row">
           <label for="sliderExposure" data-tooltip="Linear brightness multiplier applied after tone mapping. 1.0 = unchanged.">Exposure</label>
@@ -411,31 +410,6 @@
             <canvas id="canvasDithered"></canvas>
             <div class="processing-overlay" id="processingOverlay" hidden>Processing…</div>
           </div>
-        </div>
-      </div>
-
-      <div id="debugAutoExpose" class="debug-panel" hidden>
-        <div class="debug-header">Auto Expose</div>
-        <div class="debug-body">
-          <table class="debug-table">
-            <thead><tr><th>Stat</th><th>Value</th></tr></thead>
-            <tbody>
-              <tr><td>Mean L</td><td id="dbgExpMeanL"></td></tr>
-              <tr><td>Std L</td><td id="dbgExpStdL"></td></tr>
-              <tr><td>Shadow L</td><td id="dbgExpShadowL"></td></tr>
-              <tr><td>Highlights</td><td id="dbgExpHighlights"></td></tr>
-            </tbody>
-          </table>
-          <table class="debug-table">
-            <thead><tr><th>Param</th><th>Value</th></tr></thead>
-            <tbody>
-              <tr><td>Exposure</td><td id="dbgExpExposure"></td></tr>
-              <tr id="dbgExpContrastRow"><td>Contrast</td><td id="dbgExpContrast"></td></tr>
-              <tr id="dbgExpStrengthRow"><td>Strength</td><td id="dbgExpStrength"></td></tr>
-              <tr id="dbgExpShadowRow"><td>Shadow boost</td><td id="dbgExpShadowBoost"></td></tr>
-              <tr id="dbgExpHighlightRow"><td>Highlight compress</td><td id="dbgExpHighlightCompress"></td></tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
