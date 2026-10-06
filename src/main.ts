@@ -6,14 +6,12 @@ import { getAllAlgorithms } from './dithering/index'
 import { runPipeline, swapToIdeal } from './processing/pipeline'
 import { applyHighlightLift, HIGHLIGHT_TINT_TOLERANCE } from './processing/tone'
 import { getCropWindow } from './processing/resize'
-import { colorTune, buildTuneReference, imageStats, loss as colorTuneLoss } from './processing/colortune'
-import { hueTune, evaluateHueBands, BAND_NAMES } from './processing/huetune'
+import { buildTuneReference, imageStats, loss as colorTuneLoss } from './processing/colortune'
+import { evaluateHueBands, BAND_NAMES } from './processing/huetune'
 import { indicesFromMeasured, measuredFromIndices } from './dithering/dbs'
 import type { DbsStats } from './dithering/dbs'
 import type { DbsJob } from './dithering/dbs.worker'
 import { autoExpose } from './processing/autoexpose'
-import type { ColorTuneDebug } from './processing/colortune'
-import type { HueTuneDebug } from './processing/huetune'
 import type { AutoExposeDebug } from './processing/autoexpose'
 import type { Palette } from './types'
 import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
@@ -144,36 +142,10 @@ const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
 const checkCDR         = el<HTMLInputElement>('checkCDR')
 const drcModeSelect    = el<HTMLSelectElement>('drcModeSelect')
 const panelDrcMode     = el<HTMLDivElement>('panelDrcMode')
-const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
-const btnColorTune     = el<HTMLButtonElement>('btnColorTune')
-const btnHueTune       = el<HTMLButtonElement>('btnHueTune')
 const btnAutoExpose    = el<HTMLButtonElement>('btnAutoExpose')
 const debugAutoExpose  = el<HTMLDivElement>('debugAutoExpose')
-const debugColorTune   = el<HTMLDivElement>('debugColorTune')
-const debugHueTune     = el<HTMLDivElement>('debugHueTune')
 const debugDbs         = el<HTMLDivElement>('debugDbs')
 const btnRefineDbs     = el<HTMLButtonElement>('btnRefineDbs')
-const dbgSummary       = el<HTMLSpanElement>('dbgSummary')
-const dbgRefC          = el<HTMLTableCellElement>('dbgRefC')
-const dbgInitC         = el<HTMLTableCellElement>('dbgInitC')
-const dbgFinalC        = el<HTMLTableCellElement>('dbgFinalC')
-const dbgInitLoss      = el<HTMLTableCellElement>('dbgInitLoss')
-const dbgFinalLoss     = el<HTMLTableCellElement>('dbgFinalLoss')
-const dbgSatBefore     = el<HTMLTableCellElement>('dbgSatBefore')
-const dbgSatAfter      = el<HTMLTableCellElement>('dbgSatAfter')
-const dbgRefA          = el<HTMLTableCellElement>('dbgRefA')
-const dbgInitA         = el<HTMLTableCellElement>('dbgInitA')
-const dbgFinalA        = el<HTMLTableCellElement>('dbgFinalA')
-const dbgRefBok        = el<HTMLTableCellElement>('dbgRefBok')
-const dbgInitBok       = el<HTMLTableCellElement>('dbgInitBok')
-const dbgFinalBok      = el<HTMLTableCellElement>('dbgFinalBok')
-const dbgRedGainBefore   = el<HTMLTableCellElement>('dbgRedGainBefore')
-const dbgRedGainAfter    = el<HTMLTableCellElement>('dbgRedGainAfter')
-const dbgGreenGainBefore = el<HTMLTableCellElement>('dbgGreenGainBefore')
-const dbgGreenGainAfter  = el<HTMLTableCellElement>('dbgGreenGainAfter')
-const dbgBlueGainBefore  = el<HTMLTableCellElement>('dbgBlueGainBefore')
-const dbgBlueGainAfter   = el<HTMLTableCellElement>('dbgBlueGainAfter')
-const dbgLossHistory   = el<HTMLSpanElement>('dbgLossHistory')
 
 function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T
@@ -476,8 +448,6 @@ function activateImage(id: string) {
   emptyState.hidden = true
   previewPanels.hidden = false
   debugAutoExpose.hidden = true
-  debugColorTune.hidden = true
-  debugHueTune.hidden = true
   debugDbs.hidden = true
 
   updateRefineButton()
@@ -1156,171 +1126,6 @@ checkCDR.addEventListener('change', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
-btnAutoTune.addEventListener('click', async () => {
-  if (!activeId) return
-  const img = images.find(i => i.id === activeId)
-  if (!img) return
-
-  btnAutoTune.disabled = true
-  btnAutoTune.textContent = 'Exposing…'
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-
-  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
-  const srcBitmap = await createImageBitmap(img.original)
-
-  // Step 1: Auto Expose
-  const exposeResult = autoExpose({
-    source: srcBitmap,
-    srcWidth: img.original.width,
-    srcHeight: img.original.height,
-    dstWidth: displayWidth,
-    dstHeight: displayHeight,
-    resizeMode,
-    cropOffsetX: img.cropOffsetX,
-    cropOffsetY: img.cropOffsetY,
-    palette,
-    settings,
-  })
-  settings.exposure          = exposeResult.exposure
-  settings.saturation        = exposeResult.saturation
-  settings.contrast          = exposeResult.contrast
-  settings.strength          = exposeResult.strength
-  settings.shadowBoost       = exposeResult.shadowBoost
-  settings.highlightCompress = exposeResult.highlightCompress
-  settings.midpoint          = exposeResult.midpoint
-  settings.redGain           = exposeResult.redGain
-  settings.greenGain         = exposeResult.greenGain
-  settings.blueGain          = exposeResult.blueGain
-  settings.compressDynamicRange = exposeResult.compressDynamicRange
-
-  // Step 2: Color-tune
-  btnAutoTune.textContent = 'Color-tuning…'
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-
-  const tuneResult = colorTune({
-    source: srcBitmap,
-    srcWidth: img.original.width,
-    srcHeight: img.original.height,
-    dstWidth: displayWidth,
-    dstHeight: displayHeight,
-    resizeMode,
-    cropOffsetX: img.cropOffsetX,
-    cropOffsetY: img.cropOffsetY,
-    palette,
-    settings,
-  })
-  settings.saturation = tuneResult.saturation
-  settings.redGain    = tuneResult.redGain
-  settings.greenGain  = tuneResult.greenGain
-  settings.blueGain   = tuneResult.blueGain
-
-  // Step 3: Hue-tune
-  btnAutoTune.textContent = 'Hue-tuning…'
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-
-  const hueResult = hueTune({
-    source: srcBitmap,
-    srcWidth: img.original.width,
-    srcHeight: img.original.height,
-    dstWidth: displayWidth,
-    dstHeight: displayHeight,
-    resizeMode,
-    cropOffsetX: img.cropOffsetX,
-    cropOffsetY: img.cropOffsetY,
-    palette,
-    settings,
-  })
-  srcBitmap.close()
-
-  settings.hueSatBands = hueResult.hueSatBands
-
-  markCustomPreset()
-  syncSlidersFromSettings()
-  invalidateAll()
-  scheduleProcess()
-  showAutoExposeDebug(exposeResult.debug)
-  showColorTuneDebug(tuneResult.debug)
-  showHueTuneDebug(hueResult.debug)
-
-  btnAutoTune.disabled = false
-  btnAutoTune.textContent = 'Auto-tune'
-})
-
-btnColorTune.addEventListener('click', async () => {
-  if (!activeId) return
-  const img = images.find(i => i.id === activeId)
-  if (!img) return
-
-  btnColorTune.disabled = true
-  btnColorTune.textContent = 'Tuning…'
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-
-  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
-  const srcBitmap = await createImageBitmap(img.original)
-  const result = colorTune({
-    source: srcBitmap,
-    srcWidth: img.original.width,
-    srcHeight: img.original.height,
-    dstWidth: displayWidth,
-    dstHeight: displayHeight,
-    resizeMode,
-    cropOffsetX: img.cropOffsetX,
-    cropOffsetY: img.cropOffsetY,
-    palette,
-    settings,
-  })
-  srcBitmap.close()
-
-  settings.saturation = result.saturation
-  settings.redGain    = result.redGain
-  settings.greenGain  = result.greenGain
-  settings.blueGain   = result.blueGain
-  markCustomPreset()
-  syncSlidersFromSettings()
-  invalidateAll()
-  scheduleProcess()
-  showColorTuneDebug(result.debug)
-
-  btnColorTune.disabled = false
-  btnColorTune.textContent = 'Color-tune'
-})
-
-btnHueTune.addEventListener('click', async () => {
-  if (!activeId) return
-  const img = images.find(i => i.id === activeId)
-  if (!img) return
-
-  btnHueTune.disabled = true
-  btnHueTune.textContent = 'Tuning…'
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-
-  const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
-  const srcBitmap = await createImageBitmap(img.original)
-  const result = hueTune({
-    source: srcBitmap,
-    srcWidth: img.original.width,
-    srcHeight: img.original.height,
-    dstWidth: displayWidth,
-    dstHeight: displayHeight,
-    resizeMode,
-    cropOffsetX: img.cropOffsetX,
-    cropOffsetY: img.cropOffsetY,
-    palette,
-    settings,
-  })
-  srcBitmap.close()
-
-  settings.hueSatBands = result.hueSatBands
-  markCustomPreset()
-  syncSlidersFromSettings()
-  invalidateAll()
-  scheduleProcess()
-  showHueTuneDebug(result.debug)
-
-  btnHueTune.disabled = false
-  btnHueTune.textContent = 'Hue-tune'
-})
-
 btnAutoExpose.addEventListener('click', async () => {
   if (!activeId) return
   const img = images.find(i => i.id === activeId)
@@ -1514,8 +1319,6 @@ function invalidateAll() {
   cancelRefine()
   for (const img of images) { img.dithered = null; img.refined = false }
   debugAutoExpose.hidden = true
-  debugColorTune.hidden = true
-  debugHueTune.hidden = true
   debugDbs.hidden = true
 }
 
@@ -1662,78 +1465,6 @@ function showAutoExposeDebug(d: AutoExposeDebug) {
   ;(document.getElementById('dbgExpHighlightRow') as HTMLElement).hidden = isContrast
 
   debugAutoExpose.hidden = false
-}
-
-function showColorTuneDebug(d: ColorTuneDebug) {
-  const f3 = (n: number) => n.toFixed(3)
-  const f2 = (n: number) => n.toFixed(2)
-
-  const iters = d.iterationsRun
-  const statusLabel = iters === 0
-    ? 'no change (already optimal)'
-    : `${iters} iteration${iters !== 1 ? 's' : ''} · ${d.converged ? 'converged' : 'hit limit'}`
-  dbgSummary.textContent = statusLabel
-
-  dbgRefC.textContent    = f3(d.refStats.meanC)
-  dbgRefA.textContent    = f3(d.refStats.meanA)
-  dbgRefBok.textContent  = f3(d.refStats.meanBv)
-  dbgInitC.textContent   = f3(d.initialStats.meanC)
-  dbgInitA.textContent   = f3(d.initialStats.meanA)
-  dbgInitBok.textContent = f3(d.initialStats.meanBv)
-  dbgFinalC.textContent  = f3(d.finalStats.meanC)
-  dbgFinalA.textContent  = f3(d.finalStats.meanA)
-  dbgFinalBok.textContent = f3(d.finalStats.meanBv)
-  dbgInitLoss.textContent  = f3(d.initialLoss)
-  dbgFinalLoss.textContent = f3(d.finalLoss)
-
-  dbgSatBefore.textContent = f2(d.initialSaturation)
-  dbgSatAfter.textContent  = f2(d.finalSaturation)
-
-  dbgRedGainBefore.textContent   = f2(d.initialRedGain)
-  dbgRedGainAfter.textContent    = f2(d.finalRedGain)
-  dbgGreenGainBefore.textContent = f2(d.initialGreenGain)
-  dbgGreenGainAfter.textContent  = f2(d.finalGreenGain)
-  dbgBlueGainBefore.textContent  = f2(d.initialBlueGain)
-  dbgBlueGainAfter.textContent   = f2(d.finalBlueGain)
-
-  dbgLossHistory.textContent = d.lossHistory.map(f3).join(' → ')
-
-  debugColorTune.hidden = false
-}
-
-function showHueTuneDebug(d: HueTuneDebug) {
-  const f2 = (n: number) => n.toFixed(2)
-  const f3 = (n: number) => n.toFixed(3)
-
-  const iters = d.iterationsRun
-  const statusLabel = iters === 0
-    ? 'no change (already optimal)'
-    : `${iters} iteration${iters !== 1 ? 's' : ''} · ${d.converged ? 'converged' : 'hit limit'}`
-  el<HTMLSpanElement>('dbgHueSummary').textContent = statusLabel
-
-  const bandIds = ['Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta'] as const
-  for (const band of d.bands) {
-    const name = band.name as typeof bandIds[number]
-    if (band.pixelCount < 50) {
-      el<HTMLTableCellElement>(`dbgHueRef${name}`).textContent       = '—'
-      el<HTMLTableCellElement>(`dbgHueInit${name}`).textContent      = '—'
-      el<HTMLTableCellElement>(`dbgHueFinal${name}`).textContent     = '—'
-      el<HTMLTableCellElement>(`dbgHueBandInit${name}`).textContent  = '—'
-      el<HTMLTableCellElement>(`dbgHueBandFinal${name}`).textContent = '—'
-      el<HTMLTableCellElement>(`dbgHueCnt${name}`).textContent       = String(band.pixelCount)
-    } else {
-      el<HTMLTableCellElement>(`dbgHueRef${name}`).textContent       = f3(band.refMeanC)
-      el<HTMLTableCellElement>(`dbgHueInit${name}`).textContent      = f3(band.initialMeanC)
-      el<HTMLTableCellElement>(`dbgHueFinal${name}`).textContent     = f3(band.finalMeanC)
-      el<HTMLTableCellElement>(`dbgHueBandInit${name}`).textContent  = f2(band.initialBandValue)
-      el<HTMLTableCellElement>(`dbgHueBandFinal${name}`).textContent = f2(band.finalBandValue)
-      el<HTMLTableCellElement>(`dbgHueCnt${name}`).textContent       = String(band.pixelCount)
-    }
-  }
-
-  el<HTMLSpanElement>('dbgHueLossHistory').textContent = d.lossHistory.map(f3).join(' → ')
-
-  debugHueTune.hidden = false
 }
 
 // ── Palette badge ─────────────────────────────────────────────────────────

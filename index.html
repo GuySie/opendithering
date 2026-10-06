@@ -100,12 +100,7 @@
         <h2>4. Tone</h2>
 
         <div class="autotune-row">
-          <button class="btn-secondary" id="btnAutoTune" data-tooltip="Run Auto Expose → Color-tune → Hue-tune in sequence for a fully automatic tone result.">Auto-tune</button>
-        </div>
-        <div class="autotune-row">
           <button class="btn-secondary" id="btnAutoExpose" data-tooltip="One-shot tone normaliser: resets all tone settings, then derives exposure and contrast from the image's luminance statistics.">Auto Expose</button>
-          <button class="btn-secondary" id="btnColorTune" data-tooltip="Iteratively adjusts RGB channel gains to match the dithered output's overall chroma to the source.">Color-tune</button>
-          <button class="btn-secondary" id="btnHueTune" data-tooltip="Iteratively adjusts per-hue saturation bands so each color range's chroma matches the source.">Hue-tune</button>
         </div>
         <div class="slider-row">
           <label for="sliderExposure" data-tooltip="Linear brightness multiplier applied after tone mapping. 1.0 = unchanged.">Exposure</label>
@@ -441,55 +436,6 @@
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div id="debugColorTune" class="debug-panel" hidden>
-        <div class="debug-header">Color-tune — <span id="dbgSummary"></span></div>
-        <div class="debug-body">
-          <table class="debug-table">
-            <thead><tr><th></th><th>Target</th><th>Before</th><th>After</th></tr></thead>
-            <tbody>
-              <tr><td>Mean C</td><td id="dbgRefC"></td><td id="dbgInitC"></td><td id="dbgFinalC"></td></tr>
-              <tr><td>Mean a</td><td id="dbgRefA"></td><td id="dbgInitA"></td><td id="dbgFinalA"></td></tr>
-              <tr><td>Mean b</td><td id="dbgRefBok"></td><td id="dbgInitBok"></td><td id="dbgFinalBok"></td></tr>
-              <tr><td>Loss</td><td class="debug-muted">—</td><td id="dbgInitLoss"></td><td id="dbgFinalLoss"></td></tr>
-            </tbody>
-          </table>
-          <table class="debug-table">
-            <thead><tr><th></th><th>Before</th><th>After</th></tr></thead>
-            <tbody>
-              <tr><td>Saturation</td><td id="dbgSatBefore"></td><td id="dbgSatAfter"></td></tr>
-              <tr><td>Red gain</td><td id="dbgRedGainBefore"></td><td id="dbgRedGainAfter"></td></tr>
-              <tr><td>Green gain</td><td id="dbgGreenGainBefore"></td><td id="dbgGreenGainAfter"></td></tr>
-              <tr><td>Blue gain</td><td id="dbgBlueGainBefore"></td><td id="dbgBlueGainAfter"></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="debug-loss-row">Loss history: <span id="dbgLossHistory"></span></div>
-      </div>
-
-      <div id="debugHueTune" class="debug-panel" hidden>
-        <div class="debug-header">Hue-tune — <span id="dbgHueSummary"></span></div>
-        <div class="debug-body">
-          <table class="debug-table">
-            <thead><tr><th></th><th>Target C</th><th>C before</th><th>C after</th><th>× before</th><th>× after</th><th>Pixels</th></tr></thead>
-            <tbody>
-              <tr><td><span style="color:#e74c3c">●</span> Red</td>
-                <td id="dbgHueRefRed"></td><td id="dbgHueInitRed"></td><td id="dbgHueFinalRed"></td><td id="dbgHueBandInitRed"></td><td id="dbgHueBandFinalRed"></td><td id="dbgHueCntRed"></td></tr>
-              <tr><td><span style="color:#f0c040">●</span> Yellow</td>
-                <td id="dbgHueRefYellow"></td><td id="dbgHueInitYellow"></td><td id="dbgHueFinalYellow"></td><td id="dbgHueBandInitYellow"></td><td id="dbgHueBandFinalYellow"></td><td id="dbgHueCntYellow"></td></tr>
-              <tr><td><span style="color:#2ecc71">●</span> Green</td>
-                <td id="dbgHueRefGreen"></td><td id="dbgHueInitGreen"></td><td id="dbgHueFinalGreen"></td><td id="dbgHueBandInitGreen"></td><td id="dbgHueBandFinalGreen"></td><td id="dbgHueCntGreen"></td></tr>
-              <tr><td><span style="color:#1abc9c">●</span> Cyan</td>
-                <td id="dbgHueRefCyan"></td><td id="dbgHueInitCyan"></td><td id="dbgHueFinalCyan"></td><td id="dbgHueBandInitCyan"></td><td id="dbgHueBandFinalCyan"></td><td id="dbgHueCntCyan"></td></tr>
-              <tr><td><span style="color:#3498db">●</span> Blue</td>
-                <td id="dbgHueRefBlue"></td><td id="dbgHueInitBlue"></td><td id="dbgHueFinalBlue"></td><td id="dbgHueBandInitBlue"></td><td id="dbgHueBandFinalBlue"></td><td id="dbgHueCntBlue"></td></tr>
-              <tr><td><span style="color:#9b59b6">●</span> Magenta</td>
-                <td id="dbgHueRefMagenta"></td><td id="dbgHueInitMagenta"></td><td id="dbgHueFinalMagenta"></td><td id="dbgHueBandInitMagenta"></td><td id="dbgHueBandFinalMagenta"></td><td id="dbgHueCntMagenta"></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="debug-loss-row">Loss history: <span id="dbgHueLossHistory"></span></div>
       </div>
 
       <div id="debugDbs" class="debug-panel" hidden>

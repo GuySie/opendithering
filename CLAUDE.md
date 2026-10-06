@@ -100,8 +100,8 @@ src/
 │   ├── pipeline.ts            # runPipeline() — orchestrates all steps, returns {measured, ideal, target}
 │   ├── gamut.ts               # buildGamut() / applyGamutMapping() — convex hull of the measured palette in linear RGB; maps out-of-gamut colours onto it (closest colour in YyCxCz, or towards grey)
 │   ├── autoexpose.ts          # autoExpose() — one-shot histogram-based tone normalisation; derives exposure and contrast/s-curve params from OKLab luminance statistics of the DRC-adjusted source
-│   ├── colortune.ts           # colorTune() — convergence-checked optimizer for RGB channel gains; chroma-only loss (|ΔmeanC| + |ΔmeanA| + |ΔmeanBv|)
-│   └── huetune.ts             # hueTune() — convergence-checked optimizer for per-hue saturation bands (Red/Yellow/Green/Cyan/Blue/Magenta)
+│   ├── colortune.ts           # colorTune() (not in UI) — optimizer for RGB channel gains; also the shared tuner/DBS-debug reference (buildTuneReference, imageStats, loss)
+│   └── huetune.ts             # hueTune() (not in UI) — optimizer for per-hue saturation bands; evaluateHueBands() used by the DBS debug panel
 ├── ble/
 │   ├── opendisplay.ts         # OpenDisplay BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
 │   └── gicisky.ts             # Gicisky BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
@@ -182,7 +182,7 @@ The `ideal` values are the nominal RGB codes the firmware expects (e.g. pure `[2
 
 ### Auto Expose
 
-Implemented in `src/processing/autoexpose.ts`. `autoExpose()` is a **one-shot** (non-iterative) tone normaliser. It resets all tone, saturation, and gain parameters to neutral, then derives exposure and contrast/s-curve settings from OKLab luminance statistics of the DRC-adjusted source image. Intended as a starting point before optionally running Color-tune or Auto-tune.
+Implemented in `src/processing/autoexpose.ts`. `autoExpose()` is a **one-shot** (non-iterative) tone normaliser. It resets all tone, saturation, and gain parameters to neutral, then derives exposure and contrast/s-curve settings from OKLab luminance statistics of the DRC-adjusted source image. Intended as a starting point for manual tone adjustment.
 
 **Algorithm:**
 1. Resize the source and apply DRC so luminance stats match the pipeline's fixed tone range.
@@ -192,7 +192,7 @@ Implemented in `src/processing/autoexpose.ts`. `autoExpose()` is a **one-shot** 
 
 **Return value:** `AutoExposeResult` — `{ exposure, saturation, contrast, strength, shadowBoost, highlightCompress, midpoint, redGain, greenGain, blueGain, compressDynamicRange, debug: AutoExposeDebug }`. All gain and saturation fields are reset to 1.0; `compressDynamicRange` is always `true`. The debug struct carries `{ meanL, stddevL, shadowMeanL, highlightFraction }`. The debug panel (`#debugAutoExpose`) renders this after each Auto Expose or Auto-tune run.
 
-### Color-tune
+### Color-tune (no longer in the UI)
 
 Implemented in `src/processing/colortune.ts`. `colorTune()` iteratively adjusts **RGB channel gains** to match the dithered output's chroma to the source image, measured by `|ΔmeanC| + |ΔmeanA| + |ΔmeanBv|` in OKLab. Tone parameters (exposure, contrast, s-curve) are not touched — use Auto Expose for those.
 
@@ -204,7 +204,7 @@ Implemented in `src/processing/colortune.ts`. `colorTune()` iteratively adjusts 
 
 **Return value:** `ColorTuneResult` — `{ saturation, redGain, greenGain, blueGain, debug: ColorTuneDebug }`. `saturation` is always returned unchanged (not optimised). The debug struct carries `iterationsRun`, `converged`, `refStats`/`initialStats`/`finalStats` (each with meanC/meanA/meanBv), `initialLoss`, `finalLoss`, `lossHistory`, and before/after values for the three gain parameters. The debug panel (`#debugColorTune`) renders this after each run.
 
-### Hue-tune
+### Hue-tune (no longer in the UI)
 
 Implemented in `src/processing/huetune.ts`. `hueTune()` iteratively adjusts the six **per-hue saturation band multipliers** (`hueSatBands`: Red/Yellow/Green/Cyan/Blue/Magenta) so that the mean OKLab chroma of each hue segment in the dithered output matches the source. Loss is the sum of `|refMeanC − dithMeanC|` across all active hue bands (bands with fewer than `minPixels` pixels are skipped).
 
@@ -228,7 +228,7 @@ Direct Binary Search (Analoui & Allebach 1992; colour version per Agar & Allebac
 - **Viewing distance / Panel PPI** sliders live in module state in `main.ts` (`dbsViewingDistanceCm`, `dbsPpi`), not in `ProcessingSettings`, because they describe the panel, not the look — presets must not reset them. Panel PPI is set automatically (`applyPresetPpi`) on startup and on device-preset change when the preset has `diagonalInches` (√(w²+h²)/diagonal, square pixels assumed); Custom or unknown-size presets keep the current value. Double-clicking the PPI slider restores the preset's value.
 - **Highlight lift** (`dbsHighlightLift` in `main.ts`, 0–1, default 0; `applyHighlightLift()` in `src/processing/tone.ts`): applied to a *copy* of `img.target` just before Refine, so error diffusion and the preview are unaffected. Why: near-whites usually land below the panel's white after DRC + tone mapping. DBS mixes in linear light (as the eye does) and reproduces that faithfully with ~⅓ dark dots, so light areas look dim and speckled; error diffusion in OKLab *overshoots* towards white because a few dark dots among white look brighter than their OKLab average suggests (synthetic pale sky at 282 PPI: target L 0.614, DBS 0.615, Floyd-Steinberg 0.636, panel white 0.677). The lift blends colours towards the panel's measured white in OKLab, weighted by a smoothstep from `HIGHLIGHT_KNEE` (65%) to 100% of the panel's black→white L range, times a chroma gate that fades the effect out between 60% and 100% of the **Lift tint tolerance** (`dbsLiftTolerance`, OKLab chroma, slider 0–0.08, default `HIGHLIGHT_TINT_TOLERANCE` = 0.025) so light colours with a real tint keep their colour. The default was chosen on an illustration where white is 0.000, a pale blue 0.032 and skin 0.040: the original fixed gate (0.03–0.08) partly lifted the skin and turned DBS's warm skin (chroma 0.035, hue 76°) as sallow as Floyd-Steinberg's (0.020, 93°); at 0.025 skin and blue are untouched while the background still reaches 96% pure white. Faint off-whites (the mountain sky, ~0.011) are still fully lifted. Lift 0.5 ≈ Floyd-Steinberg's sky brightness; 1.0 → L 0.655, 87% pure white. (A tone-dependent luminance weight inside DBS was tried first and did nothing: there was no lightness-vs-colour conflict, DBS already matched the target.) Benchmark: `--highlight-lift <0–1>`, `--lift-tolerance <chroma>`.
 - **Halos and gamut mapping:** out-of-gamut targets make DBS trade error across edges (halos). Enabling **Map colours into panel gamut** (Experimental section) removes the cause — see "Gamut mapping" above.
-- **Interaction with Auto-tune:** the tuners never run DBS (30+ runs per Auto-tune would take minutes); they tune against error diffusion, then you Refine. Risk: tuners partly compensate for error diffusion's chroma loss, and DBS reproduces the boosted target more faithfully → possible overshoot. The `#debugDbs` panel shows the tuners' own metrics (Color-tune loss, Hue-tune loss, per-band mean chroma) for the error-diffusion result vs the DBS result, against the same DRC-only reference (`buildTuneReference` in `colortune.ts`, shared with both tuners).
+- **Interaction with the tuners** (historical — Auto-tune/Color-tune/Hue-tune are no longer in the UI; the DBS debug panel still reports their metrics): the tuners never run DBS (30+ runs per Auto-tune would take minutes); they tune against error diffusion, then you Refine. Risk: tuners partly compensate for error diffusion's chroma loss, and DBS reproduces the boosted target more faithfully → possible overshoot. The `#debugDbs` panel shows the tuners' own metrics (Color-tune loss, Hue-tune loss, per-band mean chroma) for the error-diffusion result vs the DBS result, against the same DRC-only reference (`buildTuneReference` in `colortune.ts`, shared with both tuners).
 
 ### Benchmark
 
@@ -236,15 +236,11 @@ Direct Binary Search (Analoui & Allebach 1992; colour version per Agar & Allebac
 
 Caveat: DBS minimises an eye-filtered error too, so S-CIELAB is structurally inclined to favour it (the two eye models differ, which reduces but doesn't remove the bias). The physical panel is the final judge.
 
-### Auto-tune
+### Color-tune, Hue-tune and Auto-tune (UI removed)
 
-The **Auto-tune** button (`btnAutoTune`) chains all three optimisers in sequence on the same image and settings:
+The **Auto-tune**, **Color-tune** and **Hue-tune** buttons (and their `#debugColorTune` / `#debugHueTune` panels) were removed from the UI. They measured the *error-diffusion* output against the source and adjusted gains and hue bands to compensate for error diffusion's chroma losses; under DBS refine, which reproduces its target faithfully, that compensation over-saturates (see "Pre-DBS" and "Interaction with the tuners" under Colour DBS refine). Auto-tune chained Auto Expose → Color-tune → Hue-tune.
 
-1. **Auto Expose** — resets tone/gain/saturation to neutral and derives exposure + contrast/s-curve from luminance statistics
-2. **Color-tune** — adjusts RGB channel gains to match dithered chroma to the source
-3. **Hue-tune** — independently adjusts per-hue saturation bands to match per-segment chroma
-
-Each step feeds its output settings into the next. After all three complete, all three debug panels (`#debugAutoExpose`, `#debugColorTune`, `#debugHueTune`) are rendered and `syncSlidersFromSettings()` is called to reflect the final values in the UI.
+`colortune.ts` and `huetune.ts` stay: `colorTune()` / `hueTune()` are no longer called from the UI, but their helpers are used elsewhere — `buildTuneReference()` / `applyTuneReferenceMapping()`, `imageStats()` and `loss()` by the DBS debug panel and the benchmark's source reference, `evaluateHueBands()` / `BAND_NAMES` by the DBS debug panel. **Auto Expose** remains as a button.
 
 ### OpenDisplay BLE upload
 
