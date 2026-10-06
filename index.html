@@ -336,7 +336,7 @@
             <option value="nearest">Closest colour (keeps saturation)</option>
             <option value="grey">Towards grey (lightness ↔ saturation)</option>
           </select>
-          <div class="slider-row" id="rowGamutBalance">
+          <div class="slider-row" id="rowGamutBalance" hidden>
             <label for="sliderGamutBalance" data-tooltip="How to compromise on colours the panel can't show. 0 = keep lightness and reduce saturation; 1 = keep more saturation by moving towards the panel's mid lightness.">Lightness ↔ saturation</label>
             <input type="range" id="sliderGamutBalance" min="0" max="100" value="50" />
             <span class="slider-val" id="valGamutBalance">0.50</span>
