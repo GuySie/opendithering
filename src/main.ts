@@ -143,6 +143,7 @@ const checkCDR         = el<HTMLInputElement>('checkCDR')
 const drcModeSelect    = el<HTMLSelectElement>('drcModeSelect')
 const panelDrcMode     = el<HTMLDivElement>('panelDrcMode')
 const btnAutoExpose    = el<HTMLButtonElement>('btnAutoExpose')
+const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
 const debugAutoExpose  = el<HTMLDivElement>('debugAutoExpose')
 const debugDbs         = el<HTMLDivElement>('debugDbs')
 const btnRefineDbs     = el<HTMLButtonElement>('btnRefineDbs')
@@ -1325,6 +1326,7 @@ function invalidateAll() {
 // ── DBS refine ────────────────────────────────────────────────────────────
 
 function cancelRefine() {
+  settleRefine?.('cancelled'); settleRefine = null
   if (!dbsWorker) return
   dbsWorker.terminate() // the search is synchronous inside the worker, so terminate is the only cancel
   dbsWorker = null
@@ -1340,8 +1342,18 @@ function updateRefineButton() {
 
 btnRefineDbs.addEventListener('click', () => {
   if (dbsWorker) { cancelRefine(); return }
+  void startRefine(dbsMaxPasses)
+})
+
+type RefineOutcome = 'done' | 'cancelled' | 'failed' | 'unavailable'
+let settleRefine: ((outcome: RefineOutcome) => void) | null = null
+
+/** Run DBS refine on the active image. Resolves when it finishes, is cancelled, or fails. */
+function startRefine(maxPasses: number): Promise<RefineOutcome> {
   const img = images.find(i => i.id === activeId)
-  if (!img?.dithered || !img.target) return
+  if (dbsWorker || !img?.dithered || !img.target) return Promise.resolve('unavailable')
+  const outcome = new Promise<RefineOutcome>(resolve => { settleRefine = resolve })
+  const settle = (o: RefineOutcome) => { settleRefine?.(o); settleRefine = null }
 
   const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
   const before = img.dithered
@@ -1350,7 +1362,6 @@ btnRefineDbs.addEventListener('click', () => {
   const dbsTarget = new ImageData(new Uint8ClampedArray(target.data), target.width, target.height)
   applyHighlightLift(dbsTarget.data, palette, dbsHighlightLift, dbsLiftTolerance)
   const initIdx = indicesFromMeasured(before, palette)
-  const maxPasses = dbsMaxPasses // captured so the progress label matches this run even if the slider moves
 
   const worker = new Worker(new URL('./dithering/dbs.worker.ts', import.meta.url), { type: 'module' })
   dbsWorker = worker
@@ -1377,9 +1388,11 @@ btnRefineDbs.addEventListener('click', () => {
     }
     updateExportButtons()
     updateRefineButton()
+    settle('done')
   }
   worker.onerror = (e: ErrorEvent) => {
     console.error('DBS refine failed', e.message)
+    settle('failed')
     cancelRefine()
     btnRefineDbs.textContent = '✗ Refine failed'
     setTimeout(updateRefineButton, 2500)
@@ -1392,6 +1405,23 @@ btnRefineDbs.addEventListener('click', () => {
     params: { viewingDistanceCm: dbsViewingDistanceCm, ppi: dbsPpi, maxPasses },
   }
   worker.postMessage(job, [initIdx.buffer])
+  return outcome
+}
+
+// Auto Tune: apply the Pre-DBS preset, re-dither, then run a fixed-length DBS refine.
+const AUTO_TUNE_PASSES = 10
+btnAutoTune.addEventListener('click', async () => {
+  if (!images.some(i => i.id === activeId)) return
+  btnAutoTune.disabled = true
+  btnAutoTune.textContent = 'Applying Pre-DBS…'
+  setPreset('predbs')
+  // Process now rather than after the debounce, so the refine starts from the Pre-DBS result
+  if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null }
+  await processActive()
+  btnAutoTune.textContent = 'Refining…'
+  await startRefine(AUTO_TUNE_PASSES) // progress and cancel live on the Refine button; any settings change cancels it
+  btnAutoTune.disabled = false
+  btnAutoTune.textContent = 'Auto Tune'
 })
 
 /**

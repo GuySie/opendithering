@@ -236,9 +236,13 @@ Direct Binary Search (Analoui & Allebach 1992; colour version per Agar & Allebac
 
 Caveat: DBS minimises an eye-filtered error too, so S-CIELAB is structurally inclined to favour it (the two eye models differ, which reduces but doesn't remove the bias). The physical panel is the final judge.
 
+### Auto Tune
+
+The **Auto Tune** button (`btnAutoTune`, Tone section) applies the **Pre-DBS** preset, re-dithers immediately (clears the debounce timer and awaits `processActive()` so the refine starts from the Pre-DBS result), then runs DBS refine with a fixed `AUTO_TUNE_PASSES` = 10, independent of the Passes slider; viewing distance, PPI and highlight lift come from the DBS settings. Refine is started through `startRefine(maxPasses)`, shared with the Refine (DBS) button, which returns a promise settling as `'done' | 'cancelled' | 'failed' | 'unavailable'` (cancellation via `cancelRefine()` settles it too), so Auto Tune restores its button whatever happens. Progress and cancel stay on the Refine (DBS) button; any settings change cancels the refine as usual. Not to be confused with the old Auto-tune below.
+
 ### Color-tune, Hue-tune and Auto-tune (UI removed)
 
-The **Auto-tune**, **Color-tune** and **Hue-tune** buttons (and their `#debugColorTune` / `#debugHueTune` panels) were removed from the UI. They measured the *error-diffusion* output against the source and adjusted gains and hue bands to compensate for error diffusion's chroma losses; under DBS refine, which reproduces its target faithfully, that compensation over-saturates (see "Pre-DBS" and "Interaction with the tuners" under Colour DBS refine). Auto-tune chained Auto Expose → Color-tune → Hue-tune.
+The **Auto-tune**, **Color-tune** and **Hue-tune** buttons (and their `#debugColorTune` / `#debugHueTune` panels) were removed from the UI. They measured the *error-diffusion* output against the source and adjusted gains and hue bands to compensate for error diffusion's chroma losses; under DBS refine, which reproduces its target faithfully, that compensation over-saturates (see "Pre-DBS" and "Interaction with the tuners" under Colour DBS refine). The old Auto-tune chained Auto Expose → Color-tune → Hue-tune; the current **Auto Tune** button (above) is a different feature.
 
 `colortune.ts` and `huetune.ts` stay: `colorTune()` / `hueTune()` are no longer called from the UI, but their helpers are used elsewhere — `buildTuneReference()` / `applyTuneReferenceMapping()`, `imageStats()` and `loss()` by the DBS debug panel and the benchmark's source reference, `evaluateHueBands()` / `BAND_NAMES` by the DBS debug panel. **Auto Expose** remains as a button.
 
