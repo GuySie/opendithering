@@ -95,6 +95,7 @@ const viewportDith     = el<HTMLDivElement>('viewportDith')
 const emptyState       = el<HTMLDivElement>('emptyState')
 const previewPanels    = el<HTMLDivElement>('previewPanels')
 const procOverlay      = el<HTMLDivElement>('processingOverlay')
+const refineOverlay    = el<HTMLDivElement>('refineOverlay')
 const paletteBadge         = el<HTMLSpanElement>('paletteBadge')
 const ditheredPanelLabel   = el<HTMLSpanElement>('ditheredPanelLabel')
 const previewToggleBtns    = Array.from(document.querySelectorAll<HTMLButtonElement>('.preview-toggle-btn'))
@@ -444,6 +445,7 @@ function activateImage(id: string) {
 
   emptyState.hidden = true
   previewPanels.hidden = false
+  updateRefineOverlay()
   debugDbs.hidden = true
 
   updateRefineButton()
@@ -1274,6 +1276,7 @@ function invalidateAll() {
 
 function cancelRefine() {
   settleRefine?.('cancelled'); settleRefine = null
+  refineProgress = null; updateRefineOverlay()
   if (!dbsWorker) return
   dbsWorker.terminate() // the search is synchronous inside the worker, so terminate is the only cancel
   dbsWorker = null
@@ -1294,13 +1297,28 @@ btnRefineDbs.addEventListener('click', () => {
 
 type RefineOutcome = 'done' | 'cancelled' | 'failed' | 'unavailable'
 let settleRefine: ((outcome: RefineOutcome) => void) | null = null
+// Progress of the running refine, for the overlay on the dithered preview
+let refineProgress: { imageId: string; pass: number; maxPasses: number } | null = null
+
+/** Show the refine overlay only while the image on screen is the one being refined. */
+function updateRefineOverlay() {
+  const p = refineProgress
+  refineOverlay.hidden = !p || p.imageId !== activeId
+  if (!p) return
+  el<HTMLDivElement>('refineOverlayText').textContent = p.pass === 0
+    ? 'Refining with DBS…'
+    : `Refining with DBS… pass ${p.pass}/${p.maxPasses}`
+  el<HTMLDivElement>('refineProgressFill').style.width = `${(100 * p.pass) / p.maxPasses}%`
+}
 
 /** Run DBS refine on the active image. Resolves when it finishes, is cancelled, or fails. */
 function startRefine(maxPasses: number): Promise<RefineOutcome> {
   const img = images.find(i => i.id === activeId)
   if (dbsWorker || !img?.dithered || !img.target) return Promise.resolve('unavailable')
   const outcome = new Promise<RefineOutcome>(resolve => { settleRefine = resolve })
-  const settle = (o: RefineOutcome) => { settleRefine?.(o); settleRefine = null }
+  const settle = (o: RefineOutcome) => { settleRefine?.(o); settleRefine = null; refineProgress = null; updateRefineOverlay() }
+  refineProgress = { imageId: img.id, pass: 0, maxPasses }
+  updateRefineOverlay()
 
   const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
   const before = img.dithered
@@ -1319,6 +1337,7 @@ function startRefine(maxPasses: number): Promise<RefineOutcome> {
     const msg = e.data
     if (msg.type === 'pass') {
       btnRefineDbs.textContent = `Refining… pass ${msg.pass}/${maxPasses} (cancel)`
+      if (refineProgress) { refineProgress.pass = msg.pass; updateRefineOverlay() }
       return
     }
     worker.terminate()
