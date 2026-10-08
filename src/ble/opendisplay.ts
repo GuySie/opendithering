@@ -34,9 +34,14 @@ const ZLIB_WINDOW_BITS = 9
 // Timeouts. Data ACKs, the END ACK and the refresh can each block on a slow
 // SPI write or panel refresh (up to ~60 s on Spectra/ACeP); py-opendisplay
 // allows 90 s for all three.
-// The device can be slow right after connecting (seen: 5+ s for the version
-// reply on a 23 s GATT connect); a late reply is skipped by later reads anyway.
-const TIMEOUT_FIRMWARE_VERSION = 10_000
+// Replies to the connect-time commands. Firmware that idles between commands
+// (older builds and low-power configs, e.g. nRF with a long sleep_timeout)
+// only looks at a new command after its idle wait: ~10 s per reply has been
+// seen. A reply that still comes late is skipped by later reads.
+const TIMEOUT_CONNECT_REPLY = 30_000
+// Below this, the device evidently answers promptly, so an optional extra
+// round trip (the firmware version, just for the fast-upload hint) is cheap.
+const PROMPT_REPLY_MS = 2_000
 const TIMEOUT_START = 15_000
 const TIMEOUT_DATA_ACK = 90_000
 const TIMEOUT_END_ACK = 90_000
@@ -255,9 +260,17 @@ export async function connectDevice(masterKey: Uint8Array | null): Promise<OdCon
   await characteristic.startNotifications()
   const link = new OdLink(characteristic)
   const t1 = performance.now()
+  const result = await identifyDevice(link, masterKey)
+  console.info(`OpenDisplay: connect took ${Math.round(performance.now() - t0)} ms (GATT ${Math.round(t1 - t0)} ms, ${result.timing})`)
+  return result
+}
 
-  const firmware = await readFirmwareVersion(link)
-  const t2 = performance.now()
+/**
+ * Authenticate (if a key is given) and read what the device supports, on an
+ * already connected link.
+ */
+export async function identifyDevice(link: OdLink, masterKey: Uint8Array | null): Promise<OdConnection & { timing: string }> {
+  const t1 = performance.now()
   let authError: unknown = null
   if (masterKey) {
     try {
@@ -266,13 +279,22 @@ export async function connectDevice(masterKey: Uint8Array | null): Promise<OdCon
       authError = err
     }
   }
-  const t3 = performance.now()
+  const t2 = performance.now()
   const display = await readDisplayConfig(link)
+  const t3 = performance.now()
+
+  // Every command costs a full idle wait on firmware that sleeps between
+  // commands, so read the firmware version only when it decides something:
+  // whether an encrypted link may use PIPE_WRITE, or (only if the device
+  // answers promptly) the fast-upload hint for configs without the pipe bit.
+  const pipeBit = display !== null && (display.transmissionModes & TM_PIPE_WRITE) !== 0
+  const needVersion = display !== null && (pipeBit ? link.session !== null : t3 - t2 < PROMPT_REPLY_MS)
+  const firmware = needVersion ? await readFirmwareVersion(link) : null
   const t4 = performance.now()
+
   const ms = (a: number, b: number) => `${Math.round(b - a)} ms`
-  console.info(`OpenDisplay: connect took ${ms(t0, t4)} (GATT ${ms(t0, t1)}, firmware version ${ms(t1, t2)}, ` +
-    `auth ${ms(t2, t3)}, config ${ms(t3, t4)})`)
-  return { link, info: { firmware, display }, authError }
+  const timing = `auth ${masterKey ? ms(t1, t2) : 'none'}, config ${ms(t2, t3)}, firmware version ${needVersion ? ms(t3, t4) : 'skipped'}`
+  return { link, info: { firmware, display }, authError, timing }
 }
 
 export async function readFirmwareVersion(link: OdLink): Promise<OdFirmwareVersion | null> {
@@ -280,7 +302,7 @@ export async function readFirmwareVersion(link: OdLink): Promise<OdFirmwareVersi
     link.drain()
     await link.writeRaw(new Uint8Array([CMD_FIRMWARE_VERSION >> 8, CMD_FIRMWARE_VERSION & 0xFF]))
     // [echo:2][major][minor][shaLen][sha...][patch] — patch was added after 2.25.0
-    const f = await link.readFor([CMD_FIRMWARE_VERSION & 0xFF], TIMEOUT_FIRMWARE_VERSION, true)
+    const f = await link.readFor([CMD_FIRMWARE_VERSION & 0xFF], TIMEOUT_CONNECT_REPLY, true)
     if (isAck(f, CMD_FIRMWARE_VERSION) && f.length >= 5) {
       const patchAt = 5 + f[4]
       return { major: f[2], minor: f[3], patch: f.length > patchAt ? f[patchAt] : 0 }
@@ -300,7 +322,7 @@ export async function readDisplayConfig(link: OdLink): Promise<OdDisplayConfig |
     let total = -1
     let data = new Uint8Array(0)
     while (total < 0 || data.length < total) {
-      const f = await link.readFor([CMD_CONFIG_READ & 0xFF], total < 0 ? 10_000 : 2_000)
+      const f = await link.readFor([CMD_CONFIG_READ & 0xFF], total < 0 ? TIMEOUT_CONNECT_REPLY : 2_000)
       if (isNack(f, CMD_CONFIG_READ)) return null  // device has no stored config
       if (!isAck(f, CMD_CONFIG_READ)) throw new Error(`unexpected config frame ${hex(f)}`)
       const body = f.subarray(total < 0 ? 6 : 4)
