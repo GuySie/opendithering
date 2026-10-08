@@ -14,108 +14,76 @@ export function isSupported(paletteGroupId: string): boolean {
 
 // Encode ideal ImageData pixels into OpenDisplay wire format.
 // Pixels must already be quantized to the ideal palette (exact RGB matches).
+// Every row starts on a byte boundary (the firmware and py-opendisplay both
+// row-pad), so panels whose width isn't a multiple of the packing factor
+// (e.g. the 122-px EP213) don't get their rows shifted.
 export function encodeImage(
   pixels: Uint8ClampedArray,
   width: number,
   height: number,
   paletteGroupId: string
 ): Uint8Array {
-  const total = width * height
-  const out: number[] = []
-
   if (paletteGroupId === 'spectra6') {
-    // Scheme 4: 4 bits/pixel, 2 pixels per byte (high nibble = left pixel)
+    // Scheme 4: 4 bits/pixel, high nibble = left pixel
     // Color codes: black=0, white=1, yellow=2, red=3, blue=5, green=6
-    let cur = 0
-    let hi = true
-    for (let i = 0; i < total; i++) {
-      const p = i * 4
-      const code = spectra6Code(pixels[p], pixels[p + 1], pixels[p + 2])
-      if (hi) {
-        cur = code << 4
-      } else {
-        out.push(cur | code)
-        cur = 0
-      }
-      hi = !hi
-    }
-    if (!hi) out.push(cur)
+    return packRows(pixels, width, height, 4, spectra6Code)
 
   } else if (paletteGroupId === 'bw') {
-    // Scheme 0: 1 bit/pixel, 8 pixels per byte, MSB = leftmost, white=1 black=0
-    let cur = 0
-    let bit = 7
-    for (let i = 0; i < total; i++) {
-      const p = i * 4
-      if ((pixels[p] + pixels[p + 1] + pixels[p + 2]) > 382) cur |= (1 << bit)
-      if (--bit < 0) { out.push(cur); cur = 0; bit = 7 }
-    }
-    if (bit !== 7) out.push(cur)
+    // Scheme 0: 1 bit/pixel, MSB = leftmost, white=1 black=0
+    return packRows(pixels, width, height, 1, (r, g, b) => (r + g + b) > 382 ? 1 : 0)
 
   } else if (paletteGroupId === 'bwr') {
     // Scheme 1: 2 bitplanes, plane1 then plane2
     // Plane1 bit=1 for white or red; plane2 bit=1 for red only
-    const plane1: number[] = []
-    const plane2: number[] = []
-    let b1 = 0, b2 = 0, bit = 7
-    for (let i = 0; i < total; i++) {
-      const p = i * 4
-      const r = pixels[p], g = pixels[p + 1], b = pixels[p + 2]
-      const isRed = r > 200 && g < 50 && b < 50
-      const isWhite = r > 200 && g > 200 && b > 200
-      if (isWhite || isRed) b1 |= (1 << bit)
-      if (isRed) b2 |= (1 << bit)
-      if (--bit < 0) { plane1.push(b1); plane2.push(b2); b1 = 0; b2 = 0; bit = 7 }
-    }
-    if (bit !== 7) { plane1.push(b1); plane2.push(b2) }
-    out.push(...plane1, ...plane2)
+    const isRed = (r: number, g: number, b: number) => r > 200 && g < 50 && b < 50
+    const isWhite = (r: number, g: number, b: number) => r > 200 && g > 200 && b > 200
+    const plane1 = packRows(pixels, width, height, 1, (r, g, b) => isWhite(r, g, b) || isRed(r, g, b) ? 1 : 0)
+    const plane2 = packRows(pixels, width, height, 1, (r, g, b) => isRed(r, g, b) ? 1 : 0)
+    const out = new Uint8Array(plane1.length + plane2.length)
+    out.set(plane1, 0)
+    out.set(plane2, plane1.length)
+    return out
 
   } else if (paletteGroupId === 'bwry') {
-    // Scheme 3: 2 bits/pixel, 4 pixels per byte, MSB first
+    // Scheme 3: 2 bits/pixel, MSB first
     // black=0, white=1, yellow=2, red=3
-    let cur = 0, pos = 0
-    for (let i = 0; i < total; i++) {
-      const p = i * 4
-      const code = bwryCode(pixels[p], pixels[p + 1], pixels[p + 2])
-      cur |= (code << (6 - pos * 2))
-      if (++pos >= 4) { out.push(cur); cur = 0; pos = 0 }
-    }
-    if (pos > 0) out.push(cur)
+    return packRows(pixels, width, height, 2, bwryCode)
 
   } else if (paletteGroupId === 'grayscale4') {
-    // Scheme 5: 2 bits/pixel, 4 pixels per byte, MSB first
+    // Scheme 5: 2 bits/pixel, MSB first
     // gray levels: 0→0, ~85→1, ~170→2, 255→3
-    let cur = 0, pos = 0
-    for (let i = 0; i < total; i++) {
-      const p = i * 4
-      const gray = (pixels[p] + pixels[p + 1] + pixels[p + 2]) / 3
-      const level = Math.min(3, Math.round(gray / 85))
-      cur |= (level << (6 - pos * 2))
-      if (++pos >= 4) { out.push(cur); cur = 0; pos = 0 }
-    }
-    if (pos > 0) out.push(cur)
+    return packRows(pixels, width, height, 2, (r, g, b) => Math.min(3, Math.round(((r + g + b) / 3) / 85)))
 
   } else {
-    // Scheme 6: 4 bits/pixel nibble-packed (grayscale8, grayscale16)
+    // Scheme 6: 4 bits/pixel (grayscale8, grayscale16)
     // Uses Rec.709 luminance → 0..15
-    let cur = 0
-    let hi = true
-    for (let i = 0; i < total; i++) {
-      const p = i * 4
-      const y = 0.299 * pixels[p] + 0.587 * pixels[p + 1] + 0.114 * pixels[p + 2]
-      const level = Math.min(15, Math.max(0, Math.round((y * 15) / 255)))
-      if (hi) {
-        cur = level << 4
-      } else {
-        out.push(cur | level)
-        cur = 0
-      }
-      hi = !hi
-    }
-    if (!hi) out.push(cur)
+    return packRows(pixels, width, height, 4, (r, g, b) => {
+      const y = 0.299 * r + 0.587 * g + 0.114 * b
+      return Math.min(15, Math.max(0, Math.round((y * 15) / 255)))
+    })
   }
+}
 
-  return new Uint8Array(out)
+// Pack per-pixel codes of `bits` bits each (1, 2 or 4), MSB = leftmost pixel,
+// zero-padding the end of every row to a whole byte.
+function packRows(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+  bits: 1 | 2 | 4,
+  code: (r: number, g: number, b: number) => number
+): Uint8Array {
+  const perByte = 8 / bits
+  const rowBytes = Math.ceil(width / perByte)
+  const out = new Uint8Array(rowBytes * height)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const p = (y * width + x) * 4
+      const shift = 8 - bits * (x % perByte + 1)
+      out[y * rowBytes + Math.floor(x / perByte)] |= code(pixels[p], pixels[p + 1], pixels[p + 2]) << shift
+    }
+  }
+  return out
 }
 
 function spectra6Code(r: number, g: number, b: number): number {
