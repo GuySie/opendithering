@@ -1,5 +1,5 @@
 import { OdAuthError, authenticate } from './opendisplay-crypto'
-import { OdDisconnectedError, OdEncryptionRequiredError, OdLink, OdTimeoutError, hex, isAck, isNack } from './opendisplay-link'
+import { OdDisconnectedError, OdEncryptionRequiredError, OdLink, OdSessionEndedError, OdTimeoutError, hex, isAck, isNack } from './opendisplay-link'
 import { negotiatePipe, pipeWrite } from './opendisplay-pipe'
 
 const SERVICE_UUID = 0x2446
@@ -265,13 +265,15 @@ export interface OdDisplayConfig {
 export interface OdDeviceInfo {
   firmware: OdFirmwareVersion | null
   display: OdDisplayConfig | null
+  /** Security config `session_timeout_seconds` (0 = none), or null if unknown. */
+  sessionTimeoutS: number | null
 }
 
 export interface OdConnection {
   link: OdLink
   info: OdDeviceInfo
-  /** A key was given but the device has no encryption set up, so it isn't used. */
-  keyUnused: boolean
+  /** The key that authenticated, or null when none was needed. */
+  key: Uint8Array | null
 }
 
 // The firmware (2.26.1+, Firmware PR #135) serves one client at a time. A
@@ -281,10 +283,13 @@ export interface OdConnection {
 const BUSY_HINT = 'It may be connected to another client (Home Assistant, the OpenDisplay toolbox, another tab), ' +
   'which keeps it for up to 2 minutes after its last command.'
 
-/** Show the browser's device chooser (needs a user gesture). */
-export function requestDevice(): Promise<BluetoothDevice> {
+/**
+ * Show the browser's device chooser (needs a user gesture). With `name`
+ * (from a device link), it lists only that device.
+ */
+export function requestDevice(name?: string | null): Promise<BluetoothDevice> {
   return navigator.bluetooth.requestDevice({
-    filters: [{ namePrefix: 'OD' }],
+    filters: [name ? { name } : { namePrefix: 'OD' }],
     optionalServices: [SERVICE_UUID],
   })
 }
@@ -296,12 +301,12 @@ export function requestDevice(): Promise<BluetoothDevice> {
  * encryption enabled. Either read failing just leaves that part of `info`
  * null (uploads then use the basic path).
  */
-export async function connectDevice(device: BluetoothDevice, masterKey: Uint8Array | null): Promise<OdConnection> {
+export async function connectDevice(device: BluetoothDevice, keys: Uint8Array[]): Promise<OdConnection> {
   const t0 = performance.now()
   const link = await openLink(device)
   const t1 = performance.now()
   try {
-    const result = await identifyDevice(link, masterKey)
+    const result = await identifyDevice(link, keys)
     checkStillConnected(link)
     console.info(`OpenDisplay: connect took ${Math.round(performance.now() - t0)} ms (GATT ${Math.round(t1 - t0)} ms, ${result.timing})`)
     return result
@@ -317,14 +322,14 @@ export async function connectDevice(device: BluetoothDevice, masterKey: Uint8Arr
  * re-authenticates: the device info from the first connect is reused, since
  * on slow devices each read can take seconds.
  */
-export async function reconnectDevice(device: BluetoothDevice, masterKey: Uint8Array | null, info: OdDeviceInfo): Promise<OdConnection> {
+export async function reconnectDevice(device: BluetoothDevice, keys: Uint8Array[], info: OdDeviceInfo): Promise<OdConnection> {
   const t0 = performance.now()
   const link = await openLink(device)
   try {
-    const keyUnused = await startSession(link, masterKey)
+    const key = await startSession(link, keys)
     checkStillConnected(link)
     console.info(`OpenDisplay: reconnected in ${Math.round(performance.now() - t0)} ms`)
-    return { link, info, keyUnused }
+    return { link, info, key }
   } catch (err) {
     closeLink(link)
     throw connectError(err, device)
@@ -371,29 +376,39 @@ function connectError(err: unknown, device: BluetoothDevice): unknown {
 }
 
 /**
- * Authenticate when a key is given. Returns true if the device turned out to
- * have no encryption, so the key isn't used. Any other refusal throws: a
- * device with encryption on accepts no command without a session.
+ * Authenticate with the first of `keys` the device accepts; returns it, or
+ * null without keys. A wrong key moves on to the next one. Any other refusal
+ * throws: a device with encryption on accepts no command without a session.
  */
-async function startSession(link: OdLink, masterKey: Uint8Array | null): Promise<boolean> {
-  if (!masterKey) return false
-  try {
-    link.session = await authenticate(link, masterKey)
-    return false
-  } catch (err) {
-    if (err instanceof OdAuthError && err.notConfigured) {
-      console.info('OpenDisplay: the device has no encryption set up; continuing without the key')
-      return true
+async function startSession(link: OdLink, keys: Uint8Array[]): Promise<Uint8Array | null> {
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      link.session = await authenticate(link, keys[i])
+      link.masterKey = keys[i]
+      return keys[i]
+    } catch (err) {
+      if (err instanceof OdAuthError && err.reason === 'not-configured') {
+        // Never fall back to plaintext once a key is set: this reply comes
+        // before any proof, so anything impersonating the device could send
+        // it to switch encryption off (a downgrade).
+        throw new OdAuthError(`${link.device.name ?? 'The device'} says it has no encryption set up, but a key is set for it, ` +
+          'so it wasn\'t connected to. If encryption was turned off on it, connect again and confirm.', 'not-configured')
+      }
+      if (err instanceof OdAuthError && err.reason === 'wrong-key' && i < keys.length - 1) {
+        console.info('OpenDisplay: key rejected; trying the next one')
+        continue
+      }
+      throw err
     }
-    throw err
   }
+  return null
 }
 
 /**
  * Authenticate (if a key is given) and read what the device supports, on an
  * already connected link.
  */
-export async function identifyDevice(link: OdLink, masterKey: Uint8Array | null): Promise<OdConnection & { timing: string }> {
+export async function identifyDevice(link: OdLink, keys: Uint8Array[]): Promise<OdConnection & { timing: string }> {
   const t1 = performance.now()
   link.drain()
   // Firmware that idles between commands (older builds, low-power configs,
@@ -401,20 +416,20 @@ export async function identifyDevice(link: OdLink, masterKey: Uint8Array | null)
   // a round trip on the firmware version: request it now, alongside auth (it
   // is always plaintext and needs no session), and collect the reply last.
   const versionRequested = await requestFirmwareVersion(link)
-  const keyUnused = await startSession(link, masterKey)
+  const key = await startSession(link, keys)
   const t2 = performance.now()
   // Without a key, this is where a device with encryption on says so
-  // (readDisplayConfig rethrows that).
-  const display = await readDisplayConfig(link)
+  // (readDeviceConfig rethrows that).
+  const { display, sessionTimeoutS } = await readDeviceConfig(link)
   const t3 = performance.now()
 
   const firmware = versionRequested ? await collectFirmwareVersion(link) : null
   const t4 = performance.now()
 
   const ms = (a: number, b: number) => `${Math.round(b - a)} ms`
-  const timing = `auth ${masterKey ? ms(t1, t2) : 'none'}, config ${ms(t2, t3)}, ` +
+  const timing = `auth ${keys.length ? ms(t1, t2) : 'none'}, config ${ms(t2, t3)}, ` +
     `firmware version ${versionRequested ? `+${ms(t3, t4)} (requested up front)` : 'not requested'}`
-  return { link, info: { firmware, display }, keyUnused, timing }
+  return { link, info: { firmware, display, sessionTimeoutS }, key, timing }
 }
 
 export async function readFirmwareVersion(link: OdLink): Promise<OdFirmwareVersion | null> {
@@ -447,7 +462,7 @@ async function collectFirmwareVersion(link: OdLink): Promise<OdFirmwareVersion |
   return null
 }
 
-export async function readDisplayConfig(link: OdLink): Promise<OdDisplayConfig | null> {
+export async function readDeviceConfig(link: OdLink): Promise<OdStoredConfig> {
   try {
     await link.send(CMD_CONFIG_READ)
     // First chunk: [echo:2][chunk#:2][total:2 LE][data...]; later chunks:
@@ -456,7 +471,7 @@ export async function readDisplayConfig(link: OdLink): Promise<OdDisplayConfig |
     let data = new Uint8Array(0)
     while (total < 0 || data.length < total) {
       const f = await link.readFor([CMD_CONFIG_READ & 0xFF], total < 0 ? TIMEOUT_CONNECT_REPLY : 2_000)
-      if (isNack(f, CMD_CONFIG_READ)) return null  // device has no stored config
+      if (isNack(f, CMD_CONFIG_READ)) return NO_CONFIG  // device has no stored config
       if (!isAck(f, CMD_CONFIG_READ)) throw new Error(`unexpected config frame ${hex(f)}`)
       const body = f.subarray(total < 0 ? 6 : 4)
       if (total < 0) total = f[4] | (f[5] << 8)
@@ -466,11 +481,11 @@ export async function readDisplayConfig(link: OdLink): Promise<OdDisplayConfig |
       grown.set(body, data.length)
       data = grown
     }
-    return parseDisplayConfig(data)
+    return parseDeviceConfig(data)
   } catch (err) {
     if (err instanceof OdEncryptionRequiredError || err instanceof OdDisconnectedError) throw err
     console.warn('OpenDisplay: could not read device config', err)
-    return null
+    return NO_CONFIG
   }
 }
 
@@ -482,29 +497,45 @@ const TLV_PACKET_SIZES: Record<number, number> = {
   0x26: 160, 0x27: 64, 0x28: 32, 0x29: 32, 0x2A: 32, 0x2B: 32, 0x2C: 288,
 }
 
-/** Parse the first display packet from a config blob: [len:2][version:1][packets...][crc:2]. */
-export function parseDisplayConfig(raw: Uint8Array): OdDisplayConfig | null {
-  if (raw.length < 5) return null
+/** What uploads need from the device's stored config. */
+export interface OdStoredConfig {
+  display: OdDisplayConfig | null
+  sessionTimeoutS: number | null
+}
+
+const NO_CONFIG: OdStoredConfig = { display: null, sessionTimeoutS: null }
+
+/**
+ * Parse a config blob, [len:2][version:1][packets...][crc:2]: the first
+ * display packet (0x20) and the security packet's (0x27) session timeout.
+ * Stops at an unknown or truncated packet, keeping what it found before.
+ */
+export function parseDeviceConfig(raw: Uint8Array): OdStoredConfig {
+  const result: OdStoredConfig = { display: null, sessionTimeoutS: null }
+  if (raw.length < 5) return result
   const packets = raw.subarray(3, raw.length - 2)
   let off = 0
   while (off + 2 <= packets.length) {
     const type = packets[off + 1]  // [packet_number:1][packet_type:1][data]
     off += 2
     const size = TLV_PACKET_SIZES[type]
-    if (size === undefined || off + size > packets.length) return null
-    if (type === 0x20) {
-      const d = new DataView(packets.buffer, packets.byteOffset + off, size)
-      return {
+    if (size === undefined || off + size > packets.length) break
+    const d = new DataView(packets.buffer, packets.byteOffset + off, size)
+    if (type === 0x20 && !result.display) {
+      result.display = {
         panelIc: d.getUint16(2, true),
         width: d.getUint16(4, true),
         height: d.getUint16(6, true),
         colorScheme: d.getUint8(21),
         transmissionModes: d.getUint8(22),
       }
+    } else if (type === 0x27) {
+      // [encryption_enabled:1][key:16][session_timeout_seconds:2 LE]...
+      result.sessionTimeoutS = d.getUint16(17, true)
     }
     off += size
   }
-  return null
+  return result
 }
 
 // display config `transmission_modes` bits
@@ -609,8 +640,37 @@ function uploadOverride(): string | null {
 /**
  * Send an encoded image and wait for the panel refresh to finish.
  * `onProgress` reports bytes of the streamed payload.
+ *
+ * With encryption, the device may end the session after its configured
+ * `session_timeout_seconds` (0 = never, the default). Like py-opendisplay,
+ * re-authenticate up front once the session is 90 % of the way there; if the
+ * device ends it mid-upload anyway, re-authenticate and send again, once.
+ * (If it drops the link instead, after 10 rejected frames, this throws
+ * OdDisconnectedError and the caller reconnects.)
  */
 export async function sendImage(
+  link: OdLink,
+  imageBytes: Uint8Array,
+  info: OdDeviceInfo,
+  onProgress?: (sent: number, total: number) => void
+): Promise<UploadStats> {
+  const timeoutS = info.sessionTimeoutS ?? 0
+  if (link.session && link.masterKey && timeoutS > 0 &&
+      performance.now() - link.session.startedAt >= 0.9 * timeoutS * 1000) {
+    console.info(`OpenDisplay: encryption session near its ${timeoutS} s timeout; re-authenticating`)
+    link.session = await authenticate(link, link.masterKey)
+  }
+  try {
+    return await sendImageOnce(link, imageBytes, info, onProgress)
+  } catch (err) {
+    if (!(err instanceof OdSessionEndedError) || !link.masterKey || !link.connected) throw err
+    console.info('OpenDisplay: the device ended the encryption session; re-authenticating and sending again')
+    link.session = await authenticate(link, link.masterKey)
+    return await sendImageOnce(link, imageBytes, info, onProgress)
+  }
+}
+
+async function sendImageOnce(
   link: OdLink,
   imageBytes: Uint8Array,
   info: OdDeviceInfo,

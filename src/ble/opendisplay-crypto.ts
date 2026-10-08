@@ -8,6 +8,8 @@ export interface OdSession {
   sessionKey: Uint8Array
   sessionId: Uint8Array
   counter: number
+  /** performance.now() when the handshake finished, for the device's session timeout. */
+  startedAt: number
 }
 
 // ── AES-ECB single block ──────────────────────────────────────────────────────
@@ -238,36 +240,45 @@ async function deriveSessionId(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/** Parse a master key from a landing URL (opendisplay.org/l/?…) or 32-char hex string. */
-export function parseMasterKey(input: string): Uint8Array | null {
+export interface OdKeyInput {
+  /** The 16-byte master key, or null when the input carries none. */
+  key: Uint8Array | null
+  /** The device's advertised name ("OD" + 6 hex digits), when the input is a device link. */
+  deviceName: string | null
+}
+
+/**
+ * Parse the key field: a device link (opendisplay.org/l/?…, from the QR code
+ * the device shows) or a 32-character hex key. Returns null if it is neither.
+ *
+ * The link's base64url payload is 23 bytes (py-opendisplay landing.py):
+ * [tag_type:2 BE][device id:3][key:16][manufacturer:2 BE]. An all-zero key
+ * means the device has no encryption or hides its key ("show key on screen"
+ * off); the link still identifies the device.
+ */
+export function parseKeyInput(input: string): OdKeyInput | null {
   const s = input.trim()
   if (!s) return null
 
-  // Landing URL: extract base64url payload, key is at bytes 5–20
-  const urlMatch = s.match(/\/l\/\?([A-Za-z0-9_=-]+)/)
+  const urlMatch = s.match(/\/l\/?\?([A-Za-z0-9_=-]+)/)
   if (urlMatch) {
+    let bytes: Uint8Array
     try {
       const b64 = urlMatch[1].replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '')
-      const padded = b64 + '=='.slice((b64.length * 3) % 4 === 0 ? 4 : (b64.length * 3) % 4)
-      const binary = atob(padded)
-      if (binary.length < 21) return null
-      const bytes = new Uint8Array(binary.length)
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-      const key = bytes.slice(5, 21)
-      // Reject all-zero key (device with no encryption configured)
-      if (key.every(b => b === 0)) return null
-      return key
+      const binary = atob(b64 + '='.repeat((4 - b64.length % 4) % 4))
+      bytes = Uint8Array.from(binary, c => c.charCodeAt(0))
     } catch {
       return null
     }
+    if (bytes.length !== 23) return null
+    const key = bytes.slice(5, 21)
+    const deviceName = 'OD' + Array.from(bytes.slice(2, 5), b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+    return { key: key.some(b => b !== 0) ? key : null, deviceName }
   }
 
-  // 32-char hex string
   if (/^[0-9a-fA-F]{32}$/.test(s)) {
-    const bytes = new Uint8Array(16)
-    for (let i = 0; i < 16; i++) bytes[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16)
-    if (bytes.every(b => b === 0)) return null
-    return bytes
+    const key = Uint8Array.from({ length: 16 }, (_, i) => parseInt(s.slice(i * 2, i * 2 + 2), 16))
+    return key.some(b => b !== 0) ? { key, deviceName: null } : null
   }
 
   return null
@@ -291,9 +302,11 @@ const AUTH_ALREADY = 0x02
 const AUTH_NOT_CONFIGURED = 0x03
 const AUTH_RATE_LIMIT = 0x04
 
-/** The device refused the handshake. `notConfigured`: it has no encryption, so no session is needed. */
+export type OdAuthFailure = 'wrong-key' | 'not-configured' | 'rate-limit' | 'proof' | 'other'
+
+/** The device refused the handshake, or failed to prove it knows the key. */
 export class OdAuthError extends Error {
-  constructor(message: string, readonly notConfigured = false) {
+  constructor(message: string, readonly reason: OdAuthFailure = 'other') {
     super(message)
     this.name = 'OdAuthError'
   }
@@ -301,9 +314,9 @@ export class OdAuthError extends Error {
 
 function authStatusError(status: number): OdAuthError {
   switch (status) {
-    case AUTH_WRONG_KEY: return new OdAuthError('Wrong encryption key for this device')
-    case AUTH_NOT_CONFIGURED: return new OdAuthError('The device has no encryption set up', true)
-    case AUTH_RATE_LIMIT: return new OdAuthError('Too many key attempts: wait a minute, then try again')
+    case AUTH_WRONG_KEY: return new OdAuthError('Wrong encryption key for this device', 'wrong-key')
+    case AUTH_NOT_CONFIGURED: return new OdAuthError('The device has no encryption set up', 'not-configured')
+    case AUTH_RATE_LIMIT: return new OdAuthError('Too many key attempts: wait a minute, then try again', 'rate-limit')
     default: return new OdAuthError(`Authentication failed (status 0x${status.toString(16).padStart(2, '0')})`)
   }
 }
@@ -364,10 +377,10 @@ export async function authenticate(
   const expected = await aesCmac(sessionKey, proofInput)
   let diff = 0
   for (let i = 0; i < 16; i++) diff |= expected[i] ^ success[3 + i]
-  if (diff !== 0) throw new OdAuthError('The device failed to prove it has the same key (server proof mismatch)')
+  if (diff !== 0) throw new OdAuthError('The device failed to prove it has the same key (server proof mismatch)', 'proof')
 
   const sessionId = await deriveSessionId(sessionKey, clientNonce, serverNonce)
-  return { sessionKey, sessionId, counter: 0 }
+  return { sessionKey, sessionId, counter: 0, startedAt: performance.now() }
 }
 
 /**

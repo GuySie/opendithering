@@ -16,7 +16,8 @@ import { isSupported as bleIsSupported, requestDevice as bleRequestDevice, conne
 import type { OdLink } from './ble/opendisplay-link'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
-import { parseMasterKey } from './ble/opendisplay-crypto'
+import { OdAuthError, parseKeyInput } from './ble/opendisplay-crypto'
+import { OdDisconnectedError } from './ble/opendisplay-link'
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -53,7 +54,8 @@ let odRemembered: { device: BluetoothDevice; info: OdDeviceInfo } | null = null
 let bleError: string | null = null  // last connect/upload failure, shown until the next attempt
 let bleDetails = ''                 // status tooltip while connected
 let bleConnectedNote = ''           // e.g. ' (encrypted)'
-let odMasterKey: Uint8Array | null = null
+let odMasterKey: Uint8Array | null = null    // from the key field
+let odKeyDeviceName: string | null = null      // from a device link in the key field: limits the chooser to it
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -1587,7 +1589,6 @@ function adoptOdConnection(conn: OdConnection) {
   const hint = bleFastUploadHint(info)
   bleDetails = [
     bleDescribeDevice(info),
-    conn.keyUnused ? 'The device has no encryption set up, so the key isn\'t used.' : null,
     hint,
   ].filter(Boolean).join('\n')
   link.device.addEventListener('gattserverdisconnected', () => {
@@ -1608,11 +1609,11 @@ async function doConnect(): Promise<boolean> {
   renderBleStatus('Connecting…')
   try {
     if (bleProtocol === 'opendisplay') {
-      const device = await bleRequestDevice()
+      const device = await bleRequestDevice(odKeyDeviceName)
       // A different device than the remembered one: forget the old link.
       if (bleState?.protocol === 'opendisplay') bleDropLink()
       renderBleStatus(`Connecting to ${device.name ?? 'device'}…`)
-      const conn = await bleConnect(device, odMasterKey)
+      const conn = await connectWithKeys(device, keys => bleConnect(device, keys))
       console.info(`OpenDisplay: connected, ${bleDescribeDevice(conn.info)}`)
       const hint = bleFastUploadHint(conn.info)
       if (hint) console.info(`OpenDisplay: ${hint}`)
@@ -1639,6 +1640,65 @@ async function doConnect(): Promise<boolean> {
   }
 }
 
+// Keys that worked, by device name, so each device gets its own key.
+const OD_KEYS_STORAGE = 'odKeys'
+
+function savedOdKeys(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(OD_KEYS_STORAGE) ?? '{}')
+  } catch {
+    return {}
+  }
+}
+
+function setSavedOdKey(name: string, key: Uint8Array | null) {
+  const keys = savedOdKeys()
+  if (key) keys[name] = toHex(key)
+  else delete keys[name]
+  try {
+    localStorage.setItem(OD_KEYS_STORAGE, JSON.stringify(keys))
+  } catch { /* storage unavailable: keys just aren't remembered */ }
+}
+
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Connect with the keys to try for this device: its saved key first, then
+ * the key field. A key that worked is saved for the device.
+ *
+ * A device that says it has no encryption while a key is set for it is only
+ * connected to without encryption after asking: that reply comes before any
+ * proof, so something impersonating the device could send it too.
+ */
+async function connectWithKeys(device: BluetoothDevice, connect: (keys: Uint8Array[]) => Promise<OdConnection>): Promise<OdConnection> {
+  const name = device.name ?? null
+  const savedHex = name ? savedOdKeys()[name] : undefined
+  const saved = savedHex ? parseKeyInput(savedHex)?.key ?? null : null
+  const keys = [saved, odMasterKey].filter((k): k is Uint8Array => k !== null)
+    .filter((k, i, all) => all.findIndex(o => toHex(o) === toHex(k)) === i)
+  let conn: OdConnection
+  try {
+    conn = await connect(keys)
+  } catch (err) {
+    if (!(err instanceof OdAuthError && err.reason === 'not-configured')) throw err
+    const ok = confirm(
+      `${name ?? 'The device'} says it has no encryption set up, but a key is set for it.\n\n` +
+      'That\'s expected if encryption was turned off on it. If not, something may be impersonating it.\n\n' +
+      'Forget the key for this device and connect without encryption?')
+    if (!ok) throw err
+    if (name) setSavedOdKey(name, null)
+    if (odMasterKey) {
+      odKeyInput.value = ''
+      applyOdKey('')
+    }
+    conn = await connect([])
+  }
+  if (conn.key && name) setSavedOdKey(name, conn.key)
+  return conn
+}
+
 /** Make sure there is a live connection for an upload: reuse, reconnect silently, or show the chooser. */
 async function ensureBleConnection(): Promise<boolean> {
   if (bleState && isBleConnected()) return true
@@ -1646,7 +1706,7 @@ async function ensureBleConnection(): Promise<boolean> {
     const { device, info } = odRemembered
     bleError = null
     renderBleStatus(`Reconnecting to ${device.name ?? 'device'}…`)
-    adoptOdConnection(await bleReconnect(device, odMasterKey, info))
+    adoptOdConnection(await connectWithKeys(device, keys => bleReconnect(device, keys, info)))
     return true
   }
   return doConnect()
@@ -1725,9 +1785,25 @@ btnUploadDevice.addEventListener('click', async () => {
         return
       }
       const imageBytes = bleEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId, bleState.info.display?.colorScheme, bleState.info.display?.panelIc)
-      await bleSend(bleState.link, imageBytes, bleState.info, (sent, total) => {
-        btnUploadDevice.textContent = `↑ Sending ${Math.round((sent / total) * 100)}%…`
-      })
+      const send = () => {
+        if (bleState?.protocol !== 'opendisplay') throw new Error('Not connected')
+        return bleSend(bleState.link, imageBytes, bleState.info, (sent, total) => {
+          btnUploadDevice.textContent = `↑ Sending ${Math.round((sent / total) * 100)}%…`
+        })
+      }
+      try {
+        await send()
+      } catch (err) {
+        // The link dropped (e.g. the firmware's idle drop just as the upload
+        // started, or after rejecting frames of an ended session): reconnect
+        // and send once more.
+        if (!(err instanceof OdDisconnectedError) || !odRemembered) throw err
+        console.info('OpenDisplay: the link dropped during the upload; reconnecting and sending again')
+        bleDropLink()
+        btnUploadDevice.textContent = '↑ Reconnecting…'
+        await ensureBleConnection()
+        await send()
+      }
     } else {
       const imageBytes = giciskyEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId, bleState.conn.deviceInfo)
       await gickySend(bleState.conn, imageBytes, (sent, total) => {
@@ -1974,19 +2050,26 @@ document.addEventListener('mouseup', () => {
 // ── OpenDisplay key input ──────────────────────────────────────────────────
 
 function applyOdKey(value: string) {
-  const key = parseMasterKey(value)
-  odMasterKey = key
+  const parsed = parseKeyInput(value)
+  odMasterKey = parsed?.key ?? null
+  odKeyDeviceName = parsed?.deviceName ?? null
   if (!value.trim()) {
     odKeyStatus.textContent = ''
     odKeyStatus.style.color = ''
+    odKeyStatus.title = ''
     localStorage.removeItem('odMasterKey')
-  } else if (key) {
+  } else if (parsed) {
     odKeyStatus.textContent = '✓'
     odKeyStatus.style.color = '#4caf50'
+    odKeyStatus.title = [
+      parsed.deviceName ? `Device link for ${parsed.deviceName}: Connect lists only that device.` : null,
+      parsed.key ? null : 'The link has no key in it (the device has no encryption, or hides its key).',
+    ].filter(Boolean).join(' ')
     localStorage.setItem('odMasterKey', value.trim())
   } else {
     odKeyStatus.textContent = '✗'
     odKeyStatus.style.color = 'var(--danger)'
+    odKeyStatus.title = 'Not a device link (opendisplay.org/l/?…) or a 32-character hex key'
     localStorage.removeItem('odMasterKey')
   }
 }

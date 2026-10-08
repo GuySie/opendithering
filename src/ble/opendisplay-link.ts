@@ -31,6 +31,14 @@ export class OdEncryptionRequiredError extends Error {
   }
 }
 
+/** RESP_AUTH_REQUIRED during a session: the device ended it (its optional session timeout). */
+export class OdSessionEndedError extends OdEncryptionRequiredError {
+  constructor() {
+    super('The device ended the encryption session')
+    this.name = 'OdSessionEndedError'
+  }
+}
+
 /**
  * One OpenDisplay BLE connection: the command characteristic plus a queue of
  * incoming notifications. A single persistent listener feeds the queue, so a
@@ -39,6 +47,8 @@ export class OdEncryptionRequiredError extends Error {
  */
 export class OdLink {
   session: OdSession | null = null
+  /** The key the session was made with, to re-authenticate when the device ends it. */
+  masterKey: Uint8Array | null = null
   /** PIPE_WRITE was tried on this connection and the device didn't take it. */
   pipeUnavailable = false
   private queue: Uint8Array[] = []
@@ -142,10 +152,7 @@ export class OdLink {
   private async accept(raw: Uint8Array, plain: boolean): Promise<Uint8Array> {
     const f = await this.decode(raw, plain)
     if ((f.length === 2 && f[0] === 0xFE) || (f.length === 3 && f[2] === 0xFE)) {
-      // With a session, the device has dropped it (its optional session timeout).
-      throw new OdEncryptionRequiredError(this.session
-        ? 'The device ended the encryption session: try again to start a new one'
-        : undefined)
+      throw this.session ? new OdSessionEndedError() : new OdEncryptionRequiredError()
     }
     if (f.length === 3 && f[2] === 0xFF) {
       throw new Error('Device rejected an encrypted command (integrity check failed)')
