@@ -39,9 +39,6 @@ const ZLIB_WINDOW_BITS = 9
 // only looks at a new command after its idle wait: ~10 s per reply has been
 // seen. A reply that still comes late is skipped by later reads.
 const TIMEOUT_CONNECT_REPLY = 30_000
-// Below this, the device evidently answers promptly, so an optional extra
-// round trip (the firmware version, just for the fast-upload hint) is cheap.
-const PROMPT_REPLY_MS = 2_000
 const TIMEOUT_START = 15_000
 const TIMEOUT_DATA_ACK = 90_000
 const TIMEOUT_END_ACK = 90_000
@@ -271,6 +268,12 @@ export async function connectDevice(masterKey: Uint8Array | null): Promise<OdCon
  */
 export async function identifyDevice(link: OdLink, masterKey: Uint8Array | null): Promise<OdConnection & { timing: string }> {
   const t1 = performance.now()
+  link.drain()
+  // Firmware that idles between commands (older builds, low-power configs,
+  // WiFi sharing the ESP32 radio) can take seconds per reply, so don't spend
+  // a round trip on the firmware version: request it now, alongside auth (it
+  // is always plaintext and needs no session), and collect the reply last.
+  const versionRequested = await requestFirmwareVersion(link)
   let authError: unknown = null
   if (masterKey) {
     try {
@@ -283,24 +286,33 @@ export async function identifyDevice(link: OdLink, masterKey: Uint8Array | null)
   const display = await readDisplayConfig(link)
   const t3 = performance.now()
 
-  // Every command costs a full idle wait on firmware that sleeps between
-  // commands, so read the firmware version only when it decides something:
-  // whether an encrypted link may use PIPE_WRITE, or (only if the device
-  // answers promptly) the fast-upload hint for configs without the pipe bit.
-  const pipeBit = display !== null && (display.transmissionModes & TM_PIPE_WRITE) !== 0
-  const needVersion = display !== null && (pipeBit ? link.session !== null : t3 - t2 < PROMPT_REPLY_MS)
-  const firmware = needVersion ? await readFirmwareVersion(link) : null
+  const firmware = versionRequested ? await collectFirmwareVersion(link) : null
   const t4 = performance.now()
 
   const ms = (a: number, b: number) => `${Math.round(b - a)} ms`
-  const timing = `auth ${masterKey ? ms(t1, t2) : 'none'}, config ${ms(t2, t3)}, firmware version ${needVersion ? ms(t3, t4) : 'skipped'}`
+  const timing = `auth ${masterKey ? ms(t1, t2) : 'none'}, config ${ms(t2, t3)}, ` +
+    `firmware version ${versionRequested ? `+${ms(t3, t4)} (requested up front)` : 'not requested'}`
   return { link, info: { firmware, display }, authError, timing }
 }
 
 export async function readFirmwareVersion(link: OdLink): Promise<OdFirmwareVersion | null> {
+  link.drain()
+  return await requestFirmwareVersion(link) ? collectFirmwareVersion(link) : null
+}
+
+async function requestFirmwareVersion(link: OdLink): Promise<boolean> {
   try {
-    link.drain()
+    // Always plaintext, before or during a session.
     await link.writeRaw(new Uint8Array([CMD_FIRMWARE_VERSION >> 8, CMD_FIRMWARE_VERSION & 0xFF]))
+    return true
+  } catch (err) {
+    console.warn('OpenDisplay: could not request firmware version', err)
+    return false
+  }
+}
+
+async function collectFirmwareVersion(link: OdLink): Promise<OdFirmwareVersion | null> {
+  try {
     // [echo:2][major][minor][shaLen][sha...][patch] — patch was added after 2.25.0
     const f = await link.readFor([CMD_FIRMWARE_VERSION & 0xFF], TIMEOUT_CONNECT_REPLY, true)
     if (isAck(f, CMD_FIRMWARE_VERSION) && f.length >= 5) {
@@ -315,7 +327,6 @@ export async function readFirmwareVersion(link: OdLink): Promise<OdFirmwareVersi
 
 export async function readDisplayConfig(link: OdLink): Promise<OdDisplayConfig | null> {
   try {
-    link.drain()
     await link.send(CMD_CONFIG_READ)
     // First chunk: [echo:2][chunk#:2][total:2 LE][data...]; later chunks:
     // [echo:2][chunk#:2][data...], until `total` data bytes have arrived.

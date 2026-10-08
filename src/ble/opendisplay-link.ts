@@ -6,6 +6,7 @@ import { type OdSession, decryptResponse, encryptCommand } from './opendisplay-c
 const ENCRYPTED_MIN_LEN = 31
 const RESP_FIRMWARE_VERSION = 0x43
 const RESP_AUTHENTICATE = 0x50
+const MAX_STASH = 8
 
 export class OdTimeoutError extends Error {
   constructor(message = 'BLE notification timeout') {
@@ -25,6 +26,7 @@ export class OdLink {
   /** PIPE_WRITE was tried on this connection and the device didn't take it. */
   pipeUnavailable = false
   private queue: Uint8Array[] = []
+  private stash: Uint8Array[] = []  // frames readFor set aside for another command
   private waiter: ((frame: Uint8Array) => void) | null = null
   private writeWithoutResponseUnsupported = false
 
@@ -56,6 +58,7 @@ export class OdLink {
   /** Discard notifications left over from a previous exchange. */
   drain(): void {
     this.queue.length = 0
+    this.stash.length = 0
   }
 
   /** Next notification exactly as received (no decryption). */
@@ -79,31 +82,41 @@ export class OdLink {
    * Next notification that answers one of `echoes` (the low byte of the
    * command, frame byte 1), as a plaintext [status][echo][data...] frame.
    *
-   * Frames for other commands are skipped: the queue has no request/response
-   * correlation, so a reply that arrived after its own read timed out would
-   * otherwise be taken as the answer to the next command. `timeoutMs` bounds
-   * the whole wait. Frames are decrypted when a session is active, except the
+   * The queue has no request/response correlation, so frames for other
+   * commands are set aside (a few, newest kept) for a later readFor of their
+   * own: a reply that arrived after its read timed out isn't taken as the
+   * answer to the next command, and a request sent ahead (the firmware
+   * version during auth) can be collected later. `timeoutMs` bounds the whole
+   * wait. Frames are decrypted when a session is active, except the
    * firmware-version and auth replies, which the firmware always sends in
-   * plaintext (and `plain` reads, which never decrypt).
+   * plaintext (and `plain` reads, which never decrypt). Byte 1 is the echo in
+   * the encrypted envelope too, so frames are matched before decrypting.
    */
   async readFor(echoes: number[], timeoutMs: number, plain = false): Promise<Uint8Array> {
+    const matches = (raw: Uint8Array) => raw.length >= 2 && echoes.includes(raw[1])
+    const stashed = this.stash.findIndex(matches)
+    if (stashed >= 0) return this.accept(this.stash.splice(stashed, 1)[0], plain)
     const deadline = performance.now() + timeoutMs
-    for (let skipped = 0; ; skipped++) {
+    for (;;) {
       const left = deadline - performance.now()
       if (left <= 0) throw new OdTimeoutError()
-      const f = await this.decode(await this.readRaw(left), plain)
-      if (f.length >= 2 && echoes.includes(f[1])) {
-        if ((f.length === 2 && f[0] === 0xFE) || (f.length === 3 && f[2] === 0xFE)) {
-          throw new Error('Device requires encryption — set the encryption key')
-        }
-        if (f.length === 3 && f[2] === 0xFF) {
-          throw new Error('Device rejected an encrypted command (integrity check failed)')
-        }
-        return f
-      }
-      console.warn(`OpenDisplay: ignoring unrelated frame ${hex(f)} (expected reply to 0x${echoes.map(e => e.toString(16)).join('/0x')})`)
-      if (skipped >= 32) throw new Error('Too many unrelated frames from the device')
+      const raw = await this.readRaw(left)
+      if (matches(raw)) return this.accept(raw, plain)
+      console.debug(`OpenDisplay: setting aside frame ${hex(raw)} (waiting for a reply to 0x${echoes.map(e => e.toString(16)).join('/0x')})`)
+      this.stash.push(raw)
+      if (this.stash.length > MAX_STASH) this.stash.shift()
     }
+  }
+
+  private async accept(raw: Uint8Array, plain: boolean): Promise<Uint8Array> {
+    const f = await this.decode(raw, plain)
+    if ((f.length === 2 && f[0] === 0xFE) || (f.length === 3 && f[2] === 0xFE)) {
+      throw new Error('Device requires encryption — set the encryption key')
+    }
+    if (f.length === 3 && f[2] === 0xFF) {
+      throw new Error('Device rejected an encrypted command (integrity check failed)')
+    }
+    return f
   }
 
   private async decode(raw: Uint8Array, plain: boolean): Promise<Uint8Array> {
