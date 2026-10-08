@@ -16,6 +16,16 @@ const RESP_REFRESH_TIMEOUT = 0x74
 // cmd(2)+nonce(16)+len(1)+tag(12) = 31 bytes, and packets must stay <= 185.
 const CHUNK_SIZE = 230
 const ENCRYPTED_CHUNK_SIZE = 154
+// Compressed START carries [uncompressed_size:4 LE][first zlib bytes] within
+// these limits (plaintext / encrypted); the rest follows in 0x71 chunks.
+const MAX_START_PAYLOAD = 200
+const MAX_START_PAYLOAD_ENCRYPTED = 154
+// Firmware without streaming decompression buffers the whole zlib stream (~50 KB).
+const MAX_BUFFERED_COMPRESSED_SIZE = 50 * 1024
+// The firmware's inflater is built with a 512-byte window and rejects zlib
+// headers advertising more. The browser's CompressionStream always uses a
+// 15-bit window, hence pako.
+const ZLIB_WINDOW_BITS = 9
 
 // Timeouts. Data ACKs, the END ACK and the refresh can each block on a slow
 // SPI write or panel refresh (up to ~60 s on Spectra/ACeP); py-opendisplay
@@ -288,6 +298,8 @@ export function parseDisplayConfig(raw: Uint8Array): OdDisplayConfig | null {
 }
 
 // display config `transmission_modes` bits
+const TM_STREAMING_DECOMPRESSION = 0x01
+const TM_ZIP = 0x02
 const TM_PIPE_WRITE = 0x10
 
 function firmwareAtLeast(fw: OdFirmwareVersion | null, major: number, minor: number, patch = 0): boolean {
@@ -365,12 +377,35 @@ export async function sendImage(
   info: OdDeviceInfo,
   onProgress?: (sent: number, total: number) => void
 ): Promise<UploadStats> {
-  void info
   const t0 = performance.now()
-  await directWrite(link, imageBytes, onProgress)
-  const stats = { method: 'direct write', bytes: imageBytes.length, wireBytes: imageBytes.length, ms: performance.now() - t0 }
+  const compressed = await compressFor(info, imageBytes)
+  let method = 'direct write'
+  let wireBytes = imageBytes.length
+  if (compressed && await directWriteCompressed(link, imageBytes, compressed, onProgress)) {
+    method = 'compressed direct write'
+    wireBytes = compressed.length
+  } else {
+    if (compressed) method = 'direct write (compressed start rejected)'
+    await directWrite(link, imageBytes, onProgress)
+  }
+  const stats = { method, bytes: imageBytes.length, wireBytes, ms: performance.now() - t0 }
   logStats(stats)
   return stats
+}
+
+/**
+ * The zlib stream to upload, or null when the device config doesn't allow
+ * compression or it doesn't pay off. Bit 0x01 (streaming decompression) means
+ * any size; bit 0x02 alone is the older buffered inflater with a ~50 KB cap.
+ */
+async function compressFor(info: OdDeviceInfo, data: Uint8Array): Promise<Uint8Array | null> {
+  const tm = info.display?.transmissionModes ?? 0
+  if (!(tm & (TM_STREAMING_DECOMPRESSION | TM_ZIP))) return null
+  const { deflate } = await import('pako')
+  const z = deflate(data, { level: 9, windowBits: ZLIB_WINDOW_BITS })
+  if (z.length >= data.length) return null
+  if (!(tm & TM_STREAMING_DECOMPRESSION) && z.length >= MAX_BUFFERED_COMPRESSED_SIZE) return null
+  return z
 }
 
 function logStats(s: UploadStats): void {
@@ -382,11 +417,6 @@ function logStats(s: UploadStats): void {
   )
 }
 
-async function expectAck(link: OdLink, cmd: number, timeoutMs: number): Promise<void> {
-  const f = await link.read(timeoutMs)
-  if (!isAck(f, cmd)) throw new Error(`Unexpected response to 0x${cmd.toString(16)}: ${hex(f)}`)
-}
-
 // Lock-step direct write (0x70/0x71/0x72): one chunk in flight, each ACKed.
 // Supported by every OpenDisplay firmware.
 async function directWrite(
@@ -396,16 +426,51 @@ async function directWrite(
 ): Promise<void> {
   link.drain()
   await link.send(CMD_DIRECT_WRITE_START)
+  const f = await readStartResponse(link)
+  if (!isAck(f, CMD_DIRECT_WRITE_START)) throw new Error(`Unexpected response to upload start: ${hex(f)}`)
+  const autoCompleted = await sendDataChunks(link, data, 0, data.length, onProgress)
+  await finishDirectWrite(link, autoCompleted)
+}
+
+/**
+ * Compressed direct write: START = [size:4 LE][first zlib bytes], the rest of
+ * the stream in 0x71 chunks, then END. Returns false (nothing sent past
+ * START) if the device rejects compression; the caller then falls back.
+ */
+async function directWriteCompressed(
+  link: OdLink,
+  data: Uint8Array,
+  z: Uint8Array,
+  onProgress?: (sent: number, total: number) => void
+): Promise<boolean> {
+  const maxStart = link.session ? MAX_START_PAYLOAD_ENCRYPTED : MAX_START_PAYLOAD
+  const head = z.subarray(0, maxStart - 4)
+  const start = new Uint8Array(4 + head.length)
+  new DataView(start.buffer).setUint32(0, data.length, true)
+  start.set(head, 4)
+  link.drain()
+  await link.send(CMD_DIRECT_WRITE_START, start)
+  const f = await readStartResponse(link)
+  if (!isAck(f, CMD_DIRECT_WRITE_START)) {
+    // [0xFF][0x70], or [0xFF][0xFF] from older firmware
+    console.warn(`OpenDisplay: compressed upload rejected (${hex(f)}); sending uncompressed`)
+    return false
+  }
+  onProgress?.(head.length, z.length)
+  const autoCompleted = await sendDataChunks(link, z.subarray(head.length), head.length, z.length, onProgress)
+  await finishDirectWrite(link, autoCompleted)
+  return true
+}
+
+async function readStartResponse(link: OdLink): Promise<Uint8Array> {
   try {
-    await expectAck(link, CMD_DIRECT_WRITE_START, TIMEOUT_START)
+    return await link.read(TIMEOUT_START)
   } catch (err) {
     if (err instanceof OdTimeoutError) {
       throw new Error('BLE timeout: no response to start command (device may require encryption)')
     }
     throw err
   }
-  const autoCompleted = await sendDataChunks(link, data, onProgress)
-  await finishDirectWrite(link, autoCompleted)
 }
 
 /**
@@ -416,13 +481,15 @@ async function directWrite(
 async function sendDataChunks(
   link: OdLink,
   data: Uint8Array,
+  progressBase: number,
+  progressTotal: number,
   onProgress?: (sent: number, total: number) => void
 ): Promise<boolean> {
   const size = link.session ? ENCRYPTED_CHUNK_SIZE : CHUNK_SIZE
   for (let off = 0; off < data.length; off += size) {
     await link.send(CMD_DIRECT_WRITE_DATA, data.subarray(off, off + size))
     const f = await link.read(TIMEOUT_DATA_ACK)
-    onProgress?.(Math.min(off + size, data.length), data.length)
+    onProgress?.(progressBase + Math.min(off + size, data.length), progressTotal)
     if (isAck(f, CMD_DIRECT_WRITE_END)) return true
     if (!isAck(f, CMD_DIRECT_WRITE_DATA)) throw new Error(`Upload failed at byte ${off}: ${hex(f)}`)
   }
