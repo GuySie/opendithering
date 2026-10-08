@@ -306,12 +306,15 @@ const TM_PIPE_WRITE = 0x10
 /**
  * Use PIPE_WRITE only when the device config advertises it (bit 0x10), as
  * both official clients do, and not after it already failed to start on this
- * connection. Encrypted links stay on direct write for now.
+ * connection. Encrypted, it needs firmware >= 2.26.1: before that the
+ * firmware required strictly increasing nonces and NACKed the out-of-order
+ * frames a sliding window produces (Firmware PR #136 added a ±32 replay
+ * window).
  */
 function pipeEligible(link: OdLink, info: OdDeviceInfo): boolean {
   if (!info.display || !(info.display.transmissionModes & TM_PIPE_WRITE)) return false
   if (link.pipeUnavailable) return false
-  return !link.session
+  return !link.session || firmwareAtLeast(info.firmware, 2, 26, 1)
 }
 
 function firmwareAtLeast(fw: OdFirmwareVersion | null, major: number, minor: number, patch = 0): boolean {
