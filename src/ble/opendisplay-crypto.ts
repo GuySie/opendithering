@@ -273,24 +273,10 @@ export function parseMasterKey(input: string): Uint8Array | null {
   return null
 }
 
-/** Wait for the next BLE notification on a characteristic. */
-function waitForNotification(
-  char: BluetoothRemoteGATTCharacteristic,
-  timeoutMs = 10000
-): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      char.removeEventListener('characteristicvaluechanged', handler)
-      reject(new Error('BLE notification timeout'))
-    }, timeoutMs)
-    function handler(event: Event) {
-      clearTimeout(timer)
-      char.removeEventListener('characteristicvaluechanged', handler)
-      const dv = (event.target as BluetoothRemoteGATTCharacteristic).value!
-      resolve(new Uint8Array(dv.buffer))
-    }
-    char.addEventListener('characteristicvaluechanged', handler)
-  })
+/** The raw transport the auth handshake needs (an OdLink satisfies it). */
+export interface OdRawTransport {
+  writeRaw(data: Uint8Array): Promise<void>
+  readRaw(timeoutMs: number): Promise<Uint8Array>
 }
 
 /**
@@ -298,12 +284,12 @@ function waitForNotification(
  * Throws if the device rejects the key or times out.
  */
 export async function authenticate(
-  char: BluetoothRemoteGATTCharacteristic,
+  link: OdRawTransport,
   masterKey: Uint8Array
 ): Promise<OdSession> {
   // Step 1: request server nonce
-  await char.writeValueWithoutResponse(new Uint8Array([0x00, 0x50, 0x00]))
-  const challenge = await waitForNotification(char)
+  await link.writeRaw(new Uint8Array([0x00, 0x50, 0x00]))
+  const challenge = await link.readRaw(10000)
 
   if (challenge.length < 19) throw new Error(`Auth challenge too short (${challenge.length} bytes)`)
   const status1 = challenge[2]
@@ -325,9 +311,9 @@ export async function authenticate(
   step2[0] = 0x00; step2[1] = 0x50
   step2.set(clientNonce, 2)
   step2.set(challengeResponse, 18)
-  await char.writeValueWithoutResponse(step2)
+  await link.writeRaw(step2)
 
-  const success = await waitForNotification(char)
+  const success = await link.readRaw(10000)
   if (success.length < 3) throw new Error(`Auth success response too short (${success.length} bytes)`)
   const status2 = success[2]
   if (status2 !== 0x00) throw new Error(`Auth failed: wrong key (status ${status2})`)

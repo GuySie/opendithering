@@ -12,10 +12,11 @@ import { indicesFromMeasured, measuredFromIndices } from './dithering/dbs'
 import type { DbsStats } from './dithering/dbs'
 import type { DbsJob } from './dithering/dbs.worker'
 import type { Palette } from './types'
-import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend } from './ble/opendisplay'
+import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend, checkCompatibility as bleCheckCompatibility, fastUploadHint as bleFastUploadHint, describeDevice as bleDescribeDevice, type OdDeviceInfo } from './ble/opendisplay'
+import type { OdLink } from './ble/opendisplay-link'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
-import { type OdSession, authenticate as odAuthenticate, parseMasterKey } from './ble/opendisplay-crypto'
+import { parseMasterKey } from './ble/opendisplay-crypto'
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ let dbsWorker: Worker | null = null
 let activePreset: Exclude<PresetName, 'custom'> = 'balanced'
 let bleProtocol: 'opendisplay' | 'gicisky' = 'opendisplay'
 type BleState =
-  | { protocol: 'opendisplay'; char: BluetoothRemoteGATTCharacteristic; session: OdSession | null }
+  | { protocol: 'opendisplay'; link: OdLink; info: OdDeviceInfo }
   | { protocol: 'gicisky';     conn: GiciskyConnection }
   | null
 let bleState: BleState = null
@@ -1522,11 +1523,13 @@ function setBleConnected(connected: boolean) {
   btnDisconnectDevice.classList.toggle('split-option--muted', !connected)
   bleStatus.classList.toggle('connected', connected)
   bleStatusText.textContent = connected ? 'Connected' : 'Not connected'
+  if (!connected) bleStatus.title = ''
 }
 
 function bleDisconnect() {
   if (bleState?.protocol === 'opendisplay') {
-    bleState.char.service.device.gatt?.disconnect()
+    bleState.link.dispose()
+    bleState.link.device.gatt?.disconnect()
   } else if (bleState?.protocol === 'gicisky') {
     bleState.conn.device.gatt?.disconnect()
   }
@@ -1542,23 +1545,19 @@ async function doConnect() {
   bleStatusText.textContent = 'Connecting…'
   try {
     if (bleProtocol === 'opendisplay') {
-      const char = await bleConnect()
-      let session: OdSession | null = null
-      let authFailed = false
-      if (odMasterKey) {
-        try {
-          session = await odAuthenticate(char, odMasterKey)
-        } catch (err) {
-          console.warn('OpenDisplay auth failed, continuing without encryption:', err)
-          authFailed = true
-        }
-      }
-      bleState = { protocol: 'opendisplay', char, session }
+      const { link, info, authError } = await bleConnect(odMasterKey)
+      if (authError) console.warn('OpenDisplay auth failed, continuing without encryption:', authError)
+      console.info(`OpenDisplay: connected, ${bleDescribeDevice(info)}`)
+      bleState = { protocol: 'opendisplay', link, info }
       setBleConnected(true)
-      if (session) bleStatusText.textContent = 'Connected (encrypted)'
-      else if (authFailed) bleStatusText.textContent = 'Connected (auth failed)'
-      char.service.device.addEventListener('gattserverdisconnected', () => {
-        bleState = null
+      if (link.session) bleStatusText.textContent = 'Connected (encrypted)'
+      else if (authError) bleStatusText.textContent = 'Connected (auth failed)'
+      const hint = bleFastUploadHint(info)
+      if (hint) console.info(`OpenDisplay: ${hint}`)
+      bleStatus.title = [bleDescribeDevice(info), hint].filter(Boolean).join('\n')
+      link.device.addEventListener('gattserverdisconnected', () => {
+        link.dispose()
+        if (bleState?.protocol === 'opendisplay' && bleState.link === link) bleState = null
         setBleConnected(false)
       })
     } else {
@@ -1627,7 +1626,7 @@ btnUploadDevice.addEventListener('click', async () => {
   btnUploadDeviceArrow.disabled = true
 
   const isConnected = () => bleState?.protocol === 'opendisplay'
-    ? bleState.char.service.device.gatt?.connected ?? false
+    ? bleState.link.connected
     : bleState?.protocol === 'gicisky'
       ? bleState.conn.device.gatt?.connected ?? false
       : false
@@ -1647,9 +1646,16 @@ btnUploadDevice.addEventListener('click', async () => {
     const toEncode = rotatePixels(img.ideal.data, img.width, img.height, parseInt(bleRotation.value))
 
     if (bleState.protocol === 'opendisplay') {
-      if (odMasterKey && !bleState.session) throw new Error('Encryption required but auth failed — check your key')
+      if (odMasterKey && !bleState.link.session) throw new Error('Encryption required but auth failed — check your key')
+      const problem = bleCheckCompatibility(bleState.info, toEncode.width, toEncode.height, paletteGroupId)
+      if (problem && !confirm(`This image doesn't match the connected device:\n\n${problem}\n\nUpload anyway?`)) {
+        btnUploadDevice.classList.remove('btn-sending')
+        btnUploadDevice.textContent = originalLabel
+        updateExportButtons()
+        return
+      }
       const imageBytes = bleEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId)
-      await bleSend(bleState.char, imageBytes, bleState.session ?? undefined, (sent, total) => {
+      await bleSend(bleState.link, imageBytes, bleState.info, (sent, total) => {
         btnUploadDevice.textContent = `↑ Sending ${Math.round((sent / total) * 100)}%…`
       })
     } else {
@@ -1669,8 +1675,8 @@ btnUploadDevice.addEventListener('click', async () => {
       updateExportButtons()
     }, 2000)
   } catch (err: unknown) {
-    bleState = null
-    setBleConnected(false)
+    console.error('BLE upload failed:', err)
+    bleDisconnect()
     const msg = err instanceof Error ? err.message : String(err)
     btnUploadDevice.classList.remove('btn-sending')
     if (!msg.toLowerCase().includes('cancel') && !msg.toLowerCase().includes('user')) {

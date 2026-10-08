@@ -1,15 +1,44 @@
-import { type OdSession, decryptResponse, encryptCommand } from './opendisplay-crypto'
+import { authenticate } from './opendisplay-crypto'
+import { OdLink, OdTimeoutError, hex, isAck, isNack } from './opendisplay-link'
 
 const SERVICE_UUID = 0x2446
+
+// Opcodes (opendisplay-protocol, src/opendisplay_protocol.h)
+const CMD_CONFIG_READ = 0x0040
+const CMD_FIRMWARE_VERSION = 0x0043
+const CMD_DIRECT_WRITE_START = 0x0070
+const CMD_DIRECT_WRITE_DATA = 0x0071
+const CMD_DIRECT_WRITE_END = 0x0072
+const RESP_REFRESH_SUCCESS = 0x73
+const RESP_REFRESH_TIMEOUT = 0x74
+
+// Direct-write data bytes per 0x71 frame. Encrypted: the envelope adds
+// cmd(2)+nonce(16)+len(1)+tag(12) = 31 bytes, and packets must stay <= 185.
 const CHUNK_SIZE = 230
-// Encrypted packet overhead: cmd(2)+nonce(16)+len(1)+tag(12) = 31 bytes on top of payload
 const ENCRYPTED_CHUNK_SIZE = 154
 
-// Palette groups that have no matching OpenDisplay color scheme
-const UNSUPPORTED_PALETTES = new Set(['acep'])
+// Timeouts. Data ACKs, the END ACK and the refresh can each block on a slow
+// SPI write or panel refresh (up to ~60 s on Spectra/ACeP); py-opendisplay
+// allows 90 s for all three.
+const TIMEOUT_ACK = 5_000
+const TIMEOUT_START = 15_000
+const TIMEOUT_DATA_ACK = 90_000
+const TIMEOUT_END_ACK = 90_000
+const TIMEOUT_REFRESH = 90_000
+
+// OpenDisplay color scheme (display config `color_scheme`) for each palette group
+const PALETTE_SCHEMES: Record<string, number> = {
+  bw: 0,
+  bwr: 1,
+  bwry: 3,
+  spectra6: 4,
+  grayscale4: 5,
+  grayscale8: 6,
+  grayscale16: 6,
+}
 
 export function isSupported(paletteGroupId: string): boolean {
-  return !UNSUPPORTED_PALETTES.has(paletteGroupId)
+  return paletteGroupId in PALETTE_SCHEMES
 }
 
 // Encode ideal ImageData pixels into OpenDisplay wire format.
@@ -117,9 +146,43 @@ function bwryCode(r: number, g: number, b: number): number {
   return gray > 128 ? 1 : 0
 }
 
-// ── BLE transport ─────────────────────────────────────────────────────────────
 
-export async function connectDevice(): Promise<BluetoothRemoteGATTCharacteristic> {
+// ── Connection and device info ────────────────────────────────────────────────
+
+export interface OdFirmwareVersion {
+  major: number
+  minor: number
+  patch: number
+}
+
+/** The first display's entry from the device's stored config (TLV packet 0x20). */
+export interface OdDisplayConfig {
+  width: number
+  height: number
+  panelIc: number
+  colorScheme: number
+  transmissionModes: number
+}
+
+export interface OdDeviceInfo {
+  firmware: OdFirmwareVersion | null
+  display: OdDisplayConfig | null
+}
+
+export interface OdConnection {
+  link: OdLink
+  info: OdDeviceInfo
+  /** Set when a master key was given but authentication failed. */
+  authError: unknown
+}
+
+/**
+ * Pick a device, connect, and read what it supports. The firmware version is
+ * always plaintext, so it's read before authenticating; the config read needs
+ * the session when the device has encryption enabled. Either read failing
+ * just leaves that part of `info` null (uploads then use the basic path).
+ */
+export async function connectDevice(masterKey: Uint8Array | null): Promise<OdConnection> {
   const device = await navigator.bluetooth.requestDevice({
     filters: [{ namePrefix: 'OD' }],
     optionalServices: [SERVICE_UUID],
@@ -128,151 +191,257 @@ export async function connectDevice(): Promise<BluetoothRemoteGATTCharacteristic
   const service = await server.getPrimaryService(SERVICE_UUID)
   const characteristic = await service.getCharacteristic(SERVICE_UUID)
   await characteristic.startNotifications()
-  return characteristic
+  const link = new OdLink(characteristic)
+
+  const firmware = await readFirmwareVersion(link)
+  let authError: unknown = null
+  if (masterKey) {
+    try {
+      link.session = await authenticate(link, masterKey)
+    } catch (err) {
+      authError = err
+    }
+  }
+  const display = await readDisplayConfig(link)
+  return { link, info: { firmware, display }, authError }
 }
 
-export function sendImage(
-  char: BluetoothRemoteGATTCharacteristic,
-  imageBytes: Uint8Array,
-  session?: OdSession,
-  onProgress?: (sent: number, total: number) => void
-): Promise<void> {
-  return session
-    ? sendImageEncrypted(char, imageBytes, session, onProgress)
-    : sendImagePlaintext(char, imageBytes, onProgress)
+export async function readFirmwareVersion(link: OdLink): Promise<OdFirmwareVersion | null> {
+  try {
+    link.drain()
+    await link.writeRaw(new Uint8Array([CMD_FIRMWARE_VERSION >> 8, CMD_FIRMWARE_VERSION & 0xFF]))
+    // [echo:2][major][minor][shaLen][sha...][patch] — patch was added after 2.25.0
+    for (let i = 0; i < 4; i++) {
+      const f = await link.readRaw(TIMEOUT_ACK)
+      if (!isAck(f, CMD_FIRMWARE_VERSION) || f.length < 5) continue
+      const patchAt = 5 + f[4]
+      return { major: f[2], minor: f[3], patch: f.length > patchAt ? f[patchAt] : 0 }
+    }
+  } catch (err) {
+    console.warn('OpenDisplay: could not read firmware version', err)
+  }
+  return null
 }
 
-function sendImagePlaintext(
-  char: BluetoothRemoteGATTCharacteristic,
-  imageBytes: Uint8Array,
-  onProgress?: (sent: number, total: number) => void
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const chunks: Uint8Array[] = []
-    for (let i = 0; i < imageBytes.length; i += CHUNK_SIZE) {
-      chunks.push(imageBytes.slice(i, i + CHUNK_SIZE))
-    }
-
-    let chunkIndex = 0
-    let done = false
-
-    // Timeout waiting for the start ACK — catches devices that silently drop plaintext commands
-    const startTimer = setTimeout(() => {
-      if (done) return
-      cleanup(); done = true
-      reject(new Error('BLE timeout: no response to start command (device may require encryption)'))
-    }, 15000)
-
-    const cleanup = () => {
-      clearTimeout(startTimer)
-      char.removeEventListener('characteristicvaluechanged', onNotification)
-    }
-
-    const sendChunk = async () => {
-      if (chunkIndex >= chunks.length) {
-        await char.writeValueWithoutResponse(new Uint8Array([0x00, 0x72]))
-        return
+export async function readDisplayConfig(link: OdLink): Promise<OdDisplayConfig | null> {
+  try {
+    link.drain()
+    await link.send(CMD_CONFIG_READ)
+    // First chunk: [echo:2][chunk#:2][total:2 LE][data...]; later chunks:
+    // [echo:2][chunk#:2][data...], until `total` data bytes have arrived.
+    let total = -1
+    let data = new Uint8Array(0)
+    let stray = 0
+    while (total < 0 || data.length < total) {
+      const f = await link.read(total < 0 ? 10_000 : 2_000)
+      if (isNack(f, CMD_CONFIG_READ)) return null  // device has no stored config
+      if (!isAck(f, CMD_CONFIG_READ)) {
+        if (++stray > 8) throw new Error('too many unrelated frames during config read')
+        continue
       }
-      const chunk = chunks[chunkIndex]
-      const cmd = new Uint8Array(2 + chunk.length)
-      cmd[0] = 0x00; cmd[1] = 0x71
-      cmd.set(chunk, 2)
-      await char.writeValueWithoutResponse(cmd)
-      onProgress?.(chunkIndex + 1, chunks.length)
-      chunkIndex++
+      const body = f.subarray(total < 0 ? 6 : 4)
+      if (total < 0) total = f[4] | (f[5] << 8)
+      else if (body.length === 0) throw new Error('config read stalled')
+      const grown = new Uint8Array(data.length + body.length)
+      grown.set(data, 0)
+      grown.set(body, data.length)
+      data = grown
     }
+    return parseDisplayConfig(data)
+  } catch (err) {
+    console.warn('OpenDisplay: could not read device config', err)
+    return null
+  }
+}
 
-    const onNotification = (event: Event) => {
-      if (done) return
-      clearTimeout(startTimer)  // any notification means device is alive
-      const value = (event.target as BluetoothRemoteGATTCharacteristic).value!
-      if (value.byteLength < 2) return
-      const b0 = value.getUint8(0)
-      const b1 = value.getUint8(1)
-      // Accept [0x00, 0xNN] and [0xNN, 0x00] byte orders
-      let responseCmd: number | null = null
-      if (b0 === 0x00 && b1 >= 0x70 && b1 <= 0x74) responseCmd = b1
-      else if (b1 === 0x00 && b0 >= 0x70 && b0 <= 0x74) responseCmd = b0
-      if (responseCmd === null) return
+// Fixed payload size of each TLV packet type. Packets carry no length field,
+// so reaching the display packet means knowing the size of everything before
+// it (py-opendisplay config_parser._get_packet_size).
+const TLV_PACKET_SIZES: Record<number, number> = {
+  0x01: 22, 0x02: 22, 0x04: 30, 0x20: 46, 0x21: 22, 0x23: 30, 0x24: 30, 0x25: 30,
+  0x26: 160, 0x27: 64, 0x28: 32, 0x29: 32, 0x2A: 32, 0x2B: 32, 0x2C: 288,
+}
 
-      if (responseCmd === 0x70) {
-        sendChunk().catch(err => { cleanup(); done = true; reject(err) })
-      } else if (responseCmd === 0x71) {
-        sendChunk().catch(err => { cleanup(); done = true; reject(err) })
-      } else if (responseCmd === 0x72) {
-        // end ack — wait for refresh complete
-      } else if (responseCmd === 0x73) {
-        cleanup(); done = true; resolve()
+/** Parse the first display packet from a config blob: [len:2][version:1][packets...][crc:2]. */
+export function parseDisplayConfig(raw: Uint8Array): OdDisplayConfig | null {
+  if (raw.length < 5) return null
+  const packets = raw.subarray(3, raw.length - 2)
+  let off = 0
+  while (off + 2 <= packets.length) {
+    const type = packets[off + 1]  // [packet_number:1][packet_type:1][data]
+    off += 2
+    const size = TLV_PACKET_SIZES[type]
+    if (size === undefined || off + size > packets.length) return null
+    if (type === 0x20) {
+      const d = new DataView(packets.buffer, packets.byteOffset + off, size)
+      return {
+        panelIc: d.getUint16(2, true),
+        width: d.getUint16(4, true),
+        height: d.getUint16(6, true),
+        colorScheme: d.getUint8(21),
+        transmissionModes: d.getUint8(22),
       }
     }
-
-    char.addEventListener('characteristicvaluechanged', onNotification)
-    char.writeValueWithoutResponse(new Uint8Array([0x00, 0x70])).catch(err => {
-      cleanup(); reject(err)
-    })
-  })
+    off += size
+  }
+  return null
 }
 
-function waitForNotification(
-  char: BluetoothRemoteGATTCharacteristic,
-  timeoutMs = 10000
-): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      char.removeEventListener('characteristicvaluechanged', handler)
-      reject(new Error('BLE notification timeout'))
-    }, timeoutMs)
-    function handler(event: Event) {
-      clearTimeout(timer)
-      char.removeEventListener('characteristicvaluechanged', handler)
-      const dv = (event.target as BluetoothRemoteGATTCharacteristic).value!
-      resolve(new Uint8Array(dv.buffer))
-    }
-    char.addEventListener('characteristicvaluechanged', handler)
-  })
+// display config `transmission_modes` bits
+const TM_PIPE_WRITE = 0x10
+
+function firmwareAtLeast(fw: OdFirmwareVersion | null, major: number, minor: number, patch = 0): boolean {
+  if (!fw) return false
+  if (fw.major !== major) return fw.major > major
+  if (fw.minor !== minor) return fw.minor > minor
+  return fw.patch >= patch
 }
 
-async function sendImageEncrypted(
-  char: BluetoothRemoteGATTCharacteristic,
+const SCHEME_NAMES: Record<number, string> = {
+  0: 'black/white', 1: 'black/white/red', 2: 'black/white/yellow', 3: 'black/white/red/yellow',
+  4: 'Spectra 6', 5: '4-level grey', 6: '16-level grey', 7: '7-colour ACeP', 8: 'Spectra 6 (split)',
+}
+
+/**
+ * Describe why an image won't display correctly on this device (wrong size or
+ * colour scheme), or null if it matches or the device config is unknown.
+ */
+export function checkCompatibility(info: OdDeviceInfo, width: number, height: number, paletteGroupId: string): string | null {
+  const d = info.display
+  if (!d) return null
+  const problems: string[] = []
+  if (d.width !== width || d.height !== height) {
+    problems.push(`The image is ${width}×${height} px but the device's panel is ${d.width}×${d.height} px.`)
+  }
+  const scheme = PALETTE_SCHEMES[paletteGroupId]
+  if (scheme !== undefined && scheme !== d.colorScheme) {
+    const name = SCHEME_NAMES[d.colorScheme] ?? `scheme ${d.colorScheme}`
+    problems.push(`The selected palette is ${SCHEME_NAMES[scheme]} but the device is configured as ${name}.`)
+  }
+  return problems.length ? problems.join('\n') : null
+}
+
+/**
+ * A hint when the firmware can do fast (PIPE_WRITE) uploads but the device's
+ * stored config doesn't advertise them. Both official clients only use the
+ * fast path when the config bit is set, so we do the same.
+ */
+export function fastUploadHint(info: OdDeviceInfo): string | null {
+  if (!info.display || (info.display.transmissionModes & TM_PIPE_WRITE)) return null
+  if (!firmwareAtLeast(info.firmware, 2, 20)) return null
+  return 'This device\'s firmware supports fast uploads, but they are switched off in its config. ' +
+    'Enable "pipe_write" under the display\'s transmission modes in the OpenDisplay toolbox.'
+}
+
+export function describeDevice(info: OdDeviceInfo): string {
+  const parts: string[] = []
+  if (info.firmware) parts.push(`firmware ${info.firmware.major}.${info.firmware.minor}.${info.firmware.patch}`)
+  if (info.display) {
+    const d = info.display
+    parts.push(`${d.width}×${d.height}`, SCHEME_NAMES[d.colorScheme] ?? `scheme ${d.colorScheme}`,
+      `transmission modes 0x${d.transmissionModes.toString(16).padStart(2, '0')}`)
+  }
+  return parts.join(', ') || 'no device info'
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+
+export interface UploadStats {
+  method: string
+  /** Encoded image size. */
+  bytes: number
+  /** Bytes actually streamed (compressed size when compressed). */
+  wireBytes: number
+  ms: number
+}
+
+/**
+ * Send an encoded image and wait for the panel refresh to finish.
+ * `onProgress` reports bytes of the streamed payload.
+ */
+export async function sendImage(
+  link: OdLink,
   imageBytes: Uint8Array,
-  session: OdSession,
+  info: OdDeviceInfo,
+  onProgress?: (sent: number, total: number) => void
+): Promise<UploadStats> {
+  void info
+  const t0 = performance.now()
+  await directWrite(link, imageBytes, onProgress)
+  const stats = { method: 'direct write', bytes: imageBytes.length, wireBytes: imageBytes.length, ms: performance.now() - t0 }
+  logStats(stats)
+  return stats
+}
+
+function logStats(s: UploadStats): void {
+  const rate = s.wireBytes / (s.ms / 1000)
+  console.info(
+    `OpenDisplay upload: ${s.method}, ${s.bytes} B` +
+    (s.wireBytes !== s.bytes ? ` (${s.wireBytes} B on the wire)` : '') +
+    `, ${(s.ms / 1000).toFixed(1)} s incl. refresh, ${(rate / 1024).toFixed(1)} KiB/s`
+  )
+}
+
+async function expectAck(link: OdLink, cmd: number, timeoutMs: number): Promise<void> {
+  const f = await link.read(timeoutMs)
+  if (!isAck(f, cmd)) throw new Error(`Unexpected response to 0x${cmd.toString(16)}: ${hex(f)}`)
+}
+
+// Lock-step direct write (0x70/0x71/0x72): one chunk in flight, each ACKed.
+// Supported by every OpenDisplay firmware.
+async function directWrite(
+  link: OdLink,
+  data: Uint8Array,
   onProgress?: (sent: number, total: number) => void
 ): Promise<void> {
-  const chunks: Uint8Array[] = []
-  for (let i = 0; i < imageBytes.length; i += ENCRYPTED_CHUNK_SIZE) {
-    chunks.push(imageBytes.slice(i, i + ENCRYPTED_CHUNK_SIZE))
+  link.drain()
+  await link.send(CMD_DIRECT_WRITE_START)
+  try {
+    await expectAck(link, CMD_DIRECT_WRITE_START, TIMEOUT_START)
+  } catch (err) {
+    if (err instanceof OdTimeoutError) {
+      throw new Error('BLE timeout: no response to start command (device may require encryption)')
+    }
+    throw err
   }
+  const autoCompleted = await sendDataChunks(link, data, onProgress)
+  await finishDirectWrite(link, autoCompleted)
+}
 
-  // Send start
-  const startBytes = await encryptCommand(session, 0x0070, new Uint8Array(0))
-  await char.writeValueWithoutResponse(startBytes as unknown as Uint8Array<ArrayBuffer>)
-  const startAck = await waitForNotification(char)
-  const { cmd: startCmd } = await decryptResponse(session, startAck)
-  if ((startCmd & 0x7FFF) !== 0x0070) throw new Error(`Unexpected start ACK: 0x${startCmd.toString(16)}`)
-
-  // Send chunks
-  for (let i = 0; i < chunks.length; i++) {
-    const chunkBytes = await encryptCommand(session, 0x0071, chunks[i])
-    await char.writeValueWithoutResponse(chunkBytes as unknown as Uint8Array<ArrayBuffer>)
-    const ack = await waitForNotification(char)
-    const { cmd: ackCmd } = await decryptResponse(session, ack)
-    if ((ackCmd & 0x7FFF) !== 0x0071) throw new Error(`Unexpected chunk ACK: 0x${ackCmd.toString(16)}`)
-    onProgress?.(i + 1, chunks.length)
+/**
+ * Send 0x71 chunks, each waiting for its ACK. Returns true if the device
+ * auto-completed (answered 0x72 instead of 0x71 because its buffer is full);
+ * no END may be sent then.
+ */
+async function sendDataChunks(
+  link: OdLink,
+  data: Uint8Array,
+  onProgress?: (sent: number, total: number) => void
+): Promise<boolean> {
+  const size = link.session ? ENCRYPTED_CHUNK_SIZE : CHUNK_SIZE
+  for (let off = 0; off < data.length; off += size) {
+    await link.send(CMD_DIRECT_WRITE_DATA, data.subarray(off, off + size))
+    const f = await link.read(TIMEOUT_DATA_ACK)
+    onProgress?.(Math.min(off + size, data.length), data.length)
+    if (isAck(f, CMD_DIRECT_WRITE_END)) return true
+    if (!isAck(f, CMD_DIRECT_WRITE_DATA)) throw new Error(`Upload failed at byte ${off}: ${hex(f)}`)
   }
+  return false
+}
 
-  // Send end
-  const endBytes = await encryptCommand(session, 0x0072, new Uint8Array(0))
-  await char.writeValueWithoutResponse(endBytes as unknown as Uint8Array<ArrayBuffer>)
-  // Await end ACK then refresh-complete notification (both encrypted)
-  const endAck = await waitForNotification(char)
-  const { cmd: endCmd } = await decryptResponse(session, endAck)
-  if ((endCmd & 0x7FFF) !== 0x0072 && (endCmd & 0x7FFF) !== 0x0073) {
-    throw new Error(`Unexpected end ACK: 0x${endCmd.toString(16)}`)
+async function finishDirectWrite(link: OdLink, autoCompleted: boolean): Promise<void> {
+  if (!autoCompleted) {
+    await link.send(CMD_DIRECT_WRITE_END, new Uint8Array([0]))  // 0 = full refresh
+    const f = await link.read(TIMEOUT_END_ACK)
+    if (isAck(f, RESP_REFRESH_SUCCESS)) return  // some firmware skips the END ACK
+    if (!isAck(f, CMD_DIRECT_WRITE_END)) throw new Error(`Unexpected response to end of upload: ${hex(f)}`)
   }
-  if ((endCmd & 0x7FFF) === 0x0073) return  // some firmware sends 0x73 directly
+  await awaitRefresh(link)
+}
 
-  // Await refresh complete
-  const refreshAck = await waitForNotification(char, 30000)
-  const { cmd: refreshCmd } = await decryptResponse(session, refreshAck)
-  if ((refreshCmd & 0x7FFF) !== 0x0073) throw new Error(`Unexpected refresh notification: 0x${refreshCmd.toString(16)}`)
+async function awaitRefresh(link: OdLink): Promise<void> {
+  const f = await link.read(TIMEOUT_REFRESH)
+  if (isAck(f, RESP_REFRESH_SUCCESS)) return
+  if (isAck(f, RESP_REFRESH_TIMEOUT)) throw new Error('Display refresh timed out')
+  throw new Error(`Unexpected response waiting for refresh: ${hex(f)}`)
 }
