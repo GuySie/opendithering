@@ -495,6 +495,16 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   display: block;
   image-rendering: pixelated;
 }
+/* Fit view of an image larger than the screen can show pixel for pixel: a
+   linear-light area average at device resolution (renderFitView() in main.ts),
+   instead of the full-size canvas shrunk by nearest neighbour, which aliases
+   dither patterns into speckle and moiré. Zoomed (1:1) uses the full canvas. */
+.canvas-viewport canvas.preview-fit {
+  display: none;
+  image-rendering: auto;
+}
+.canvas-viewport.fit-active:not(.zoomed) canvas.preview-fit { display: block; }
+.canvas-viewport.fit-active:not(.zoomed) canvas:not(.preview-fit) { display: none; }
 /* Unzoomed: shrink to fit both axes of the viewport (so a portrait image
    never forces the pane taller than the available space), and frame the
    canvas itself rather than its — generally larger — flex box, so the

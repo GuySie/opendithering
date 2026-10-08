@@ -100,7 +100,8 @@ src/
 │   ├── pipeline.ts            # runPipeline() — orchestrates all steps, returns {measured, ideal, target}
 │   ├── gamut.ts               # buildGamut() / applyGamutMapping() — convex hull of the measured palette in linear RGB; maps out-of-gamut colours onto it (closest colour in YyCxCz, or towards grey)
 │   ├── colortune.ts           # colorTune() (not in UI) — optimizer for RGB channel gains; also the shared tuner/DBS-debug reference (buildTuneReference, imageStats, loss)
-│   └── huetune.ts             # hueTune() (not in UI) — optimizer for per-hue saturation bands; evaluateHueBands() used by the DBS debug panel
+│   ├── huetune.ts             # hueTune() (not in UI) — optimizer for per-hue saturation bands; evaluateHueBands() used by the DBS debug panel
+│   └── preview.ts             # downscaleLinear() — linear-light area average for the fit-to-window preview
 ├── ble/
 │   ├── opendisplay.ts         # OpenDisplay BLE: encodeImage(), connectDevice(), sendImage() dispatcher, device config/firmware reads
 │   ├── opendisplay-link.ts    # OdLink: notification queue + (encrypted) command send/read
@@ -360,6 +361,8 @@ The Device preset dropdown is a custom two-level cascade (`#presetCascade` trigg
 ### Zoom / pan
 
 Clicking either preview canvas zooms to 1:1 pixels, centered on the click point. Dragging pans both canvases in sync. Clicking again returns to fit view. Changing any setting exits zoom mode. Implemented via `position: absolute` canvas inside an `overflow: hidden` `.canvas-viewport` div; both canvases receive the same `transform: translate()`.
+
+**Fit view is averaged, not nearest neighbour.** Unzoomed, an image larger than the viewport is not the full canvas shrunk by CSS: with `image-rendering: pixelated` that is nearest neighbour, which shows one pixel in several and aliases dither patterns into speckle and moiré the panel doesn't have. DBS suffers most, because it mixes high-contrast inks (it mixes in linear light, so it needs more dark dots than error diffusion, and only judges the eye-blurred result). Measured on a painting, guysie Spectra 6, Pre-DBS, 40 % preview: nearest neighbour gave DBS 15.1 OKLab ΔE×100 of noise vs 12.4 for Dizzy, while an area average gave 3.8 vs 4.0. Each pane therefore has a second canvas (`canvasOriginalFit`/`canvasDitheredFit`, class `preview-fit`) holding `downscaleLinear()` of the full image at the device-pixel size the fit view occupies: an exact area average (fractional footprints weighted by overlap) in **linear light**, since the eye averages light. The browser's smooth scaling isn't used: it averages too few pixels at large reductions, and averages sRGB codes, which weighs dark dots too heavily (a black/white checkerboard should look like sRGB 188, not 128). `putImageData()` records each pane's image and `renderFitView()` redraws on new data, viewport resize (`ResizeObserver`) and `devicePixelRatio` changes; the viewport gets `fit-active` when the averaged canvas is shown (CSS swaps the two). When there are enough device pixels for every image pixel, the full canvas is shown as before. Zoom/pan always use the full canvases; click-to-zoom measures the click on whichever canvas is visible. About 40 ms per pane for a 1200×1600 image.
 
 ## Deployment
 

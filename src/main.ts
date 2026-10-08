@@ -18,6 +18,7 @@ import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, enc
 import type { GiciskyConnection } from './ble/gicisky'
 import { OdAuthError, parseKeyInput } from './ble/opendisplay-crypto'
 import { OdDisconnectedError } from './ble/opendisplay-link'
+import { downscaleLinear } from './processing/preview'
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,8 @@ const gamutMethodSelect   = el<HTMLSelectElement>('gamutMethodSelect')
 const rowGamutBalance     = el<HTMLDivElement>('rowGamutBalance')
 const canvasOrig       = el<HTMLCanvasElement>('canvasOriginal')
 const canvasDith       = el<HTMLCanvasElement>('canvasDithered')
+const canvasOrigFit    = el<HTMLCanvasElement>('canvasOriginalFit')
+const canvasDithFit    = el<HTMLCanvasElement>('canvasDitheredFit')
 const viewportOrig     = el<HTMLDivElement>('viewportOrig')
 const viewportDith     = el<HTMLDivElement>('viewportDith')
 const emptyState       = el<HTMLDivElement>('emptyState')
@@ -520,7 +523,93 @@ function putImageData(canvas: HTMLCanvasElement, data: ImageData) {
   canvas.width = data.width
   canvas.height = data.height
   canvas.getContext('2d')!.putImageData(data, 0, 0)
+  const view = fitViews.find(v => v.native === canvas)
+  if (view) {
+    view.data = data
+    view.renderedKey = ''
+    scheduleFitRender()
+  }
 }
+
+// ── Fit view: averaged downscale ──────────────────────────────────────────
+//
+// The full-size canvases stay the source of truth (zoom and pan work on them
+// at 1:1). Unzoomed, an image larger than the viewport is shown through a
+// second canvas holding a linear-light area average at device-pixel size
+// (downscaleLinear in processing/preview.ts): CSS-shrinking the full canvas
+// with `image-rendering: pixelated` is nearest neighbour, which shows one
+// pixel in several and aliases dither patterns (DBS's worst) into speckle and
+// moiré the panel doesn't have.
+
+interface FitView {
+  viewport: HTMLDivElement
+  native: HTMLCanvasElement
+  fit: HTMLCanvasElement
+  data: ImageData | null
+  renderedKey: string  // data + output size last drawn into `fit`
+}
+
+const fitViews: FitView[] = [
+  { viewport: viewportOrig, native: canvasOrig, fit: canvasOrigFit, data: null, renderedKey: '' },
+  { viewport: viewportDith, native: canvasDith, fit: canvasDithFit, data: null, renderedKey: '' },
+]
+
+let fitRenderPending = false
+function scheduleFitRender() {
+  if (fitRenderPending) return
+  fitRenderPending = true
+  requestAnimationFrame(() => {
+    fitRenderPending = false
+    for (const v of fitViews) renderFitView(v)
+  })
+}
+
+// Canvas border (1px each side, border-box sizing), see .canvas-viewport canvas
+const FIT_BORDER = 2
+
+function renderFitView(v: FitView) {
+  // Zoomed shows the full canvas; the fit view is redrawn on leaving zoom
+  // (the viewport resizes back, which the ResizeObserver reports).
+  if (zoomed || !v.data) return
+  const { width: w, height: h } = v.data
+  const availW = v.viewport.clientWidth - FIT_BORDER
+  const availH = v.viewport.clientHeight - FIT_BORDER
+  if (availW <= 0 || availH <= 0) return
+  const scale = Math.min(1, availW / w, availH / h)
+  const cssW = w * scale, cssH = h * scale
+  const dpr = window.devicePixelRatio || 1
+  const outW = Math.max(1, Math.round(cssW * dpr)), outH = Math.max(1, Math.round(cssH * dpr))
+  // Enough device pixels for every image pixel: the full canvas shows it
+  // exactly, nothing to average.
+  if (outW >= w && outH >= h) {
+    v.viewport.classList.remove('fit-active')
+    return
+  }
+  const key = `${outW}x${outH}`
+  if (v.renderedKey !== key) {
+    const small = downscaleLinear(v.data, outW, outH)
+    v.fit.width = outW
+    v.fit.height = outH
+    v.fit.getContext('2d')!.putImageData(small, 0, 0)
+    v.renderedKey = key
+  }
+  v.fit.style.width = `${cssW + FIT_BORDER}px`
+  v.fit.style.height = `${cssH + FIT_BORDER}px`
+  v.viewport.classList.add('fit-active')
+}
+
+const fitResizeObserver = new ResizeObserver(() => scheduleFitRender())
+for (const v of fitViews) fitResizeObserver.observe(v.viewport)
+
+// Browser zoom or moving to a screen with another pixel density changes
+// devicePixelRatio without resizing the viewport in CSS pixels.
+function watchDevicePixelRatio() {
+  matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener('change', () => {
+    scheduleFitRender()
+    watchDevicePixelRatio()
+  }, { once: true })
+}
+watchDevicePixelRatio()
 
 function showOriginal(data: ImageData) {
   putImageData(canvasOrig, data)
@@ -2003,7 +2092,7 @@ function exitZoom() {
   canvasDith.style.transform = ''
 }
 
-function setupViewportListeners(viewport: HTMLDivElement, canvas: HTMLCanvasElement) {
+function setupViewportListeners(viewport: HTMLDivElement, canvas: HTMLCanvasElement, fit: HTMLCanvasElement) {
   viewport.addEventListener('mousedown', e => {
     if (!zoomed || viewportOrig.classList.contains('no-pan')) return
     e.preventDefault()
@@ -2020,16 +2109,17 @@ function setupViewportListeners(viewport: HTMLDivElement, canvas: HTMLCanvasElem
       return
     }
     if (!canvas.width) return
-    // Convert click position to canvas pixel coordinates
-    const rect = canvas.getBoundingClientRect()
+    // Convert click position to canvas pixel coordinates, measured on the
+    // canvas actually on screen (the fit view's, when that is shown)
+    const rect = (viewport.classList.contains('fit-active') ? fit : canvas).getBoundingClientRect()
     const imgX = (e.clientX - rect.left) * (canvas.width  / rect.width)
     const imgY = (e.clientY - rect.top)  * (canvas.height / rect.height)
     enterZoom(imgX, imgY)
   })
 }
 
-setupViewportListeners(viewportOrig, canvasOrig)
-setupViewportListeners(viewportDith, canvasDith)
+setupViewportListeners(viewportOrig, canvasOrig, canvasOrigFit)
+setupViewportListeners(viewportDith, canvasDith, canvasDithFit)
 
 document.addEventListener('mousemove', e => {
   if (!dragStart) return
