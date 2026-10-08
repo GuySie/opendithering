@@ -20,6 +20,8 @@ export class OdTimeoutError extends Error {
  */
 export class OdLink {
   session: OdSession | null = null
+  /** PIPE_WRITE was tried on this connection and the device didn't take it. */
+  pipeUnavailable = false
   private queue: Uint8Array[] = []
   private waiter: ((frame: Uint8Array) => void) | null = null
   private writeWithoutResponseUnsupported = false

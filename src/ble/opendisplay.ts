@@ -1,5 +1,6 @@
 import { authenticate } from './opendisplay-crypto'
 import { OdLink, OdTimeoutError, hex, isAck, isNack } from './opendisplay-link'
+import { negotiatePipe, pipeWrite } from './opendisplay-pipe'
 
 const SERVICE_UUID = 0x2446
 
@@ -302,6 +303,17 @@ const TM_STREAMING_DECOMPRESSION = 0x01
 const TM_ZIP = 0x02
 const TM_PIPE_WRITE = 0x10
 
+/**
+ * Use PIPE_WRITE only when the device config advertises it (bit 0x10), as
+ * both official clients do, and not after it already failed to start on this
+ * connection. Encrypted links stay on direct write for now.
+ */
+function pipeEligible(link: OdLink, info: OdDeviceInfo): boolean {
+  if (!info.display || !(info.display.transmissionModes & TM_PIPE_WRITE)) return false
+  if (link.pipeUnavailable) return false
+  return !link.session
+}
+
 function firmwareAtLeast(fw: OdFirmwareVersion | null, major: number, minor: number, patch = 0): boolean {
   if (!fw) return false
   if (fw.major !== major) return fw.major > major
@@ -379,6 +391,25 @@ export async function sendImage(
 ): Promise<UploadStats> {
   const t0 = performance.now()
   const compressed = await compressFor(info, imageBytes)
+
+  if (pipeEligible(link, info)) {
+    const p = await negotiatePipe(link, compressed !== null, imageBytes.length)
+    if (p) {
+      const payload = p.compressed ? compressed! : imageBytes
+      const retx = await pipeWrite(link, payload, p, onProgress)
+      await awaitRefresh(link)
+      const stats = {
+        method: `pipe write${p.compressed ? ', compressed' : ''} (window ${p.window}, ACK every ${p.ackEvery}, ` +
+          `${p.frame} B frames, ${retx} retransmits)`,
+        bytes: imageBytes.length, wireBytes: payload.length, ms: performance.now() - t0,
+      }
+      logStats(stats)
+      return stats
+    }
+    link.pipeUnavailable = true
+    console.info('OpenDisplay: PIPE_WRITE unavailable on this device; using direct write')
+  }
+
   let method = 'direct write'
   let wireBytes = imageBytes.length
   if (compressed && await directWriteCompressed(link, imageBytes, compressed, onProgress)) {
