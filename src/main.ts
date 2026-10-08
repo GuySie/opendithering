@@ -1654,7 +1654,7 @@ btnUploadDevice.addEventListener('click', async () => {
         updateExportButtons()
         return
       }
-      const imageBytes = bleEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId)
+      const imageBytes = bleEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId, bleState.info.display?.colorScheme)
       await bleSend(bleState.link, imageBytes, bleState.info, (sent, total) => {
         btnUploadDevice.textContent = `↑ Sending ${Math.round((sent / total) * 100)}%…`
       })

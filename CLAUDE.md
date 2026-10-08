@@ -285,7 +285,7 @@ No automated BLE tests exist; the protocol code was developed against a scripted
 | `grayscale16` | 6 | 4 bits/pixel nibble-packed, Rec.709 luminance → 0–15 |
 | `acep` | 7 | 4 bits/pixel nibble-packed (black=0, white=1, yellow=2, red=3, blue=4, green=5, orange=6 — blue/green differ from Spectra 6) |
 
-Scheme 8 (Spectra 6 split, reTerminal E1004: left half-plane then right) isn't encoded; `checkCompatibility()` warns when a device reports it. The BLE connection is kept between uploads; `gattserverdisconnected` clears it, and a failed upload disconnects.
+Scheme 8 (Spectra 6 split): panels driven by two controllers (e.g. the 13.3" reTerminal E1004) take the left half of every row first, then the right half (`mid = floor(width/2)`, each half row-padded, same nibble codes as scheme 4). `encodeImage()` gets the connected device's `color_scheme` and uses this layout for `spectra6` when the device reports 8. Sent as plain rows instead, the top of the image shows on the left half and the bottom on the right, both squashed. Matches py-opendisplay `encode_4bpp(half_planes=True)` and ble-common.js byte for byte. The BLE connection is kept between uploads; `gattserverdisconnected` clears it, and a failed upload disconnects.
 
 The Export section UI provides: an **↑ OpenDisplay BLE** / **↑ Gicisky BLE** split button (label reflects the active protocol), a **▾** dropdown with **OpenDisplay** / **Gicisky** protocol switchers plus **Connect** and **Disconnect** items, a shared connection status indicator, and a browser-compatibility hint. Switching protocol auto-disconnects the current connection. The active protocol is tracked in `bleProtocol` (`'opendisplay' | 'gicisky'`) and the connection in `bleState` (a discriminated union typed by protocol) in `main.ts`.
 

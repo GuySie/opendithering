@@ -37,6 +37,9 @@ const TIMEOUT_DATA_ACK = 90_000
 const TIMEOUT_END_ACK = 90_000
 const TIMEOUT_REFRESH = 90_000
 
+const SCHEME_SPECTRA6 = 4
+const SCHEME_SPECTRA6_SPLIT = 8
+
 // OpenDisplay color scheme (display config `color_scheme`) for each palette group
 const PALETTE_SCHEMES: Record<string, number> = {
   bw: 0,
@@ -58,15 +61,33 @@ export function isSupported(paletteGroupId: string): boolean {
 // Every row starts on a byte boundary (the firmware and py-opendisplay both
 // row-pad), so panels whose width isn't a multiple of the packing factor
 // (e.g. the 122-px EP213) don't get their rows shifted.
+//
+// `deviceScheme` is the connected device's configured color scheme, if known.
+// It only changes the layout for split Spectra 6 panels (scheme 8).
 export function encodeImage(
   pixels: Uint8ClampedArray,
   width: number,
   height: number,
-  paletteGroupId: string
+  paletteGroupId: string,
+  deviceScheme?: number
 ): Uint8Array {
   if (paletteGroupId === 'spectra6') {
     // Scheme 4: 4 bits/pixel, high nibble = left pixel
     // Color codes: black=0, white=1, yellow=2, red=3, blue=5, green=6
+    if (deviceScheme === SCHEME_SPECTRA6_SPLIT) {
+      // Scheme 8: same codes, but panels driven by two controllers (e.g. the
+      // 13.3" reTerminal E1004) take the left half of every row first, then
+      // the right half, so each controller's data arrives in one run. Sent as
+      // plain rows, the top of the image lands on the left half and the
+      // bottom on the right.
+      const mid = Math.floor(width / 2)
+      const left = packRows(pixels, width, height, 4, spectra6Code, 0, mid)
+      const right = packRows(pixels, width, height, 4, spectra6Code, mid, width)
+      const out = new Uint8Array(left.length + right.length)
+      out.set(left, 0)
+      out.set(right, left.length)
+      return out
+    }
     return packRows(pixels, width, height, 4, spectra6Code)
 
   } else if (paletteGroupId === 'acep') {
@@ -111,22 +132,25 @@ export function encodeImage(
 }
 
 // Pack per-pixel codes of `bits` bits each (1, 2 or 4), MSB = leftmost pixel,
-// zero-padding the end of every row to a whole byte.
+// zero-padding the end of every row to a whole byte. Packs columns x0..x1-1.
 function packRows(
   pixels: Uint8ClampedArray,
   width: number,
   height: number,
   bits: 1 | 2 | 4,
-  code: (r: number, g: number, b: number) => number
+  code: (r: number, g: number, b: number) => number,
+  x0 = 0,
+  x1 = width
 ): Uint8Array {
   const perByte = 8 / bits
-  const rowBytes = Math.ceil(width / perByte)
+  const rowBytes = Math.ceil((x1 - x0) / perByte)
   const out = new Uint8Array(rowBytes * height)
   for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
+    for (let x = x0; x < x1; x++) {
       const p = (y * width + x) * 4
-      const shift = 8 - bits * (x % perByte + 1)
-      out[y * rowBytes + Math.floor(x / perByte)] |= code(pixels[p], pixels[p + 1], pixels[p + 2]) << shift
+      const col = x - x0
+      const shift = 8 - bits * (col % perByte + 1)
+      out[y * rowBytes + Math.floor(col / perByte)] |= code(pixels[p], pixels[p + 1], pixels[p + 2]) << shift
     }
   }
   return out
@@ -370,7 +394,8 @@ export function checkCompatibility(info: OdDeviceInfo, width: number, height: nu
     problems.push(`The image is ${width}×${height} px but the device's panel is ${d.width}×${d.height} px.`)
   }
   const scheme = PALETTE_SCHEMES[paletteGroupId]
-  if (scheme !== undefined && scheme !== d.colorScheme) {
+  const splitSpectra6 = scheme === SCHEME_SPECTRA6 && d.colorScheme === SCHEME_SPECTRA6_SPLIT  // encodeImage handles it
+  if (scheme !== undefined && scheme !== d.colorScheme && !splitSpectra6) {
     const name = SCHEME_NAMES[d.colorScheme] ?? `scheme ${d.colorScheme}`
     problems.push(`The selected palette is ${SCHEME_NAMES[scheme]} but the device is configured as ${name}.`)
   }
