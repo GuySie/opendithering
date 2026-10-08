@@ -252,7 +252,7 @@ Sends the already-dithered `ideal` ImageData to an OpenDisplay e-paper device ov
 
 **Connect** (`connectDevice(masterKey)`): pick device → GATT → `startNotifications()` → read firmware version (`0x0043`, always plaintext, so before auth) → authenticate if a key is set → read the device config (`0x0040`, chunked; the TLV packets have no length field, so `parseDisplayConfig()` walks py-opendisplay's fixed packet-size table to the first display packet `0x20`) for panel size, `color_scheme` and `transmission_modes`. Either read failing leaves that info null and uploads use plain direct write. Before an upload, `checkCompatibility()` asks for confirmation if the image size or palette doesn't match the panel. If the firmware is ≥ 2.20 but the config's `pipe_write` bit is off, `fastUploadHint()` says so (console + status tooltip): the bit is **stored config**, set in the OpenDisplay toolbox, not detected — new firmware alone doesn't enable fast uploads.
 
-**Upload paths**, tried in order by `sendImage()` (it logs method, size, time and throughput to the console):
+**Upload paths**, tried in order by `sendImage()`. It logs the method, size, transfer time (until the device confirms it has the whole image) and refresh time to the console. `connectDevice()` logs per-phase connect timings. To compare paths on hardware, set `localStorage.odUpload = 'direct'` (skip PIPE_WRITE) or `'plain'` (also skip compression: the original upload) in the console; `localStorage.removeItem('odUpload')` restores the default.
 
 | Path | When | How |
 |---|---|---|
@@ -267,6 +267,8 @@ Things that are easy to get wrong:
 - **Rows are byte-aligned**: each row starts a new byte (`ceil(w·bits/8)` bytes per row, per bitplane for BWR), matching the firmware and py-opendisplay. Only matters for widths not a multiple of 8/4/2.
 - **One deliberate deviation from the reference clients' pipe sender**: when an ACK is overdue while a retransmit is outstanding, it re-probes after 600 ms instead of waiting out the 15 s ACK timeout (a lost retransmit otherwise stalls the full window), and it aborts on 45 s of total silence rather than after 3 probes, so a device blocked on a slow SPI write isn't abandoned.
 - Dithered images compress modestly: uniform random 6-colour noise still deflates to ~66% (6 inks in a 4-bit nibble leave slack); flat art compresses far more. The pipe is the main speed-up.
+
+Measured on hardware (2026-10-08, 7.3" Spectra 6, 800×480, firmware 2.26.2, `transmission_modes` 0x19): compressed PIPE_WRITE sent the 192,000 B image as ~97–100 KB of zlib in 5.7 s (W 16, N 4, 0–1 retransmits); the panel refresh took a further ~33 s. Connecting takes ~2–3 s, almost all of it the GATT connection; the version and config reads add ~125 ms. The old lock-step path wasn't measured for comparison.
 
 No automated BLE tests exist; the protocol code was developed against a scripted fake device (modelled on `Firmware/src/display_service.cpp` `handlePipeWriteData`, with frame loss, stalls and encryption) that isn't checked in. The physical device is the final check.
 

@@ -219,13 +219,16 @@ export async function connectDevice(masterKey: Uint8Array | null): Promise<OdCon
     filters: [{ namePrefix: 'OD' }],
     optionalServices: [SERVICE_UUID],
   })
+  const t0 = performance.now()
   const server = await device.gatt!.connect()
   const service = await server.getPrimaryService(SERVICE_UUID)
   const characteristic = await service.getCharacteristic(SERVICE_UUID)
   await characteristic.startNotifications()
   const link = new OdLink(characteristic)
+  const t1 = performance.now()
 
   const firmware = await readFirmwareVersion(link)
+  const t2 = performance.now()
   let authError: unknown = null
   if (masterKey) {
     try {
@@ -234,7 +237,12 @@ export async function connectDevice(masterKey: Uint8Array | null): Promise<OdCon
       authError = err
     }
   }
+  const t3 = performance.now()
   const display = await readDisplayConfig(link)
+  const t4 = performance.now()
+  const ms = (a: number, b: number) => `${Math.round(b - a)} ms`
+  console.info(`OpenDisplay: connect took ${ms(t0, t4)} (GATT ${ms(t0, t1)}, firmware version ${ms(t1, t2)}, ` +
+    `auth ${ms(t2, t3)}, config ${ms(t3, t4)})`)
   return { link, info: { firmware, display }, authError }
 }
 
@@ -400,7 +408,21 @@ export interface UploadStats {
   bytes: number
   /** Bytes actually streamed (compressed size when compressed). */
   wireBytes: number
+  /** Start until the device confirmed it has the whole image. */
+  transferMs: number
+  /** Total including the panel refresh. */
   ms: number
+}
+
+// Debug switches for comparing upload paths on real hardware, set in the
+// browser console: localStorage.odUpload = 'direct' (skip PIPE_WRITE) or
+// 'plain' (skip PIPE_WRITE and compression: the original lock-step upload).
+function uploadOverride(): string | null {
+  try {
+    return localStorage.getItem('odUpload')
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -414,21 +436,27 @@ export async function sendImage(
   onProgress?: (sent: number, total: number) => void
 ): Promise<UploadStats> {
   const t0 = performance.now()
-  const compressed = await compressFor(info, imageBytes)
+  let transferredAt = 0
+  const markTransferred = () => { transferredAt ||= performance.now() }
+  const finish = (method: string, wireBytes: number): UploadStats => {
+    const end = performance.now()
+    const stats = { method, bytes: imageBytes.length, wireBytes, transferMs: (transferredAt || end) - t0, ms: end - t0 }
+    logStats(stats)
+    return stats
+  }
+  const override = uploadOverride()
+  if (override) console.info(`OpenDisplay: upload override "${override}" (localStorage.odUpload)`)
+  const compressed = override === 'plain' ? null : await compressFor(info, imageBytes)
 
-  if (pipeEligible(link, info)) {
+  if (!override && pipeEligible(link, info)) {
     const p = await negotiatePipe(link, compressed !== null, imageBytes.length)
     if (p) {
       const payload = p.compressed ? compressed! : imageBytes
       const retx = await pipeWrite(link, payload, p, onProgress)
+      markTransferred()
       await awaitRefresh(link)
-      const stats = {
-        method: `pipe write${p.compressed ? ', compressed' : ''} (window ${p.window}, ACK every ${p.ackEvery}, ` +
-          `${p.frame} B frames, ${retx} retransmits)`,
-        bytes: imageBytes.length, wireBytes: payload.length, ms: performance.now() - t0,
-      }
-      logStats(stats)
-      return stats
+      return finish(`pipe write${p.compressed ? ', compressed' : ''} (window ${p.window}, ACK every ${p.ackEvery}, ` +
+        `${p.frame} B frames, ${retx} retransmits)`, payload.length)
     }
     link.pipeUnavailable = true
     console.info('OpenDisplay: PIPE_WRITE unavailable on this device; using direct write')
@@ -436,16 +464,14 @@ export async function sendImage(
 
   let method = 'direct write'
   let wireBytes = imageBytes.length
-  if (compressed && await directWriteCompressed(link, imageBytes, compressed, onProgress)) {
+  if (compressed && await directWriteCompressed(link, imageBytes, compressed, markTransferred, onProgress)) {
     method = 'compressed direct write'
     wireBytes = compressed.length
   } else {
     if (compressed) method = 'direct write (compressed start rejected)'
-    await directWrite(link, imageBytes, onProgress)
+    await directWrite(link, imageBytes, markTransferred, onProgress)
   }
-  const stats = { method, bytes: imageBytes.length, wireBytes, ms: performance.now() - t0 }
-  logStats(stats)
-  return stats
+  return finish(method, wireBytes)
 }
 
 /**
@@ -464,11 +490,12 @@ async function compressFor(info: OdDeviceInfo, data: Uint8Array): Promise<Uint8A
 }
 
 function logStats(s: UploadStats): void {
-  const rate = s.wireBytes / (s.ms / 1000)
+  const rate = s.wireBytes / (s.transferMs / 1000)
   console.info(
     `OpenDisplay upload: ${s.method}, ${s.bytes} B` +
     (s.wireBytes !== s.bytes ? ` (${s.wireBytes} B on the wire)` : '') +
-    `, ${(s.ms / 1000).toFixed(1)} s incl. refresh, ${(rate / 1024).toFixed(1)} KiB/s`
+    `, transfer ${(s.transferMs / 1000).toFixed(1)} s (${(rate / 1024).toFixed(1)} KiB/s), ` +
+    `refresh ${((s.ms - s.transferMs) / 1000).toFixed(1)} s, total ${(s.ms / 1000).toFixed(1)} s`
   )
 }
 
@@ -477,6 +504,7 @@ function logStats(s: UploadStats): void {
 async function directWrite(
   link: OdLink,
   data: Uint8Array,
+  onTransferred: () => void,
   onProgress?: (sent: number, total: number) => void
 ): Promise<void> {
   link.drain()
@@ -484,7 +512,7 @@ async function directWrite(
   const f = await readStartResponse(link)
   if (!isAck(f, CMD_DIRECT_WRITE_START)) throw new Error(`Unexpected response to upload start: ${hex(f)}`)
   const autoCompleted = await sendDataChunks(link, data, 0, data.length, onProgress)
-  await finishDirectWrite(link, autoCompleted)
+  await finishDirectWrite(link, autoCompleted, onTransferred)
 }
 
 /**
@@ -496,6 +524,7 @@ async function directWriteCompressed(
   link: OdLink,
   data: Uint8Array,
   z: Uint8Array,
+  onTransferred: () => void,
   onProgress?: (sent: number, total: number) => void
 ): Promise<boolean> {
   const maxStart = link.session ? MAX_START_PAYLOAD_ENCRYPTED : MAX_START_PAYLOAD
@@ -513,7 +542,7 @@ async function directWriteCompressed(
   }
   onProgress?.(head.length, z.length)
   const autoCompleted = await sendDataChunks(link, z.subarray(head.length), head.length, z.length, onProgress)
-  await finishDirectWrite(link, autoCompleted)
+  await finishDirectWrite(link, autoCompleted, onTransferred)
   return true
 }
 
@@ -551,13 +580,15 @@ async function sendDataChunks(
   return false
 }
 
-async function finishDirectWrite(link: OdLink, autoCompleted: boolean): Promise<void> {
+async function finishDirectWrite(link: OdLink, autoCompleted: boolean, onTransferred: () => void): Promise<void> {
   if (!autoCompleted) {
     await link.send(CMD_DIRECT_WRITE_END, new Uint8Array([0]))  // 0 = full refresh
     const f = await link.read(TIMEOUT_END_ACK)
+    onTransferred()
     if (isAck(f, RESP_REFRESH_SUCCESS)) return  // some firmware skips the END ACK
     if (!isAck(f, CMD_DIRECT_WRITE_END)) throw new Error(`Unexpected response to end of upload: ${hex(f)}`)
   }
+  onTransferred()
   await awaitRefresh(link)
 }
 
