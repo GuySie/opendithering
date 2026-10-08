@@ -12,7 +12,7 @@ import { indicesFromMeasured, measuredFromIndices } from './dithering/dbs'
 import type { DbsStats } from './dithering/dbs'
 import type { DbsJob } from './dithering/dbs.worker'
 import type { Palette } from './types'
-import { isSupported as bleIsSupported, connectDevice as bleConnect, encodeImage as bleEncode, sendImage as bleSend, checkCompatibility as bleCheckCompatibility, fastUploadHint as bleFastUploadHint, describeDevice as bleDescribeDevice, type OdDeviceInfo } from './ble/opendisplay'
+import { isSupported as bleIsSupported, requestDevice as bleRequestDevice, connectDevice as bleConnect, reconnectDevice as bleReconnect, encodeImage as bleEncode, sendImage as bleSend, checkCompatibility as bleCheckCompatibility, fastUploadHint as bleFastUploadHint, describeDevice as bleDescribeDevice, type OdDeviceInfo, type OdConnection } from './ble/opendisplay'
 import type { OdLink } from './ble/opendisplay-link'
 import { isSupported as giciskyIsSupported, connectDevice as giciskyConnect, encodeImage as giciskyEncode, sendImage as gickySend, getDeviceInfoForPreset as giciskyDeviceInfo } from './ble/gicisky'
 import type { GiciskyConnection } from './ble/gicisky'
@@ -46,6 +46,13 @@ type BleState =
   | { protocol: 'gicisky';     conn: GiciskyConnection }
   | null
 let bleState: BleState = null
+// The OpenDisplay device last connected, kept across link drops so an upload
+// can reconnect without the chooser (the firmware drops a client after 120 s
+// without commands). Forgotten on an explicit Disconnect or protocol switch.
+let odRemembered: { device: BluetoothDevice; info: OdDeviceInfo } | null = null
+let bleError: string | null = null  // last connect/upload failure, shown until the next attempt
+let bleDetails = ''                 // status tooltip while connected
+let bleConnectedNote = ''           // e.g. ' (encrypted)'
 let odMasterKey: Uint8Array | null = null
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
@@ -1518,12 +1525,34 @@ btnUploadDeviceArrow.addEventListener('click', (e) => {
   btnUploadDeviceArrow.setAttribute('aria-expanded', String(!open))
 })
 
-function setBleConnected(connected: boolean) {
+function isBleConnected(): boolean {
+  if (bleState?.protocol === 'opendisplay') return bleState.link.connected
+  if (bleState?.protocol === 'gicisky') return bleState.conn.device.gatt?.connected ?? false
+  return false
+}
+
+function renderBleStatus(busyText?: string) {
+  const connected = isBleConnected()
   btnConnectDevice.classList.toggle('split-option--muted', connected)
-  btnDisconnectDevice.classList.toggle('split-option--muted', !connected)
-  bleStatus.classList.toggle('connected', connected)
-  bleStatusText.textContent = connected ? 'Connected' : 'Not connected'
-  if (!connected) bleStatus.title = ''
+  // Disconnect also forgets a remembered device that has dropped its link.
+  btnDisconnectDevice.classList.toggle('split-option--muted', !connected && !odRemembered)
+  bleStatus.classList.toggle('connected', connected && !busyText)
+  bleStatus.classList.toggle('error', !busyText && bleError !== null)
+  bleStatusText.textContent = busyText
+    ?? bleError
+    ?? (connected ? `Connected${bleConnectedNote}`
+      : odRemembered ? 'Disconnected (reconnects on upload)'
+      : 'Not connected')
+  bleStatus.title = connected ? bleDetails : ''
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+// The chooser rejects with NotFoundError when the user closes it.
+function isChooserCancel(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'NotFoundError'
 }
 
 function bleDisconnect() {
@@ -1534,45 +1563,93 @@ function bleDisconnect() {
     bleState.conn.device.gatt?.disconnect()
   }
   bleState = null
-  setBleConnected(false)
+  odRemembered = null
+  bleError = null
+  renderBleStatus()
 }
 
-async function doConnect() {
+/** Drop the current link but keep the device for a silent reconnect. */
+function bleDropLink() {
+  if (bleState?.protocol === 'opendisplay') {
+    bleState.link.dispose()
+    bleState.link.device.gatt?.disconnect()
+    bleState = null
+  } else if (bleState?.protocol === 'gicisky') {
+    bleDisconnect()
+  }
+}
+
+function adoptOdConnection(conn: OdConnection) {
+  const { link, info } = conn
+  bleState = { protocol: 'opendisplay', link, info }
+  odRemembered = { device: link.device, info }
+  bleConnectedNote = link.session ? ' (encrypted)' : ''
+  const hint = bleFastUploadHint(info)
+  bleDetails = [
+    bleDescribeDevice(info),
+    conn.keyUnused ? 'The device has no encryption set up, so the key isn\'t used.' : null,
+    hint,
+  ].filter(Boolean).join('\n')
+  link.device.addEventListener('gattserverdisconnected', () => {
+    link.dispose()
+    if (bleState?.protocol === 'opendisplay' && bleState.link === link) bleState = null
+    renderBleStatus()
+  }, { once: true })
+  renderBleStatus()
+}
+
+/** Connect, showing the chooser. Returns false (with the reason shown) if it didn't. */
+async function doConnect(): Promise<boolean> {
   if (!navigator.bluetooth) {
     alert('Web Bluetooth is not available in this browser. Try Chrome or Edge.')
-    return
+    return false
   }
-  bleStatusText.textContent = 'Connecting…'
+  bleError = null
+  renderBleStatus('Connecting…')
   try {
     if (bleProtocol === 'opendisplay') {
-      const { link, info, authError } = await bleConnect(odMasterKey)
-      if (authError) console.warn('OpenDisplay auth failed, continuing without encryption:', authError)
-      console.info(`OpenDisplay: connected, ${bleDescribeDevice(info)}`)
-      bleState = { protocol: 'opendisplay', link, info }
-      setBleConnected(true)
-      if (link.session) bleStatusText.textContent = 'Connected (encrypted)'
-      else if (authError) bleStatusText.textContent = 'Connected (auth failed)'
-      const hint = bleFastUploadHint(info)
+      const device = await bleRequestDevice()
+      // A different device than the remembered one: forget the old link.
+      if (bleState?.protocol === 'opendisplay') bleDropLink()
+      renderBleStatus(`Connecting to ${device.name ?? 'device'}…`)
+      const conn = await bleConnect(device, odMasterKey)
+      console.info(`OpenDisplay: connected, ${bleDescribeDevice(conn.info)}`)
+      const hint = bleFastUploadHint(conn.info)
       if (hint) console.info(`OpenDisplay: ${hint}`)
-      bleStatus.title = [bleDescribeDevice(info), hint].filter(Boolean).join('\n')
-      link.device.addEventListener('gattserverdisconnected', () => {
-        link.dispose()
-        if (bleState?.protocol === 'opendisplay' && bleState.link === link) bleState = null
-        setBleConnected(false)
-      })
+      adoptOdConnection(conn)
     } else {
       const conn = await giciskyConnect(giciskyDeviceInfo(presetSelect.value))
       bleState = { protocol: 'gicisky', conn }
-      setBleConnected(true)
+      bleConnectedNote = ''
+      bleDetails = ''
       conn.device.addEventListener('gattserverdisconnected', () => {
         bleState = null
-        setBleConnected(false)
+        renderBleStatus()
       })
+      renderBleStatus()
     }
+    return true
   } catch (err: unknown) {
-    bleState = null
-    setBleConnected(false)
+    if (!isChooserCancel(err)) {
+      console.error('BLE connect failed:', err)
+      bleError = errorMessage(err)
+    }
+    renderBleStatus()
+    return false
   }
+}
+
+/** Make sure there is a live connection for an upload: reuse, reconnect silently, or show the chooser. */
+async function ensureBleConnection(): Promise<boolean> {
+  if (bleState && isBleConnected()) return true
+  if (bleProtocol === 'opendisplay' && odRemembered) {
+    const { device, info } = odRemembered
+    bleError = null
+    renderBleStatus(`Reconnecting to ${device.name ?? 'device'}…`)
+    adoptOdConnection(await bleReconnect(device, odMasterKey, info))
+    return true
+  }
+  return doConnect()
 }
 
 splitUploadMenu.addEventListener('click', (e) => {
@@ -1624,34 +1701,27 @@ btnUploadDevice.addEventListener('click', async () => {
   const originalLabel = btnUploadDevice.textContent ?? '↑ OpenDisplay BLE'
   btnUploadDevice.classList.add('btn-sending')
   btnUploadDeviceArrow.disabled = true
-
-  const isConnected = () => bleState?.protocol === 'opendisplay'
-    ? bleState.link.connected
-    : bleState?.protocol === 'gicisky'
-      ? bleState.conn.device.gatt?.connected ?? false
-      : false
+  const restoreButton = () => {
+    btnUploadDevice.classList.remove('btn-sending')
+    btnUploadDevice.textContent = originalLabel
+    updateExportButtons()
+  }
 
   try {
-    if (!bleState || !isConnected()) {
-      btnUploadDevice.textContent = '↑ Connecting…'
-      await doConnect()
-      if (!bleState) {
-        btnUploadDevice.classList.remove('btn-sending')
-        btnUploadDevice.textContent = originalLabel
-        updateExportButtons()
-        return
-      }
+    btnUploadDevice.textContent = '↑ Connecting…'
+    if (!await ensureBleConnection() || !bleState) {
+      restoreButton()
+      return
     }
+    bleError = null
+    renderBleStatus()
 
     const toEncode = rotatePixels(img.ideal.data, img.width, img.height, parseInt(bleRotation.value))
 
     if (bleState.protocol === 'opendisplay') {
-      if (odMasterKey && !bleState.link.session) throw new Error('Encryption required but auth failed — check your key')
       const problem = bleCheckCompatibility(bleState.info, toEncode.width, toEncode.height, paletteGroupId)
       if (problem && !confirm(`This image doesn't match the connected device:\n\n${problem}\n\nUpload anyway?`)) {
-        btnUploadDevice.classList.remove('btn-sending')
-        btnUploadDevice.textContent = originalLabel
-        updateExportButtons()
+        restoreButton()
         return
       }
       const imageBytes = bleEncode(toEncode.data, toEncode.width, toEncode.height, paletteGroupId, bleState.info.display?.colorScheme, bleState.info.display?.panelIc)
@@ -1676,19 +1746,18 @@ btnUploadDevice.addEventListener('click', async () => {
     }, 2000)
   } catch (err: unknown) {
     console.error('BLE upload failed:', err)
-    bleDisconnect()
-    const msg = err instanceof Error ? err.message : String(err)
-    btnUploadDevice.classList.remove('btn-sending')
-    if (!msg.toLowerCase().includes('cancel') && !msg.toLowerCase().includes('user')) {
-      btnUploadDevice.textContent = '✗ Error'
-      setTimeout(() => {
-        btnUploadDevice.textContent = originalLabel
-        updateExportButtons()
-      }, 2500)
-    } else {
-      btnUploadDevice.textContent = originalLabel
-      updateExportButtons()
+    // Drop the link (its state is unknown after a failure) but keep the
+    // device, so the next upload reconnects without the chooser.
+    bleDropLink()
+    if (isChooserCancel(err)) {
+      restoreButton()
+      return
     }
+    bleError = errorMessage(err)
+    renderBleStatus()
+    btnUploadDevice.classList.remove('btn-sending')
+    btnUploadDevice.textContent = '✗ Error'
+    setTimeout(restoreButton, 2500)
   }
 })
 

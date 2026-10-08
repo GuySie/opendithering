@@ -363,6 +363,8 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 }
 .ble-status.connected { color: var(--text); }
 .ble-status.connected .ble-dot { background: #4caf50; box-shadow: 0 0 4px #4caf5088; }
+.ble-status.error { color: var(--danger); align-items: flex-start; }
+.ble-status.error .ble-dot { background: var(--danger); margin-top: 0.3em; }
 
 /* ── Preview area ── */
 .preview-area {

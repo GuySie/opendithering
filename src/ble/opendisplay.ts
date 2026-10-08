@@ -1,5 +1,5 @@
-import { authenticate } from './opendisplay-crypto'
-import { OdLink, OdTimeoutError, hex, isAck, isNack } from './opendisplay-link'
+import { OdAuthError, authenticate } from './opendisplay-crypto'
+import { OdDisconnectedError, OdEncryptionRequiredError, OdLink, OdTimeoutError, hex, isAck, isNack } from './opendisplay-link'
 import { negotiatePipe, pipeWrite } from './opendisplay-pipe'
 
 const SERVICE_UUID = 0x2446
@@ -270,31 +270,123 @@ export interface OdDeviceInfo {
 export interface OdConnection {
   link: OdLink
   info: OdDeviceInfo
-  /** Set when a master key was given but authentication failed. */
-  authError: unknown
+  /** A key was given but the device has no encryption set up, so it isn't used. */
+  keyUnused: boolean
 }
 
-/**
- * Pick a device, connect, and read what it supports. The firmware version is
- * always plaintext, so it's read before authenticating; the config read needs
- * the session when the device has encryption enabled. Either read failing
- * just leaves that part of `info` null (uploads then use the basic path).
- */
-export async function connectDevice(masterKey: Uint8Array | null): Promise<OdConnection> {
-  const device = await navigator.bluetooth.requestDevice({
+// The firmware (2.26.1+, Firmware PR #135) serves one client at a time. A
+// second one is refused: on ESP32 it is disconnected right after connecting,
+// on nRF the device stops advertising while its one link is taken. The slot
+// frees when the other client leaves, or after it sends nothing for 120 s.
+const BUSY_HINT = 'It may be connected to another client (Home Assistant, the OpenDisplay toolbox, another tab), ' +
+  'which keeps it for up to 2 minutes after its last command.'
+
+/** Show the browser's device chooser (needs a user gesture). */
+export function requestDevice(): Promise<BluetoothDevice> {
+  return navigator.bluetooth.requestDevice({
     filters: [{ namePrefix: 'OD' }],
     optionalServices: [SERVICE_UUID],
   })
+}
+
+/**
+ * Connect to a chosen device, authenticate, and read what it supports. The
+ * firmware version is always plaintext, so it's requested before
+ * authenticating; the config read needs the session when the device has
+ * encryption enabled. Either read failing just leaves that part of `info`
+ * null (uploads then use the basic path).
+ */
+export async function connectDevice(device: BluetoothDevice, masterKey: Uint8Array | null): Promise<OdConnection> {
   const t0 = performance.now()
-  const server = await device.gatt!.connect()
-  const service = await server.getPrimaryService(SERVICE_UUID)
-  const characteristic = await service.getCharacteristic(SERVICE_UUID)
-  await characteristic.startNotifications()
-  const link = new OdLink(characteristic)
+  const link = await openLink(device)
   const t1 = performance.now()
-  const result = await identifyDevice(link, masterKey)
-  console.info(`OpenDisplay: connect took ${Math.round(performance.now() - t0)} ms (GATT ${Math.round(t1 - t0)} ms, ${result.timing})`)
-  return result
+  try {
+    const result = await identifyDevice(link, masterKey)
+    checkStillConnected(link)
+    console.info(`OpenDisplay: connect took ${Math.round(performance.now() - t0)} ms (GATT ${Math.round(t1 - t0)} ms, ${result.timing})`)
+    return result
+  } catch (err) {
+    closeLink(link)
+    throw connectError(err, device)
+  }
+}
+
+/**
+ * Reconnect to a device connected before, without the chooser (no user
+ * gesture needed), e.g. after the firmware dropped an idle connection. Only
+ * re-authenticates: the device info from the first connect is reused, since
+ * on slow devices each read can take seconds.
+ */
+export async function reconnectDevice(device: BluetoothDevice, masterKey: Uint8Array | null, info: OdDeviceInfo): Promise<OdConnection> {
+  const t0 = performance.now()
+  const link = await openLink(device)
+  try {
+    const keyUnused = await startSession(link, masterKey)
+    checkStillConnected(link)
+    console.info(`OpenDisplay: reconnected in ${Math.round(performance.now() - t0)} ms`)
+    return { link, info, keyUnused }
+  } catch (err) {
+    closeLink(link)
+    throw connectError(err, device)
+  }
+}
+
+async function openLink(device: BluetoothDevice): Promise<OdLink> {
+  let server: BluetoothRemoteGATTServer
+  try {
+    server = await device.gatt!.connect()
+  } catch (err) {
+    console.warn('OpenDisplay: GATT connect failed', err)
+    throw new Error(`Couldn't connect to ${device.name ?? 'the device'}. Check that it's awake and in range. ${BUSY_HINT}`)
+  }
+  try {
+    const service = await server.getPrimaryService(SERVICE_UUID)
+    const characteristic = await service.getCharacteristic(SERVICE_UUID)
+    await characteristic.startNotifications()
+    return new OdLink(characteristic)
+  } catch (err) {
+    if (!server.connected) throw busyError(device, err)
+    server.disconnect()
+    throw err
+  }
+}
+
+function closeLink(link: OdLink): void {
+  link.dispose()
+  link.device.gatt?.disconnect()
+}
+
+function checkStillConnected(link: OdLink): void {
+  // The reads at connect swallow their errors, so a refusal shows up here.
+  if (!link.connected) throw new OdDisconnectedError()
+}
+
+function busyError(device: BluetoothDevice, cause: unknown): Error {
+  console.warn('OpenDisplay: connection closed during setup', cause)
+  return new Error(`${device.name ?? 'The device'} closed the connection right away. ${BUSY_HINT}`)
+}
+
+function connectError(err: unknown, device: BluetoothDevice): unknown {
+  return err instanceof OdDisconnectedError ? busyError(device, err) : err
+}
+
+/**
+ * Authenticate when a key is given. Returns true if the device turned out to
+ * have no encryption, so the key isn't used. Any other refusal throws: a
+ * device with encryption on accepts no command without a session.
+ */
+async function startSession(link: OdLink, masterKey: Uint8Array | null): Promise<boolean> {
+  if (!masterKey) return false
+  try {
+    link.session = await authenticate(link, masterKey)
+    return false
+  } catch (err) {
+    if (err instanceof OdAuthError && err.notConfigured) {
+      console.info('OpenDisplay: the device has no encryption set up; continuing without the key')
+      return true
+    }
+    throw err
+  }
 }
 
 /**
@@ -309,15 +401,10 @@ export async function identifyDevice(link: OdLink, masterKey: Uint8Array | null)
   // a round trip on the firmware version: request it now, alongside auth (it
   // is always plaintext and needs no session), and collect the reply last.
   const versionRequested = await requestFirmwareVersion(link)
-  let authError: unknown = null
-  if (masterKey) {
-    try {
-      link.session = await authenticate(link, masterKey)
-    } catch (err) {
-      authError = err
-    }
-  }
+  const keyUnused = await startSession(link, masterKey)
   const t2 = performance.now()
+  // Without a key, this is where a device with encryption on says so
+  // (readDisplayConfig rethrows that).
   const display = await readDisplayConfig(link)
   const t3 = performance.now()
 
@@ -327,7 +414,7 @@ export async function identifyDevice(link: OdLink, masterKey: Uint8Array | null)
   const ms = (a: number, b: number) => `${Math.round(b - a)} ms`
   const timing = `auth ${masterKey ? ms(t1, t2) : 'none'}, config ${ms(t2, t3)}, ` +
     `firmware version ${versionRequested ? `+${ms(t3, t4)} (requested up front)` : 'not requested'}`
-  return { link, info: { firmware, display }, authError, timing }
+  return { link, info: { firmware, display }, keyUnused, timing }
 }
 
 export async function readFirmwareVersion(link: OdLink): Promise<OdFirmwareVersion | null> {
@@ -381,6 +468,7 @@ export async function readDisplayConfig(link: OdLink): Promise<OdDisplayConfig |
     }
     return parseDisplayConfig(data)
   } catch (err) {
+    if (err instanceof OdEncryptionRequiredError || err instanceof OdDisconnectedError) throw err
     console.warn('OpenDisplay: could not read device config', err)
     return null
   }

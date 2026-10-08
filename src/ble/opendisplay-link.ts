@@ -15,6 +15,22 @@ export class OdTimeoutError extends Error {
   }
 }
 
+/** The BLE link dropped while waiting for a reply. */
+export class OdDisconnectedError extends Error {
+  constructor(message = 'The device disconnected') {
+    super(message)
+    this.name = 'OdDisconnectedError'
+  }
+}
+
+/** The device answered RESP_AUTH_REQUIRED: it has encryption on and there is no session. */
+export class OdEncryptionRequiredError extends Error {
+  constructor(message = 'This device uses encryption: enter its key (the opendisplay.org/l/… link from its QR code, or the 32-character hex key)') {
+    super(message)
+    this.name = 'OdEncryptionRequiredError'
+  }
+}
+
 /**
  * One OpenDisplay BLE connection: the command characteristic plus a queue of
  * incoming notifications. A single persistent listener feeds the queue, so a
@@ -27,11 +43,14 @@ export class OdLink {
   pipeUnavailable = false
   private queue: Uint8Array[] = []
   private stash: Uint8Array[] = []  // frames readFor set aside for another command
-  private waiter: ((frame: Uint8Array) => void) | null = null
+  private waiter: { resolve: (frame: Uint8Array) => void; reject: (err: Error) => void } | null = null
   private writeWithoutResponseUnsupported = false
+  /** The GATT link dropped; pending and later reads fail at once. */
+  closed = false
 
   constructor(readonly char: BluetoothRemoteGATTCharacteristic) {
     char.addEventListener('characteristicvaluechanged', this.onValue)
+    this.device.addEventListener('gattserverdisconnected', this.onDisconnect)
   }
 
   get device(): BluetoothDevice {
@@ -39,11 +58,13 @@ export class OdLink {
   }
 
   get connected(): boolean {
-    return this.device.gatt?.connected ?? false
+    return !this.closed && (this.device.gatt?.connected ?? false)
   }
 
   dispose(): void {
     this.char.removeEventListener('characteristicvaluechanged', this.onValue)
+    this.device.removeEventListener('gattserverdisconnected', this.onDisconnect)
+    this.onDisconnect()
     this.queue.length = 0
   }
 
@@ -51,8 +72,14 @@ export class OdLink {
     const dv = (event.target as BluetoothRemoteGATTCharacteristic).value
     if (!dv) return
     const frame = new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength))
-    if (this.waiter) this.waiter(frame)
+    if (this.waiter) this.waiter.resolve(frame)
     else this.queue.push(frame)
+  }
+
+  private onDisconnect = () => {
+    this.closed = true
+    this.session = null  // the firmware drops its session with the link
+    this.waiter?.reject(new OdDisconnectedError())
   }
 
   /** Discard notifications left over from a previous exchange. */
@@ -65,15 +92,19 @@ export class OdLink {
   readRaw(timeoutMs: number): Promise<Uint8Array> {
     const queued = this.queue.shift()
     if (queued) return Promise.resolve(queued)
+    if (this.closed) return Promise.reject(new OdDisconnectedError())
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.waiter = null
         reject(new OdTimeoutError())
       }, timeoutMs)
-      this.waiter = (frame) => {
+      const settle = () => {
         clearTimeout(timer)
         this.waiter = null
-        resolve(frame)
+      }
+      this.waiter = {
+        resolve: (frame) => { settle(); resolve(frame) },
+        reject: (err) => { settle(); reject(err) },
       }
     })
   }
@@ -111,7 +142,10 @@ export class OdLink {
   private async accept(raw: Uint8Array, plain: boolean): Promise<Uint8Array> {
     const f = await this.decode(raw, plain)
     if ((f.length === 2 && f[0] === 0xFE) || (f.length === 3 && f[2] === 0xFE)) {
-      throw new Error('Device requires encryption — set the encryption key')
+      // With a session, the device has dropped it (its optional session timeout).
+      throw new OdEncryptionRequiredError(this.session
+        ? 'The device ended the encryption session: try again to start a new one'
+        : undefined)
     }
     if (f.length === 3 && f[2] === 0xFF) {
       throw new Error('Device rejected an encrypted command (integrity check failed)')

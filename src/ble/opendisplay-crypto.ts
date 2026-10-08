@@ -284,22 +284,50 @@ export interface OdRawTransport {
   readFor(echoes: number[], timeoutMs: number, plain?: boolean): Promise<Uint8Array>
 }
 
+// Auth status byte (frame byte 2 of a 0x50 reply), opendisplay_protocol.h §3
+const AUTH_OK = 0x00
+const AUTH_WRONG_KEY = 0x01
+const AUTH_ALREADY = 0x02
+const AUTH_NOT_CONFIGURED = 0x03
+const AUTH_RATE_LIMIT = 0x04
+
+/** The device refused the handshake. `notConfigured`: it has no encryption, so no session is needed. */
+export class OdAuthError extends Error {
+  constructor(message: string, readonly notConfigured = false) {
+    super(message)
+    this.name = 'OdAuthError'
+  }
+}
+
+function authStatusError(status: number): OdAuthError {
+  switch (status) {
+    case AUTH_WRONG_KEY: return new OdAuthError('Wrong encryption key for this device')
+    case AUTH_NOT_CONFIGURED: return new OdAuthError('The device has no encryption set up', true)
+    case AUTH_RATE_LIMIT: return new OdAuthError('Too many key attempts: wait a minute, then try again')
+    default: return new OdAuthError(`Authentication failed (status 0x${status.toString(16).padStart(2, '0')})`)
+  }
+}
+
 /**
  * Run the two-step OpenDisplay auth handshake (command 0x0050).
- * Throws if the device rejects the key or times out.
+ * Throws OdAuthError if the device refuses or fails to prove it knows the key.
  */
 export async function authenticate(
   link: OdRawTransport,
   masterKey: Uint8Array
 ): Promise<OdSession> {
-  // Step 1: request server nonce
-  await link.writeRaw(new Uint8Array([0x00, 0x50, 0x00]))
-  const challenge = await link.readFor([0x50], AUTH_TIMEOUT, true)
-
+  // Step 1: request server nonce. "Already authenticated" means the device
+  // still holds a session; asking again gets a fresh challenge (py-opendisplay
+  // retries once too).
+  let challenge: Uint8Array = new Uint8Array(0)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await link.writeRaw(new Uint8Array([0x00, 0x50, 0x00]))
+    challenge = await link.readFor([0x50], AUTH_TIMEOUT, true)
+    if (challenge.length < 3 || challenge[2] !== AUTH_ALREADY) break
+  }
+  if (challenge.length < 3) throw new Error(`Auth challenge too short (${challenge.length} bytes)`)
+  if (challenge[2] !== AUTH_OK) throw authStatusError(challenge[2])
   if (challenge.length < 19) throw new Error(`Auth challenge too short (${challenge.length} bytes)`)
-  const status1 = challenge[2]
-  if (status1 === 0x02) throw new Error('Auth failed: session already exists — disconnect and reconnect')
-  if (status1 !== 0x00) throw new Error(`Auth challenge rejected (status ${status1})`)
 
   const serverNonce = challenge.slice(3, 19)
   const deviceId = challenge.length >= 23 ? challenge.slice(19, 23) : DEFAULT_DEVICE_ID
@@ -318,12 +346,26 @@ export async function authenticate(
   step2.set(challengeResponse, 18)
   await link.writeRaw(step2)
 
+  // [0x00][0x50][status][server_proof:16]
   const success = await link.readFor([0x50], AUTH_TIMEOUT, true)
   if (success.length < 3) throw new Error(`Auth success response too short (${success.length} bytes)`)
-  const status2 = success[2]
-  if (status2 !== 0x00) throw new Error(`Auth failed: wrong key (status ${status2})`)
+  if (success[2] !== AUTH_OK) throw authStatusError(success[2])
+  if (success.length < 19) throw new Error(`Auth success response too short (${success.length} bytes)`)
 
   const sessionKey = await deriveSessionKey(masterKey, clientNonce, serverNonce, deviceId)
+
+  // Mutual auth: the device proves it knows the key too, with
+  // CMAC(sessionKey, serverNonce || clientNonce || deviceId). A peer that
+  // answers "OK" without the key can't produce it. Every firmware sends it.
+  const proofInput = new Uint8Array(32 + deviceId.length)
+  proofInput.set(serverNonce, 0)
+  proofInput.set(clientNonce, 16)
+  proofInput.set(deviceId, 32)
+  const expected = await aesCmac(sessionKey, proofInput)
+  let diff = 0
+  for (let i = 0; i < 16; i++) diff |= expected[i] ^ success[3 + i]
+  if (diff !== 0) throw new OdAuthError('The device failed to prove it has the same key (server proof mismatch)')
+
   const sessionId = await deriveSessionId(sessionKey, clientNonce, serverNonce)
   return { sessionKey, sessionId, counter: 0 }
 }
