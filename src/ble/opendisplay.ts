@@ -44,6 +44,7 @@ const PALETTE_SCHEMES: Record<string, number> = {
   bwry: 3,
   spectra6: 4,
   grayscale4: 5,
+  acep: 7,
   grayscale8: 6,
   grayscale16: 6,
 }
@@ -67,6 +68,11 @@ export function encodeImage(
     // Scheme 4: 4 bits/pixel, high nibble = left pixel
     // Color codes: black=0, white=1, yellow=2, red=3, blue=5, green=6
     return packRows(pixels, width, height, 4, spectra6Code)
+
+  } else if (paletteGroupId === 'acep') {
+    // Scheme 7: 4 bits/pixel, high nibble = left pixel. Same yellow/red codes
+    // as Spectra 6, but blue and green move down to 4/5 to free 6 for orange.
+    return packRows(pixels, width, height, 4, acepCode)
 
   } else if (paletteGroupId === 'bw') {
     // Scheme 0: 1 bit/pixel, MSB = leftmost, white=1 black=0
@@ -141,6 +147,21 @@ function spectra6Code(r: number, g: number, b: number): number {
   ]
   let best = 0, bestDist = Infinity
   for (const [cr, cg, cb, code] of candidates) {
+    const d = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2
+    if (d < bestDist) { bestDist = d; best = code }
+  }
+  return best
+}
+
+// [r, g, b, code] for the ACeP ideal palette (src/palettes/acep.ts)
+const ACEP_CODES: [number, number, number, number][] = [
+  [0, 0, 0, 0], [255, 255, 255, 1], [255, 255, 0, 2], [255, 0, 0, 3],
+  [0, 0, 255, 4], [0, 255, 0, 5], [255, 128, 0, 6],
+]
+
+function acepCode(r: number, g: number, b: number): number {
+  let best = 0, bestDist = Infinity
+  for (const [cr, cg, cb, code] of ACEP_CODES) {
     const d = (r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2
     if (d < bestDist) { bestDist = d; best = code }
   }
