@@ -62,7 +62,7 @@ export async function negotiatePipe(link: OdLink, compressed: boolean, totalSize
 
   let f: Uint8Array
   try {
-    f = await link.read(TIMEOUT_START)
+    f = await link.readFor([0x80], TIMEOUT_START)
   } catch (err) {
     if (err instanceof OdTimeoutError) return null
     throw err
@@ -150,7 +150,7 @@ export async function pipeWrite(
     const repairing = pendingRetx.size > 0
     let f: Uint8Array
     try {
-      f = await link.read(tailFlush || repairing ? TIMEOUT_PROBE : TIMEOUT_ACK)
+      f = await link.readFor([0x81, 0x82], tailFlush || repairing ? TIMEOUT_PROBE : TIMEOUT_ACK)
     } catch (err) {
       if (!(err instanceof OdTimeoutError)) throw err
       if (windowBase >= n) throw new Error('PIPE_WRITE: device never confirmed the end of the upload')
@@ -229,7 +229,7 @@ export async function pipeWrite(
   if (!autoCompleted) {
     await link.send(CMD_PIPE_WRITE_END, new Uint8Array([0]))  // 0 = full refresh
     for (let stray = 0; ; stray++) {
-      const f = await link.read(TIMEOUT_END_ACK)
+      const f = await link.readFor([0x81, 0x82], TIMEOUT_END_ACK)
       if (isAck(f, CMD_PIPE_WRITE_END)) break
       if (isNack(f, CMD_PIPE_WRITE_END)) throw new Error('PIPE_WRITE: device reported an incomplete upload')
       if (f.length >= 8 && isNack(f, CMD_PIPE_WRITE_DATA)) throw new Error(`PIPE_WRITE failed (device error 0x${f[2].toString(16)})`)

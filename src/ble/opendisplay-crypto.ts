@@ -276,7 +276,7 @@ export function parseMasterKey(input: string): Uint8Array | null {
 /** The raw transport the auth handshake needs (an OdLink satisfies it). */
 export interface OdRawTransport {
   writeRaw(data: Uint8Array): Promise<void>
-  readRaw(timeoutMs: number): Promise<Uint8Array>
+  readFor(echoes: number[], timeoutMs: number, plain?: boolean): Promise<Uint8Array>
 }
 
 /**
@@ -289,7 +289,7 @@ export async function authenticate(
 ): Promise<OdSession> {
   // Step 1: request server nonce
   await link.writeRaw(new Uint8Array([0x00, 0x50, 0x00]))
-  const challenge = await link.readRaw(10000)
+  const challenge = await link.readFor([0x50], 10000, true)
 
   if (challenge.length < 19) throw new Error(`Auth challenge too short (${challenge.length} bytes)`)
   const status1 = challenge[2]
@@ -313,7 +313,7 @@ export async function authenticate(
   step2.set(challengeResponse, 18)
   await link.writeRaw(step2)
 
-  const success = await link.readRaw(10000)
+  const success = await link.readFor([0x50], 10000, true)
   if (success.length < 3) throw new Error(`Auth success response too short (${success.length} bytes)`)
   const status2 = success[2]
   if (status2 !== 0x00) throw new Error(`Auth failed: wrong key (status ${status2})`)

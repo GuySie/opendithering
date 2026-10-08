@@ -4,6 +4,8 @@ import { type OdSession, decryptResponse, encryptCommand } from './opendisplay-c
 // Shorter frames are plaintext even during a session (e.g. the 2-byte
 // direct-write ACKs and error frames).
 const ENCRYPTED_MIN_LEN = 31
+const RESP_FIRMWARE_VERSION = 0x43
+const RESP_AUTHENTICATE = 0x50
 
 export class OdTimeoutError extends Error {
   constructor(message = 'BLE notification timeout') {
@@ -74,27 +76,45 @@ export class OdLink {
   }
 
   /**
-   * Next notification as a plaintext [status][echo][data...] frame, decrypting
-   * it when a session is active. Throws on the device's auth-required and
-   * integrity-failure frames.
+   * Next notification that answers one of `echoes` (the low byte of the
+   * command, frame byte 1), as a plaintext [status][echo][data...] frame.
+   *
+   * Frames for other commands are skipped: the queue has no request/response
+   * correlation, so a reply that arrived after its own read timed out would
+   * otherwise be taken as the answer to the next command. `timeoutMs` bounds
+   * the whole wait. Frames are decrypted when a session is active, except the
+   * firmware-version and auth replies, which the firmware always sends in
+   * plaintext (and `plain` reads, which never decrypt).
    */
-  async read(timeoutMs: number): Promise<Uint8Array> {
-    const raw = await this.readRaw(timeoutMs)
-    if (this.session && raw.length >= ENCRYPTED_MIN_LEN) {
-      const { cmd, payload } = await decryptResponse(this.session, raw)
-      const frame = new Uint8Array(2 + payload.length)
-      frame[0] = cmd >> 8
-      frame[1] = cmd & 0xFF
-      frame.set(payload, 2)
-      return frame
+  async readFor(echoes: number[], timeoutMs: number, plain = false): Promise<Uint8Array> {
+    const deadline = performance.now() + timeoutMs
+    for (let skipped = 0; ; skipped++) {
+      const left = deadline - performance.now()
+      if (left <= 0) throw new OdTimeoutError()
+      const f = await this.decode(await this.readRaw(left), plain)
+      if (f.length >= 2 && echoes.includes(f[1])) {
+        if ((f.length === 2 && f[0] === 0xFE) || (f.length === 3 && f[2] === 0xFE)) {
+          throw new Error('Device requires encryption — set the encryption key')
+        }
+        if (f.length === 3 && f[2] === 0xFF) {
+          throw new Error('Device rejected an encrypted command (integrity check failed)')
+        }
+        return f
+      }
+      console.warn(`OpenDisplay: ignoring unrelated frame ${hex(f)} (expected reply to 0x${echoes.map(e => e.toString(16)).join('/0x')})`)
+      if (skipped >= 32) throw new Error('Too many unrelated frames from the device')
     }
-    if ((raw.length === 2 && raw[0] === 0xFE) || (raw.length === 3 && raw[2] === 0xFE)) {
-      throw new Error('Device requires encryption — set the encryption key')
-    }
-    if (raw.length === 3 && raw[2] === 0xFF) {
-      throw new Error('Device rejected an encrypted command (integrity check failed)')
-    }
-    return raw
+  }
+
+  private async decode(raw: Uint8Array, plain: boolean): Promise<Uint8Array> {
+    const alwaysPlain = raw.length >= 2 && (raw[1] === RESP_FIRMWARE_VERSION || raw[1] === RESP_AUTHENTICATE)
+    if (plain || !this.session || raw.length < ENCRYPTED_MIN_LEN || alwaysPlain) return raw
+    const { cmd, payload } = await decryptResponse(this.session, raw)
+    const frame = new Uint8Array(2 + payload.length)
+    frame[0] = cmd >> 8
+    frame[1] = cmd & 0xFF
+    frame.set(payload, 2)
+    return frame
   }
 
   /** Write bytes as-is. Prefers write-without-response for throughput. */

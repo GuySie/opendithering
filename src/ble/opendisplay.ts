@@ -12,6 +12,9 @@ const CMD_DIRECT_WRITE_DATA = 0x0071
 const CMD_DIRECT_WRITE_END = 0x0072
 const RESP_REFRESH_SUCCESS = 0x73
 const RESP_REFRESH_TIMEOUT = 0x74
+// Echo bytes a direct-write exchange can answer with; [0xFF][0xFF] is older
+// firmware's compressed-start rejection.
+const DIRECT_WRITE_ECHOES = [0x70, 0x71, 0x72, RESP_REFRESH_SUCCESS, RESP_REFRESH_TIMEOUT, 0xFF]
 
 // Direct-write data bytes per 0x71 frame. Encrypted: the envelope adds
 // cmd(2)+nonce(16)+len(1)+tag(12) = 31 bytes, and packets must stay <= 185.
@@ -31,7 +34,9 @@ const ZLIB_WINDOW_BITS = 9
 // Timeouts. Data ACKs, the END ACK and the refresh can each block on a slow
 // SPI write or panel refresh (up to ~60 s on Spectra/ACeP); py-opendisplay
 // allows 90 s for all three.
-const TIMEOUT_ACK = 5_000
+// The device can be slow right after connecting (seen: 5+ s for the version
+// reply on a 23 s GATT connect); a late reply is skipped by later reads anyway.
+const TIMEOUT_FIRMWARE_VERSION = 10_000
 const TIMEOUT_START = 15_000
 const TIMEOUT_DATA_ACK = 90_000
 const TIMEOUT_END_ACK = 90_000
@@ -275,9 +280,8 @@ export async function readFirmwareVersion(link: OdLink): Promise<OdFirmwareVersi
     link.drain()
     await link.writeRaw(new Uint8Array([CMD_FIRMWARE_VERSION >> 8, CMD_FIRMWARE_VERSION & 0xFF]))
     // [echo:2][major][minor][shaLen][sha...][patch] — patch was added after 2.25.0
-    for (let i = 0; i < 4; i++) {
-      const f = await link.readRaw(TIMEOUT_ACK)
-      if (!isAck(f, CMD_FIRMWARE_VERSION) || f.length < 5) continue
+    const f = await link.readFor([CMD_FIRMWARE_VERSION & 0xFF], TIMEOUT_FIRMWARE_VERSION, true)
+    if (isAck(f, CMD_FIRMWARE_VERSION) && f.length >= 5) {
       const patchAt = 5 + f[4]
       return { major: f[2], minor: f[3], patch: f.length > patchAt ? f[patchAt] : 0 }
     }
@@ -295,14 +299,10 @@ export async function readDisplayConfig(link: OdLink): Promise<OdDisplayConfig |
     // [echo:2][chunk#:2][data...], until `total` data bytes have arrived.
     let total = -1
     let data = new Uint8Array(0)
-    let stray = 0
     while (total < 0 || data.length < total) {
-      const f = await link.read(total < 0 ? 10_000 : 2_000)
+      const f = await link.readFor([CMD_CONFIG_READ & 0xFF], total < 0 ? 10_000 : 2_000)
       if (isNack(f, CMD_CONFIG_READ)) return null  // device has no stored config
-      if (!isAck(f, CMD_CONFIG_READ)) {
-        if (++stray > 8) throw new Error('too many unrelated frames during config read')
-        continue
-      }
+      if (!isAck(f, CMD_CONFIG_READ)) throw new Error(`unexpected config frame ${hex(f)}`)
       const body = f.subarray(total < 0 ? 6 : 4)
       if (total < 0) total = f[4] | (f[5] << 8)
       else if (body.length === 0) throw new Error('config read stalled')
@@ -573,7 +573,7 @@ async function directWriteCompressed(
 
 async function readStartResponse(link: OdLink): Promise<Uint8Array> {
   try {
-    return await link.read(TIMEOUT_START)
+    return await link.readFor(DIRECT_WRITE_ECHOES, TIMEOUT_START)
   } catch (err) {
     if (err instanceof OdTimeoutError) {
       throw new Error('BLE timeout: no response to start command (device may require encryption)')
@@ -597,7 +597,7 @@ async function sendDataChunks(
   const size = link.session ? ENCRYPTED_CHUNK_SIZE : CHUNK_SIZE
   for (let off = 0; off < data.length; off += size) {
     await link.send(CMD_DIRECT_WRITE_DATA, data.subarray(off, off + size))
-    const f = await link.read(TIMEOUT_DATA_ACK)
+    const f = await link.readFor(DIRECT_WRITE_ECHOES, TIMEOUT_DATA_ACK)
     onProgress?.(progressBase + Math.min(off + size, data.length), progressTotal)
     if (isAck(f, CMD_DIRECT_WRITE_END)) return true
     if (!isAck(f, CMD_DIRECT_WRITE_DATA)) throw new Error(`Upload failed at byte ${off}: ${hex(f)}`)
@@ -608,7 +608,7 @@ async function sendDataChunks(
 async function finishDirectWrite(link: OdLink, autoCompleted: boolean, onTransferred: () => void): Promise<void> {
   if (!autoCompleted) {
     await link.send(CMD_DIRECT_WRITE_END, new Uint8Array([0]))  // 0 = full refresh
-    const f = await link.read(TIMEOUT_END_ACK)
+    const f = await link.readFor(DIRECT_WRITE_ECHOES, TIMEOUT_END_ACK)
     onTransferred()
     if (isAck(f, RESP_REFRESH_SUCCESS)) return  // some firmware skips the END ACK
     if (!isAck(f, CMD_DIRECT_WRITE_END)) throw new Error(`Unexpected response to end of upload: ${hex(f)}`)
@@ -618,7 +618,7 @@ async function finishDirectWrite(link: OdLink, autoCompleted: boolean, onTransfe
 }
 
 async function awaitRefresh(link: OdLink): Promise<void> {
-  const f = await link.read(TIMEOUT_REFRESH)
+  const f = await link.readFor([RESP_REFRESH_SUCCESS, RESP_REFRESH_TIMEOUT], TIMEOUT_REFRESH)
   if (isAck(f, RESP_REFRESH_SUCCESS)) return
   if (isAck(f, RESP_REFRESH_TIMEOUT)) throw new Error('Display refresh timed out')
   throw new Error(`Unexpected response waiting for refresh: ${hex(f)}`)
