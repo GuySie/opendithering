@@ -8,7 +8,7 @@ Status: implemented 2026-10-08 (see CLAUDE.md "OpenDisplay BLE upload"). Researc
 **Outcome, where it differs from the plan below:**
 - Compression pays off more than estimated. Even uniform random 6-colour noise deflates to ~66 % (6 inks in a 4-bit nibble leave slack), so the "< 90 %" skip rule became "use it whenever it's smaller".
 - The pipe sender re-probes after 600 ms when a retransmit is outstanding, and aborts on 45 s of total silence instead of after 3 probes. In simulation, a lost retransmit otherwise stalled the whole window for the 15 s ACK timeout.
-- 4-grey (scheme 5) turned out to need two bitplanes through a panel grey-code table, according to py-opendisplay. That isn't fixed, and it's noted in CLAUDE.md.
+- 4-grey (scheme 5) turned out to need two bitplanes through a panel grey-code table, according to py-opendisplay (confirmed in the firmware's `streamGray4Bytes`). Fixed afterwards, together with the yellow/red swap BWRY panel 0x001D needs.
 
 ## Where we are
 

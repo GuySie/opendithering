@@ -278,9 +278,9 @@ No automated BLE tests exist; the protocol code was developed against a scripted
 |---|---|---|
 | `bw` | 0 | 1 bit/pixel, 8 px/byte, MSB first |
 | `bwr` | 1 | 2 bitplanes (plane1 then plane2), 1 bit/pixel each |
-| `bwry` | 3 | 2 bits/pixel, 4 px/byte, MSB first |
+| `bwry` | 3 | 2 bits/pixel, 4 px/byte, MSB first (black=0, white=1, yellow=2, red=3; panel IC 0x001D, EP29YR 128×296, has yellow/red swapped — `BWRY_CODES_BY_PANEL`) |
 | `spectra6` | 4 | 4 bits/pixel nibble-packed (black=0, white=1, yellow=2, red=3, blue=5, green=6) |
-| `grayscale4` | 5 | 2 bits/pixel, 4 px/byte, MSB first. **Known issue:** py-opendisplay says firmware only accepts 4-grey as two 1-bit planes mapped through the panel's grey-code table (`encode_gray4_bitplanes`); not fixed here |
+| `grayscale4` | 5 | Two row-padded 1-bit planes (plane 0 then plane 1, streamed into the controller's two RAM planes). Each level (0=black..3=white) goes through the panel's grey-code table — `[3,1,2,0]`, or `[3,2,1,0]` for panel ICs 0x0028/0x0048 (`GRAY4_CODES_BY_PANEL`, from bb_epaper via py-opendisplay) — plane 0 = code bit 0, plane 1 = bit 1. Packed 2 bpp has the same byte count, so the firmware accepts it but shows a wrong image |
 | `grayscale8` | 6 | 4 bits/pixel nibble-packed, Rec.709 luminance → 0–15 |
 | `grayscale16` | 6 | 4 bits/pixel nibble-packed, Rec.709 luminance → 0–15 |
 | `acep` | 7 | 4 bits/pixel nibble-packed (black=0, white=1, yellow=2, red=3, blue=4, green=5, orange=6 — blue/green differ from Spectra 6) |

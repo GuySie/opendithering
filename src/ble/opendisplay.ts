@@ -71,12 +71,15 @@ export function isSupported(paletteGroupId: string): boolean {
 //
 // `deviceScheme` is the connected device's configured color scheme, if known.
 // It only changes the layout for split Spectra 6 panels (scheme 8).
+// `panelIc` is the device's panel IC type, if known. It selects the per-panel
+// code tables for BWRY and 4-grey; unknown panels get the common tables.
 export function encodeImage(
   pixels: Uint8ClampedArray,
   width: number,
   height: number,
   paletteGroupId: string,
-  deviceScheme?: number
+  deviceScheme?: number,
+  panelIc?: number
 ): Uint8Array {
   if (paletteGroupId === 'spectra6') {
     // Scheme 4: 4 bits/pixel, high nibble = left pixel
@@ -120,13 +123,25 @@ export function encodeImage(
 
   } else if (paletteGroupId === 'bwry') {
     // Scheme 3: 2 bits/pixel, MSB first
-    // black=0, white=1, yellow=2, red=3
-    return packRows(pixels, width, height, 2, bwryCode)
+    // black=0, white=1, yellow=2, red=3 — except panels whose controller has
+    // yellow and red the other way round (the firmware streams the codes raw)
+    const codes = BWRY_CODES_BY_PANEL[panelIc ?? -1] ?? BWRY_CODES_DEFAULT
+    return packRows(pixels, width, height, 2, (r, g, b) => codes[bwryCode(r, g, b)])
 
   } else if (paletteGroupId === 'grayscale4') {
-    // Scheme 5: 2 bits/pixel, MSB first
-    // gray levels: 0→0, ~85→1, ~170→2, 255→3
-    return packRows(pixels, width, height, 2, (r, g, b) => Math.min(3, Math.round(((r + g + b) / 3) / 85)))
+    // Scheme 5: two row-padded 1-bit planes, plane 0 then plane 1, which the
+    // firmware streams straight into the controller's two RAM planes. Each
+    // grey level (0=black..3=white) goes through the panel's grey-code table;
+    // plane 0 carries bit 0 of the code, plane 1 bit 1. Packed 2 bpp is the
+    // same byte count, so the firmware accepts it but shows the wrong image.
+    const codes = GRAY4_CODES_BY_PANEL[panelIc ?? -1] ?? GRAY4_CODES_DEFAULT
+    const code = (r: number, g: number, b: number) => codes[Math.min(3, Math.round(((r + g + b) / 3) / 85))]
+    const plane0 = packRows(pixels, width, height, 1, (r, g, b) => code(r, g, b) & 1)
+    const plane1 = packRows(pixels, width, height, 1, (r, g, b) => code(r, g, b) >> 1)
+    const out = new Uint8Array(plane0.length + plane1.length)
+    out.set(plane0, 0)
+    out.set(plane1, plane0.length)
+    return out
 
   } else {
     // Scheme 6: 4 bits/pixel (grayscale8, grayscale16)
@@ -197,6 +212,26 @@ function acepCode(r: number, g: number, b: number): number {
     if (d < bestDist) { bestDist = d; best = code }
   }
   return best
+}
+
+// Per-panel code tables, from bb_epaper's colour tables (bb_ep.inl) via
+// py-opendisplay display_palettes.py. Indexed by our code / grey level.
+//
+// BWRY: most panels (u8Colors_4clr_v2) take black=0, white=1, yellow=2,
+// red=3. EP29YR 128×296 (0x001D) uses u8Colors_4clr with yellow and red
+// swapped. bb_epaper lists 0x001E with that table too, but on hardware
+// (Solum M3 2.7") the normal order is right (py-opendisplay #161/#166).
+const BWRY_CODES_DEFAULT = [0, 1, 2, 3]
+const BWRY_CODES_BY_PANEL: Record<number, number[]> = {
+  0x001D: [0, 1, 3, 2],  // EP29YR_128x296
+}
+
+// 4-grey: level (0=black..3=white) → 2-bit code stored across the two planes
+// (u8Colors_4gray; EP426 and EP368 use u8Colors_4gray_v2, mid-greys swapped).
+const GRAY4_CODES_DEFAULT = [3, 1, 2, 0]
+const GRAY4_CODES_BY_PANEL: Record<number, number[]> = {
+  0x0028: [3, 2, 1, 0],  // EP426_800x480_4GRAY
+  0x0048: [3, 2, 1, 0],  // EP368_792x528_4GRAY
 }
 
 function bwryCode(r: number, g: number, b: number): number {
