@@ -102,7 +102,10 @@ src/
 │   ├── colortune.ts           # colorTune() (not in UI) — optimizer for RGB channel gains; also the shared tuner/DBS-debug reference (buildTuneReference, imageStats, loss)
 │   └── huetune.ts             # hueTune() (not in UI) — optimizer for per-hue saturation bands; evaluateHueBands() used by the DBS debug panel
 ├── ble/
-│   ├── opendisplay.ts         # OpenDisplay BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
+│   ├── opendisplay.ts         # OpenDisplay BLE: encodeImage(), connectDevice(), sendImage() dispatcher, device config/firmware reads
+│   ├── opendisplay-link.ts    # OdLink: notification queue + (encrypted) command send/read
+│   ├── opendisplay-pipe.ts    # PIPE_WRITE sliding-window sender
+│   ├── opendisplay-crypto.ts  # OpenDisplay auth handshake + AES-CCM envelope
 │   └── gicisky.ts             # Gicisky BLE upload: isSupported(), encodeImage(), connectDevice(), sendImage()
 ├── main.ts                    # All UI logic, state, event wiring
 └── style.css
@@ -240,17 +243,34 @@ The **Auto-tune**, **Color-tune** and **Hue-tune** buttons (and their `#debugCol
 
 ### OpenDisplay BLE upload
 
-Implemented in `src/ble/opendisplay.ts`. Sends the already-dithered `ideal` ImageData directly to an OpenDisplay-compatible e-paper device over Web Bluetooth. Requires Chrome or Edge (Web Bluetooth is not supported in Firefox or Safari).
+Sends the already-dithered `ideal` ImageData to an OpenDisplay e-paper device over Web Bluetooth (service/characteristic UUID `0x2446`, device name prefix `OD`). Requires Chrome or Edge (Web Bluetooth is not supported in Firefox or Safari). Wire format reference: `OpenDisplay/opendisplay-protocol` `src/opendisplay_protocol.h`; reference clients: `OpenDisplay/py-opendisplay` and the opendisplay.org web client (`httpdocs/js/ble-common.js`). See `docs/opendisplay-ble-speedup-plan.md` for how the fast paths were ported.
 
-**Protocol** (OpenDisplay direct-write, service/characteristic UUID `0x2446`, device name prefix `OD`):
-1. `navigator.bluetooth.requestDevice()` → connect GATT → get characteristic → `startNotifications()`
-2. Send `[0x00, 0x70]` (start direct write, no payload — device reads its own dimensions/color-scheme from firmware config)
-3. Receive `[0x00, 0x70]` ack → send `[0x00, 0x71, ...chunk]` chunks of up to 230 bytes, one at a time
-4. Receive `[0x00, 0x71]` ack per chunk → send next chunk
-5. After all chunks: send `[0x00, 0x72]` (end / full refresh)
-6. Receive `[0x00, 0x73]` → refresh complete, Promise resolves
+- `src/ble/opendisplay-link.ts` — `OdLink`: the characteristic plus **one persistent notification listener feeding a queue** (`read(timeout)` / `readRaw(timeout)`). A per-read listener attached after the write can miss a fast reply, and the pipe sender reads ACKs while still writing. `send(cmd, payload)` encrypts when `link.session` is set (fresh nonce per call). `read()` decrypts frames ≥ 31 bytes and returns shorter ones as-is: the firmware sends NACKs and some ACKs unencrypted even during a session (same rule as py-opendisplay).
+- `src/ble/opendisplay-crypto.ts` — AES-CMAC auth handshake + AES-128-CCM envelope.
+- `src/ble/opendisplay-pipe.ts` — PIPE_WRITE negotiation and sliding-window sender.
+- `src/ble/opendisplay.ts` — `encodeImage()`, `connectDevice()`, `sendImage()` (the dispatcher), `checkCompatibility()`, `fastUploadHint()`.
 
-**Palette → OpenDisplay color scheme mapping:**
+**Connect** (`connectDevice(masterKey)`): pick device → GATT → `startNotifications()` → read firmware version (`0x0043`, always plaintext, so before auth) → authenticate if a key is set → read the device config (`0x0040`, chunked; the TLV packets have no length field, so `parseDisplayConfig()` walks py-opendisplay's fixed packet-size table to the first display packet `0x20`) for panel size, `color_scheme` and `transmission_modes`. Either read failing leaves that info null and uploads use plain direct write. Before an upload, `checkCompatibility()` asks for confirmation if the image size or palette doesn't match the panel. If the firmware is ≥ 2.20 but the config's `pipe_write` bit is off, `fastUploadHint()` says so (console + status tooltip): the bit is **stored config**, set in the OpenDisplay toolbox, not detected — new firmware alone doesn't enable fast uploads.
+
+**Upload paths**, tried in order by `sendImage()` (it logs method, size, time and throughput to the console):
+
+| Path | When | How |
+|---|---|---|
+| PIPE_WRITE (`0x80`/`0x81`/`0x82`) | config bit `0x10`; encrypted only on firmware ≥ 2.26.1 (±32 nonce replay window, Firmware PR #136); not after a failed START on this connection | START negotiates window W (requested 16), ACK cadence N (4), frame ≤ 244 B (241 data B, 212 encrypted). Up to W frames in flight; SACK `[00 81][highest_seen][mask:4 LE]` every N frames; mod-256 seqs resolved against the window base; selective repeat (rewind if the device doesn't buffer out-of-order). Uncompressed transfers **auto-complete** on the device (no END may be sent); compressed ones end with an explicit `0x82`. No START reply within 15 s → direct write. |
+| Compressed direct write | config bit `0x01` (streaming inflate), or `0x02` with zlib < 50 KB | START `[size:4 LE][first zlib bytes]` (≤ 200 B, 154 encrypted), rest in lock-step `0x71` chunks, END. Rejected START → uncompressed. |
+| Direct write (`0x70`/`0x71`/`0x72`) | always works | One 230-B chunk (154 encrypted) per ACK. A `0x72` instead of a `0x71` ACK means the device auto-completed. |
+
+All paths finish on `[00 73]` (refresh done) or `[00 74]` (refresh timed out). Data/END/refresh waits are 90 s (slow Spectra/ACeP SPI writes and refreshes take up to ~60 s).
+
+Things that are easy to get wrong:
+- **zlib window must be 9 bits** (512 B): the firmware's inflater rejects larger headers. The browser's `CompressionStream` can't do that, hence `pako` (`deflate(…, { level: 9, windowBits: 9 })`, lazily imported).
+- **Rows are byte-aligned**: each row starts a new byte (`ceil(w·bits/8)` bytes per row, per bitplane for BWR), matching the firmware and py-opendisplay. Only matters for widths not a multiple of 8/4/2.
+- **One deliberate deviation from the reference clients' pipe sender**: when an ACK is overdue while a retransmit is outstanding, it re-probes after 600 ms instead of waiting out the 15 s ACK timeout (a lost retransmit otherwise stalls the full window), and it aborts on 45 s of total silence rather than after 3 probes, so a device blocked on a slow SPI write isn't abandoned.
+- Dithered images compress modestly: uniform random 6-colour noise still deflates to ~66% (6 inks in a 4-bit nibble leave slack); flat art compresses far more. The pipe is the main speed-up.
+
+No automated BLE tests exist; the protocol code was developed against a scripted fake device (modelled on `Firmware/src/display_service.cpp` `handlePipeWriteData`, with frame loss, stalls and encryption) that isn't checked in. The physical device is the final check.
+
+**Palette → OpenDisplay color scheme mapping** (`PALETTE_SCHEMES`):
 
 | Palette group | Scheme | Encoding |
 |---|---|---|
@@ -258,12 +278,12 @@ Implemented in `src/ble/opendisplay.ts`. Sends the already-dithered `ideal` Imag
 | `bwr` | 1 | 2 bitplanes (plane1 then plane2), 1 bit/pixel each |
 | `bwry` | 3 | 2 bits/pixel, 4 px/byte, MSB first |
 | `spectra6` | 4 | 4 bits/pixel nibble-packed (black=0, white=1, yellow=2, red=3, blue=5, green=6) |
-| `acep` | — | **Unsupported** — 7-color has no matching scheme; upload button disabled |
-| `grayscale4` | 5 | 2 bits/pixel, 4 px/byte, MSB first |
+| `grayscale4` | 5 | 2 bits/pixel, 4 px/byte, MSB first. **Known issue:** py-opendisplay says firmware only accepts 4-grey as two 1-bit planes mapped through the panel's grey-code table (`encode_gray4_bitplanes`); not fixed here |
 | `grayscale8` | 6 | 4 bits/pixel nibble-packed, Rec.709 luminance → 0–15 |
 | `grayscale16` | 6 | 4 bits/pixel nibble-packed, Rec.709 luminance → 0–15 |
+| `acep` | 7 | 4 bits/pixel nibble-packed (black=0, white=1, yellow=2, red=3, blue=4, green=5, orange=6 — blue/green differ from Spectra 6) |
 
-Because the `ideal` ImageData already contains exact palette RGB values, `encodeImage()` uses direct colour matching rather than nearest-colour search. The BLE connection is maintained between uploads and reused on subsequent sends. The `gattserverdisconnected` device event clears it if the device drops the link.
+Scheme 8 (Spectra 6 split, reTerminal E1004: left half-plane then right) isn't encoded; `checkCompatibility()` warns when a device reports it. The BLE connection is kept between uploads; `gattserverdisconnected` clears it, and a failed upload disconnects.
 
 The Export section UI provides: an **↑ OpenDisplay BLE** / **↑ Gicisky BLE** split button (label reflects the active protocol), a **▾** dropdown with **OpenDisplay** / **Gicisky** protocol switchers plus **Connect** and **Disconnect** items, a shared connection status indicator, and a browser-compatibility hint. Switching protocol auto-disconnects the current connection. The active protocol is tracked in `bleProtocol` (`'opendisplay' | 'gicisky'`) and the connection in `bleState` (a discriminated union typed by protocol) in `main.ts`.
 
