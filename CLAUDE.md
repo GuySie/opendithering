@@ -351,7 +351,9 @@ The rotation select is excluded from the `dims-readonly` CSS rule so it remains 
 
 ### Auto-orientation
 
-When an image is activated or a display preset is changed, `autoOrientDisplay()` compares the image's aspect ratio to the display's aspect ratio. If they don't match (one is portrait, the other landscape), it swaps `displayWidth` and `displayHeight` internally and sets the Rotation dropdown to 270°. The width/height input fields are intentionally **not** updated — showing both swapped dims and a non-zero rotation would be confusing.
+The **Orientation** dropdown (`#orientationSelect`, module state `orientationMode`: `'auto' | 'landscape' | 'portrait'`, default Auto; not in presets) picks the crop's orientation. `applyOrientation()` runs on image activation, device-preset change, Custom width/height input and Orientation change. It always starts from the display's **native** size (`nativeDims()`: the preset's, or the typed Custom dims) — never the current working dims — and decides the wanted orientation: Auto follows the active image (portrait if taller than wide), Landscape/Portrait force it for every image. If that differs from the native orientation (and the panel isn't square), `displayWidth`/`displayHeight` are swapped and Rotation gets a quarter turn (270°, or 90° if the user already chose it) so the output fits the panel again; otherwise Rotation is 0° (or 180° if the user chose it). The width/height input fields are intentionally **not** updated — showing both swapped dims and a non-zero rotation would be confusing.
+
+The old `autoOrientDisplay()` swapped relative to the *current* dims and always set 270°, so going from a portrait image back to a landscape one left Rotation at 270° and exported sideways; deriving from the native size fixes that.
 
 ### Device preset cascade menu
 

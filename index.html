@@ -58,6 +58,12 @@
             </select>
           </div>
           <p class="rotation-warn" id="rotationWarn" hidden></p>
+          <label for="orientationSelect" data-tooltip="Crop orientation. Auto follows the image: a portrait photo on a landscape panel gets a portrait crop, turned to fit the panel. Landscape or Portrait forces that crop for every image; Rotation is set to match.">Orientation</label>
+          <select id="orientationSelect">
+            <option value="auto">Auto (follow image)</option>
+            <option value="landscape">Landscape</option>
+            <option value="portrait">Portrait</option>
+          </select>
           <label for="paletteSelect" data-tooltip="The e-paper panel's color technology.">Panel type</label>
           <select id="paletteSelect"></select>
         </div>

@@ -554,7 +554,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 /* ── Display dims / panel type ── */
 .custom-dims { margin-top: 0.5rem; }
 .dims-readonly input[type="number"],
-.dims-readonly select:not(#bleRotation) { opacity: 0.55; cursor: default; pointer-events: none; }
+.dims-readonly select:not(#bleRotation):not(#orientationSelect) { opacity: 0.55; cursor: default; pointer-events: none; }
 
 /* ── Crop position widget ── */
 .crop-widget { margin: 0.5rem 0 0.75rem; }

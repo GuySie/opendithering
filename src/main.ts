@@ -26,6 +26,8 @@ let images: ImageFile[] = []
 let activeId: string | null = null
 let settings: ProcessingSettings = { ...BALANCED_PRESET }
 let resizeMode: ResizeMode = 'cover'
+type OrientationMode = 'auto' | 'landscape' | 'portrait'
+let orientationMode: OrientationMode = 'auto'
 let displayWidth = 800
 let displayHeight = 480
 let paletteGroupId       = 'spectra6'
@@ -127,6 +129,7 @@ const bleStatus             = el<HTMLParagraphElement>('bleStatus')
 const bleStatusText         = el<HTMLSpanElement>('bleStatusText')
 const bleCompatHint         = el<HTMLParagraphElement>('bleCompatHint')
 const bleRotation           = el<HTMLSelectElement>('bleRotation')
+const orientationSelect     = el<HTMLSelectElement>('orientationSelect')
 const odKeyInput            = el<HTMLInputElement>('odKeyInput')
 const odKeyStatus           = el<HTMLSpanElement>('odKeyStatus')
 const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
@@ -445,7 +448,7 @@ function activateImage(id: string) {
   })
   const img = images.find(i => i.id === id)!
 
-  autoOrientDisplay(img.original.width, img.original.height)
+  if (applyOrientation()) invalidateAll()
   updateCropWidget()
 
   showOriginal(img.original)
@@ -478,15 +481,37 @@ function checkRotationConflict() {
   }
 }
 
-function autoOrientDisplay(imgW: number, imgH: number) {
-  const imgPortrait  = imgH > imgW
-  const dispPortrait = displayHeight > displayWidth
-  if (imgPortrait !== dispPortrait) {
-    ;[displayWidth, displayHeight] = [displayHeight, displayWidth]
-    bleRotation.value = '270'
-    invalidateAll()
-  }
+/** The display's native size: the preset's, or the typed Custom dimensions. */
+function nativeDims(): [number, number] {
+  const preset = DISPLAY_PRESETS.find(p => p.id === presetSelect.value)
+  if (preset && preset.id !== 'custom') return [preset.width, preset.height]
+  return [parseInt(dimWidth.value) || 800, parseInt(dimHeight.value) || 480]
+}
+
+/**
+ * Sets the working (crop) dimensions from the native size and the Orientation setting:
+ * Auto follows the active image, Landscape/Portrait force it. When the crop is turned
+ * against the panel, width and height are swapped and Rotation gets a quarter turn so the
+ * output fits the panel again; otherwise Rotation is 0° or 180°. A rotation the user picked
+ * that already fits (180° unswapped, 90° swapped) is kept. Returns whether the dims changed.
+ */
+function applyOrientation(): boolean {
+  const [w, h] = nativeDims()
+  const nativePortrait = h > w
+  const activeImg = images.find(i => i.id === activeId)
+  const wantPortrait =
+    orientationMode === 'portrait' ? true :
+    orientationMode === 'landscape' ? false :
+    activeImg ? activeImg.original.height > activeImg.original.width : nativePortrait
+  const swap = w !== h && wantPortrait !== nativePortrait
+  const deg = parseInt(bleRotation.value)
+  if (swap !== (deg === 90 || deg === 270)) bleRotation.value = swap ? '270' : '0'
+  const [newW, newH] = swap ? [h, w] : [w, h]
+  const changed = newW !== displayWidth || newH !== displayHeight
+  displayWidth = newW
+  displayHeight = newH
   checkRotationConflict()
+  return changed
 }
 
 function rotatePixels(
@@ -852,8 +877,6 @@ presetSelect.addEventListener('change', () => {
     setDimsEditable(true)
   } else {
     setDimsEditable(false)
-    displayWidth = preset.width
-    displayHeight = preset.height
     paletteGroupId = preset.paletteGroupId
     paletteSelect.value = paletteGroupId
     const group = getPaletteGroup(paletteGroupId)
@@ -863,11 +886,8 @@ presetSelect.addEventListener('change', () => {
     renderSwatches()
     dimWidth.value = String(preset.width)
     dimHeight.value = String(preset.height)
-    // Re-apply orientation for the currently active image
-    const activeImg = images.find(i => i.id === activeId)
-    if (activeImg) autoOrientDisplay(activeImg.original.width, activeImg.original.height)
-    else checkRotationConflict()
   }
+  applyOrientation()
   updateCropWidget()
   invalidateAll()
   scheduleProcess()
@@ -875,15 +895,20 @@ presetSelect.addEventListener('change', () => {
 
 bleRotation.addEventListener('change', () => checkRotationConflict())
 
+orientationSelect.addEventListener('change', () => {
+  orientationMode = orientationSelect.value as OrientationMode
+  if (!applyOrientation()) return
+  updateCropWidget()
+  invalidateAll(); scheduleProcess()
+})
+
 dimWidth.addEventListener('input', () => {
-  displayWidth = parseInt(dimWidth.value) || 800
-  checkRotationConflict()
+  applyOrientation()
   updateCropWidget()
   invalidateAll(); scheduleProcess()
 })
 dimHeight.addEventListener('input', () => {
-  displayHeight = parseInt(dimHeight.value) || 480
-  checkRotationConflict()
+  applyOrientation()
   updateCropWidget()
   invalidateAll(); scheduleProcess()
 })
