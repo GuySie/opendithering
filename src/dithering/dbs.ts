@@ -155,26 +155,52 @@ export function dbsRefine(
     return errs
   }
   const errs = buildErr()
-  const cpe = errs.map((e, ch) => correlate(e, w, h, models[ch].q, models[ch].radius))
+  // c_pe interleaved per pixel ([Yy, Cx, Cz] at m·3): a trial reads all three channels of a
+  // pixel at once, and Cx/Cz share the chroma kernel, so one sweep updates both.
+  const cpe = new Float64Array(N * 3)
   let E = 0
-  for (let ch = 0; ch < 3; ch++) for (let i = 0; i < N; i++) E += errs[ch][i] * cpe[ch][i]
+  for (let ch = 0; ch < 3; ch++) {
+    const c = correlate(errs[ch], w, h, models[ch].q, models[ch].radius)
+    const e = errs[ch]
+    for (let i = 0; i < N; i++) { cpe[i * 3 + ch] = c[i]; E += e[i] * c[i] }
+  }
   const initialE = E
 
   // Swap constant per channel and neighbour direction: c_pp(0) − c_pp(dx, dy)
   const swapConst = models.map((m, ch) => NEIGHBOURS.map(([dx, dy]) =>
     q0[ch] - m.q[m.radius + dx] * m.q[m.radius + dy]))
 
-  // Add a·c_pp(· − m) into c_pe for one channel, clipped to the image.
-  const addKernel = (ch: number, mx: number, my: number, a: number) => {
+  // Add a·c_pp(· − m) into the luminance channel of c_pe, clipped to the image.
+  // Walks each kernel row with running indices instead of recomputing them per element.
+  const qL = lum.q, rL = lum.radius
+  const addLum = (mx: number, my: number, a: number) => {
     if (a === 0) return
-    const { q, radius } = models[ch]
-    const c = cpe[ch]
-    const y0 = Math.max(0, my - radius), y1 = Math.min(h - 1, my + radius)
-    const x0 = Math.max(0, mx - radius), x1 = Math.min(w - 1, mx + radius)
+    const y0 = Math.max(0, my - rL), y1 = Math.min(h - 1, my + rL)
+    const x0 = Math.max(0, mx - rL), x1 = Math.min(w - 1, mx + rL)
+    const qx0 = rL + x0 - mx
     for (let y = y0; y <= y1; y++) {
-      const fy = a * q[radius + y - my]
-      const row = y * w
-      for (let x = x0; x <= x1; x++) c[row + x] += fy * q[radius + x - mx]
+      const fy = a * qL[rL + y - my]
+      let ci = (y * w + x0) * 3
+      for (let qi = qx0, qEnd = qx0 + x1 - x0; qi <= qEnd; qi++, ci += 3) cpe[ci] += fy * qL[qi]
+    }
+  }
+
+  // Add a1·c_pp(· − m) and a2·c_pp(· − m) into both chrominance channels in one sweep.
+  const qC = chroma.q, rC = chroma.radius
+  const addChroma = (mx: number, my: number, a1: number, a2: number) => {
+    if (a1 === 0 && a2 === 0) return
+    const y0 = Math.max(0, my - rC), y1 = Math.min(h - 1, my + rC)
+    const x0 = Math.max(0, mx - rC), x1 = Math.min(w - 1, mx + rC)
+    const qx0 = rC + x0 - mx
+    for (let y = y0; y <= y1; y++) {
+      const qy = qC[rC + y - my]
+      const f1 = a1 * qy, f2 = a2 * qy
+      let ci = (y * w + x0) * 3 + 1
+      for (let qi = qx0, qEnd = qx0 + x1 - x0; qi <= qEnd; qi++, ci += 3) {
+        const qv = qC[qi]
+        cpe[ci] += f1 * qv
+        cpe[ci + 1] += f2 * qv
+      }
     }
   }
 
@@ -188,7 +214,7 @@ export function dbsRefine(
         const m = y * w + x
         const k = idx[m]
         const pk = k * 3
-        const c0 = cpe[0][m], c1 = cpe[1][m], c2 = cpe[2][m]
+        const c0 = cpe[m * 3], c1 = cpe[m * 3 + 1], c2 = cpe[m * 3 + 2]
 
         let bestDE = -EPS, bestKind = 0, bestJ = 0, bestN = 0, bestDir = 0
 
@@ -212,9 +238,9 @@ export function dbsRefine(
           const pn = kn * 3
           const a0 = P[pn] - P[pk], a1 = P[pn + 1] - P[pk + 1], a2 = P[pn + 2] - P[pk + 2]
           const dE =
-            2 * a0 * a0 * swapConst[0][d] + 2 * a0 * (c0 - cpe[0][n]) +
-            2 * a1 * a1 * swapConst[1][d] + 2 * a1 * (c1 - cpe[1][n]) +
-            2 * a2 * a2 * swapConst[2][d] + 2 * a2 * (c2 - cpe[2][n])
+            2 * a0 * a0 * swapConst[0][d] + 2 * a0 * (c0 - cpe[n * 3]) +
+            2 * a1 * a1 * swapConst[1][d] + 2 * a1 * (c1 - cpe[n * 3 + 1]) +
+            2 * a2 * a2 * swapConst[2][d] + 2 * a2 * (c2 - cpe[n * 3 + 2])
           if (dE < bestDE) { bestDE = dE; bestKind = 2; bestN = n; bestDir = d }
         }
 
@@ -224,17 +250,18 @@ export function dbsRefine(
 
         if (bestKind === 1) {
           const pj = bestJ * 3
-          for (let ch = 0; ch < 3; ch++) addKernel(ch, x, y, P[pj + ch] - P[pk + ch])
+          addLum(x, y, P[pj] - P[pk])
+          addChroma(x, y, P[pj + 1] - P[pk + 1], P[pj + 2] - P[pk + 2])
           idx[m] = bestJ
         } else {
           const kn = idx[bestN]
           const pn = kn * 3
           const nx = x + NEIGHBOURS[bestDir][0], ny = y + NEIGHBOURS[bestDir][1]
-          for (let ch = 0; ch < 3; ch++) {
-            const a = P[pn + ch] - P[pk + ch]
-            addKernel(ch, x, y, a)
-            addKernel(ch, nx, ny, -a)
-          }
+          const a0 = P[pn] - P[pk], a1 = P[pn + 1] - P[pk + 1], a2 = P[pn + 2] - P[pk + 2]
+          addLum(x, y, a0)
+          addLum(nx, ny, -a0)
+          addChroma(x, y, a1, a2)
+          addChroma(nx, ny, -a1, -a2)
           idx[m] = kn
           idx[bestN] = k
         }
