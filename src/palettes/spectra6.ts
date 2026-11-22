@@ -58,6 +58,29 @@ export const spectra6Group: PaletteGroup = {
         { name: 'red',    measured: [122, 24, 18],   ideal: [255, 0, 0] },
         { name: 'yellow', measured: [156, 145, 14],  ideal: [255, 255, 0] },
       ],
+      // 4-neighbour mixing model (scripts/mixing, R=1: kernel weight 2.981 × fitted β per pair/channel),
+      // fitted on 1×1 checkerboards measured with a CR30 on this panel; predicts 2×2 checkerboards at mean
+      // ΔE00 1.62 and real DBS output at 1.63 (linear mixing: 5.95 / 3.87).
+      mixing: {
+        source: 'CHNSpec CR30, Seeed XIAO EE02 (ODA08AB0), 7.09" panel, room 20.7 °C, 2026-11-22, white reset before every pattern',
+        neighbourAttenuation: {
+          'black/white':  [0.3178, 0.3393, 0.2360],
+          'black/yellow': [0.1765, 0.2292, 0.0398],
+          'black/red':    [0.0168, -0.0005, -0.0155],
+          'black/blue':   [0.0625, 0.0542, 0.1192],
+          'black/green':  [-0.0880, -0.0494, -0.0550],
+          'white/yellow': [0.0111, 0.0065, 0.0553],
+          'white/red':    [0.0656, 0.0724, 0.1898],
+          'white/blue':   [0.0806, 0.0825, 0.0362],
+          'white/green':  [-0.0520, -0.0565, 0.0051],
+          'yellow/red':   [0.0256, 0.0465, -0.0319],
+          'yellow/blue':  [0.1102, 0.1137, 0.0561],
+          'yellow/green': [-0.0040, -0.0098, 0.0688],
+          'red/blue':     [0.0483, 0.0099, 0.1683],
+          'red/green':    [-0.0036, -0.0242, 0.0730],
+          'blue/green':   [-0.0776, -0.0889, -0.0096],
+        },
+      },
     },
     {
       // GDEP133C02 datasheet rev 1.0 §8.1 typical L*a*b* (Eye-One Pro3 Plus, 25 °C).

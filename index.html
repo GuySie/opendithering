@@ -335,6 +335,10 @@
             <input type="range" id="sliderDbsLiftTol" min="0" max="80" value="25" step="5" />
             <span class="slider-val" id="valDbsLiftTol">0.025</span>
           </div>
+          <label class="checkbox-label" id="rowDbsMixing" hidden data-tooltip="DBS: use how this panel's inks really mix, measured with a spectrophotometer. On the panel, a pixel looks darker or lighter depending on the inks next to it (black next to white loses most of its light, white next to red turns orange). DBS then picks ink patterns that look right on the panel instead of ones that only average right on paper. Only available for calibrations measured this way; about 3× slower.">
+            <input type="checkbox" id="checkDbsMixing" />
+            Use measured panel mixing
+          </label>
         </div>
       </section>
 

@@ -39,6 +39,7 @@ let showIdealPreview = false
 let dbsViewingDistanceCm = 40
 let dbsPpi = 127
 let dbsHighlightLift = 0 // 0–1, near-white lift applied to the refine target only
+let dbsUseMixing = false // use the calibration's measured mixing model (Palette.mixing) in DBS refine
 let dbsLiftTolerance = HIGHLIGHT_TINT_TOLERANCE // OKLab chroma at which the lift has faded out
 const DBS_DEFAULT_PASSES = 10
 let dbsMaxPasses = DBS_DEFAULT_PASSES // 1–30, upper bound on DBS passes (stops earlier if a pass changes nothing)
@@ -183,6 +184,8 @@ function populateCalibrationSelect(groupId: string) {
 function renderSwatches() {
   paletteSwatches.innerHTML = ''
   const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
+  // The measured mixing model belongs to one calibration (the panel it was measured on)
+  el<HTMLLabelElement>('rowDbsMixing').hidden = !palette.mixing
   for (const c of palette.colors) {
     const swatch = document.createElement('span')
     swatch.className = 'swatch'
@@ -1243,6 +1246,9 @@ function setDbsLift(pct: number) {
 el<HTMLInputElement>('sliderDbsLift').addEventListener('input', () =>
   setDbsLift(parseInt(el<HTMLInputElement>('sliderDbsLift').value)))
 el<HTMLInputElement>('sliderDbsLift').addEventListener('dblclick', () => setDbsLift(0))
+el<HTMLInputElement>('checkDbsMixing').addEventListener('change', e => {
+  dbsUseMixing = (e.target as HTMLInputElement).checked  // used by the next refine, like the other DBS settings
+})
 function setDbsPasses(v: number) {
   dbsMaxPasses = v
   el<HTMLInputElement>('sliderDbsPasses').value = String(v)
@@ -1538,7 +1544,7 @@ function startRefine(maxPasses: number): Promise<RefineOutcome> {
     target: dbsTarget,
     initIdx,
     palette,
-    params: { viewingDistanceCm: dbsViewingDistanceCm, ppi: dbsPpi, maxPasses },
+    params: { viewingDistanceCm: dbsViewingDistanceCm, ppi: dbsPpi, maxPasses, useMixing: dbsUseMixing },
   }
   worker.postMessage(job, [initIdx.buffer])
   return outcome

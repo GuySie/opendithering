@@ -10,6 +10,7 @@ const { PRE_DBS_PRESET } = await import('../../src/types')
 const dbs = await import('../../src/dithering/dbs')
 // Usage: npx tsx scripts/mixing/gen-flat.mts <out dir> <name> <r> <g> <b>
 // A flat source colour through Pre-DBS + DBS refine (guysie 7.09", 282 PPI, 40 cm, 10 passes), saved full-screen in nominal ink colours.
+// MIXING=1 uses the palette's measured mixing model (model-based DBS).
 const [, , OUT, name, r, g, b] = process.argv
 const W = 1200, H = 1600
 const pal = getPaletteVariant('spectra6', 'spectra6-guysie-7in09')
@@ -18,7 +19,7 @@ for (let i = 0; i < W * H; i++) img.data.set([+r, +g, +b, 255], i * 4)
 applyAdjustments(img, pal, PRE_DBS_PRESET)
 const target = [img.data[0], img.data[1], img.data[2]]
 const d = ditherStep(img, pal, PRE_DBS_PRESET)
-const res = dbs.dbsRefine(img, dbs.indicesFromMeasured(d, pal), pal, { viewingDistanceCm: 40, ppi: Math.hypot(W, H) / 7.09, maxPasses: 10 })
+const res = dbs.dbsRefine(img, dbs.indicesFromMeasured(d, pal), pal, { viewingDistanceCm: 40, ppi: Math.hypot(W, H) / 7.09, maxPasses: 10, useMixing: process.env.MIXING === '1' })
 const o = new PNG({ width: W, height: H })
 for (let i = 0; i < W * H; i++) { const c = pal.colors[res.idx[i]].ideal; o.data[i * 4] = c[0]; o.data[i * 4 + 1] = c[1]; o.data[i * 4 + 2] = c[2]; o.data[i * 4 + 3] = 255 }
 writeFileSync(OUT + '/' + name + '.png', PNG.sync.write(o))

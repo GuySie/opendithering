@@ -9,6 +9,18 @@ export interface Palette {
   id: string
   name: string
   colors: PaletteColor[]
+  /** How this panel's inks really mix, measured (CLAUDE.md "Panel mixing measurements"); used by DBS refine. */
+  mixing?: PaletteMixing
+}
+
+/**
+ * Measured ink interaction: a pixel's XYZ light is multiplied by exp(−k) for every directly adjacent
+ * (4-neighbour) pixel of a different ink, with k specific to the ink pair and channel (negative = lighter).
+ * Keys are unordered pairs of palette colour names, "a/b".
+ */
+export interface PaletteMixing {
+  neighbourAttenuation: Record<string, [number, number, number]>
+  source: string
 }
 
 export interface PaletteGroup {
