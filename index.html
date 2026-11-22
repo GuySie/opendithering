@@ -142,6 +142,11 @@
             <input type="checkbox" id="checkShadowChroma" />
             Limit shadow tint
           </label>
+          <div class="slider-row" id="rowShadowChromaStrength" hidden>
+            <label for="sliderShadowChromaStrength" data-tooltip="How strongly lifted near-blacks fade towards neutral. 0 keeps the source's colour at the lifted brightness; higher values fade it further, more for the darkest colours (they were lifted the most). Only colours darker than about the panel's black are affected; above 0.5 there is little further change. Very dark colours with a real tint (a deep plum) lose it too. Double-click to reset.">Shadow tint strength</label>
+            <input type="range" id="sliderShadowChromaStrength" min="0" max="100" value="50" step="1" />
+            <span class="slider-val" id="valShadowChromaStrength">0.50</span>
+          </div>
         </div>
 
         <div class="advanced-panel" id="panelColorGrading">

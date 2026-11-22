@@ -158,6 +158,7 @@ const checkCDR         = el<HTMLInputElement>('checkCDR')
 const drcModeSelect    = el<HTMLSelectElement>('drcModeSelect')
 const panelDrcMode     = el<HTMLDivElement>('panelDrcMode')
 const checkShadowChroma = el<HTMLInputElement>('checkShadowChroma')
+const rowShadowChromaStrength = el<HTMLDivElement>('rowShadowChromaStrength')
 const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
 const debugDbs         = el<HTMLDivElement>('debugDbs')
 const btnRefineDbs     = el<HTMLButtonElement>('btnRefineDbs')
@@ -1268,8 +1269,11 @@ drcModeSelect.addEventListener('change', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
+sliderSetup('sliderShadowChromaStrength', 'valShadowChromaStrength', 100, 'shadowChromaStrength')
+
 checkShadowChroma.addEventListener('change', () => {
   settings.capShadowChroma = checkShadowChroma.checked
+  rowShadowChromaStrength.hidden = !settings.capShadowChroma
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
@@ -1370,6 +1374,9 @@ function syncSlidersFromSettings() {
   checkCDR.checked = settings.compressDynamicRange
   drcModeSelect.value = settings.drcMode
   checkShadowChroma.checked = settings.capShadowChroma
+  rowShadowChromaStrength.hidden = !settings.capShadowChroma
+  el<HTMLInputElement>('sliderShadowChromaStrength').value = String(Math.round(settings.shadowChromaStrength * 100))
+  el<HTMLSpanElement>('valShadowChromaStrength').textContent = settings.shadowChromaStrength.toFixed(2)
   panelDrcMode.hidden = !settings.compressDynamicRange
   toneModeSelect.value = settings.toneMode
   panelContrast.hidden = settings.toneMode !== 'contrast'

@@ -86,11 +86,11 @@ export function applyAdjustments(img: ImageData, palette: Palette, settings: Pro
     // 2–3 (white point mode): tone curve on the full-range source first, so it can't dim white (255 stays
     // 255), then adapt the colour balance to the panel's white and compress brightness into its range
     applyToneMapping(img.data, settings)
-    mapToPanelWhitePoint(img.data, palette, settings.capShadowChroma)
+    mapToPanelWhitePoint(img.data, palette, settings.capShadowChroma, settings.shadowChromaStrength)
   } else {
     // 2. Dynamic range compression
     if (settings.compressDynamicRange) {
-      compressDynamicRange(img.data, palette, settings.capShadowChroma)
+      compressDynamicRange(img.data, palette, settings.capShadowChroma, settings.shadowChromaStrength)
     }
 
     // 3. Tone mapping

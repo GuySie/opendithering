@@ -10,20 +10,35 @@ import { srgbToLinear, linearToSrgb, rec709Luminance, rgbToOklab, oklabToRgb, li
 // the lift then fixes lightness without adding colour. Saturated darks (navy, deep red) never gain chroma
 // beyond the source's, so they keep their colour, unlike adding a neutral floor (dark red 0.101 → 0.033).
 
-/** Lift `pre` (linear RGB) by `scale`; with `capChroma` and scale > 1, keep pre's OKLab a/b at the lifted L. */
-function liftLinear(pre: number[], scale: number, capChroma: boolean): number[] {
+// Strength fades the capped colour further towards the mode's neutral grey (`neutral`: the linear RGB of
+// that grey at Y = 1 — plain grey in brightness-only mode, the panel white's tint in white point mode) by
+// scale^(−strength). The more a colour was lifted, the more of its tint goes: true near-blacks (lifted
+// ~40×) end up neutral, a blue-black (~3×) keeps part of it. Strength 0 is the plain cap; colours the lift
+// does not brighten are never touched.
+
+/** Shadow chroma cap settings for one DRC run; null = off. */
+export interface ShadowCap { strength: number; neutral: number[] }
+
+/** Lift `pre` (linear RGB) by `scale`; with a cap and scale > 1, keep pre's OKLab a/b (faded by strength) at the lifted L. */
+function liftLinear(pre: number[], scale: number, cap: ShadowCap | null): number[] {
   const post = [pre[0] * scale, pre[1] * scale, pre[2] * scale]
-  if (!capChroma || scale <= 1) return post
+  if (!cap || scale <= 1) return post
   const [, a, b] = linearToOklab(pre[0], pre[1], pre[2])
   const [L] = linearToOklab(post[0], post[1], post[2])
-  return oklabToLinear(L, a, b)
+  if (cap.strength <= 0) return oklabToLinear(L, a, b)
+  const Y = 0.2126729 * post[0] + 0.7151522 * post[1] + 0.0721750 * post[2]
+  const n = cap.neutral
+  const [, an, bn] = linearToOklab(n[0] * Y, n[1] * Y, n[2] * Y)
+  const f = Math.pow(scale, -cap.strength)
+  return oklabToLinear(L, an + (a - an) * f, bn + (b - bn) * f)
 }
 
 // --- Dynamic range compression ---
 // Maps pixel luminance into the display's actual [black, white] luminance range
 // so that pure black pixels map to the display's real black level, not 0,0,0.
 
-export function compressDynamicRange(data: Uint8ClampedArray, palette: Palette, capShadowChroma = false): void {
+export function compressDynamicRange(data: Uint8ClampedArray, palette: Palette, capShadowChroma = false, shadowChromaStrength = 0): void {
+  const cap: ShadowCap | null = capShadowChroma ? { strength: shadowChromaStrength, neutral: [1, 1, 1] } : null
   // Find the black and white palette entries by name
   const blackColor = palette.colors.find(c => c.name === 'black') ?? palette.colors[0]
   const whiteColor = palette.colors.find(c => c.name === 'white') ?? palette.colors[palette.colors.length - 1]
@@ -43,7 +58,7 @@ export function compressDynamicRange(data: Uint8ClampedArray, palette: Palette, 
     const newY = blackY + Y * range
     const scale = newY / Y
 
-    const out = liftLinear([lr, lg, lb], scale, capShadowChroma)
+    const out = liftLinear([lr, lg, lb], scale, cap)
     data[i]     = linearToSrgb(out[0])
     data[i + 1] = linearToSrgb(out[1])
     data[i + 2] = linearToSrgb(out[2])
@@ -92,8 +107,10 @@ export function panelWhiteAdaptation(palette: Palette): Mat3 {
   return mul3(inv3(toLms), mul3(diag, toLms))
 }
 
-export function mapToPanelWhitePoint(data: Uint8ClampedArray, palette: Palette, capShadowChroma = false): void {
+export function mapToPanelWhitePoint(data: Uint8ClampedArray, palette: Palette, capShadowChroma = false, shadowChromaStrength = 0): void {
   const A = panelWhiteAdaptation(palette)
+  // The mode's neutral: a source grey after adaptation, i.e. the panel white's tint (Y = 1 by construction)
+  const cap: ShadowCap | null = capShadowChroma ? { strength: shadowChromaStrength, neutral: apply3(A, [1, 1, 1]) } : null
   // Brightness compression as in compressDynamicRange, but on the adapted float values: the adapted white
   // exceeds 1.0 in some channels before compression, so an 8-bit round-trip in between would clip its hue.
   const blackColor = palette.colors.find(c => c.name === 'black') ?? palette.colors[0]
@@ -109,7 +126,7 @@ export function mapToPanelWhitePoint(data: Uint8ClampedArray, palette: Palette, 
       const Y = 0.2126729 * o[0] + 0.7151522 * o[1] + 0.0721750 * o[2]
       const scale = Y < 1e-6 ? 0 : (blackY + Y * range) / Y
       // The cap compares against the adapted colour, so greys keep the panel white's tint (no pink cast)
-      const p = liftLinear(o, scale, capShadowChroma)
+      const p = liftLinear(o, scale, cap)
       v = (linearToSrgb(p[0]) << 16) | (linearToSrgb(p[1]) << 8) | linearToSrgb(p[2])
       cache.set(key, v)
     }

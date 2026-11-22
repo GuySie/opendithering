@@ -76,6 +76,8 @@ const palette: Palette = getPalette(paletteId)
 const settings: ProcessingSettings = { ...PRESETS[presetName] }
 settings.drcMode = drcMode as ProcessingSettings['drcMode']
 if (shadowChroma) settings.capShadowChroma = true
+const shadowStrength = opt('shadow-chroma-strength', '')
+if (shadowStrength !== '') settings.shadowChromaStrength = parseFloat(shadowStrength)
 if (gamutBalance === 'nearest') { settings.gamutMapping = true; settings.gamutMappingMethod = 'nearest' }
 else if (gamutBalance !== '') { settings.gamutMapping = true; settings.gamutMappingMethod = 'grey'; settings.gamutMappingBalance = parseFloat(gamutBalance) }
 const W = 800, H = 480
@@ -248,7 +250,7 @@ const cloneImg = (img: ImageData) => new ImageData(new Uint8ClampedArray(img.dat
 const f2 = (n: number) => n.toFixed(2)
 
 console.log(`# S-CIELAB benchmark\n`)
-console.log(`Palette **${palette.name}** (${paletteId}) · preset **${presetName}** · ${ppi} PPI at ${distanceCm} cm (${sampPerDeg.toFixed(1)} px/°) · DBS max ${maxPasses} passes · gamut mapping ${settings.gamutMapping ? (settings.gamutMappingMethod === 'nearest' ? 'on (closest colour)' : `on (towards grey, balance ${settings.gamutMappingBalance})`) : 'off'} · DBS highlight lift ${highlightLift} · DRC ${settings.drcMode}${settings.capShadowChroma ? " + shadow chroma cap" : ""}\n`)
+console.log(`Palette **${palette.name}** (${paletteId}) · preset **${presetName}** · ${ppi} PPI at ${distanceCm} cm (${sampPerDeg.toFixed(1)} px/°) · DBS max ${maxPasses} passes · gamut mapping ${settings.gamutMapping ? (settings.gamutMappingMethod === 'nearest' ? 'on (closest colour)' : `on (towards grey, balance ${settings.gamutMappingBalance})`) : 'off'} · DBS highlight lift ${highlightLift} · DRC ${settings.drcMode}${settings.capShadowChroma ? ` + shadow chroma cap ${settings.shadowChromaStrength}` : ""}\n`)
 
 const totals = new Map<string, Row>()
 
