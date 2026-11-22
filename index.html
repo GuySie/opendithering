@@ -138,6 +138,10 @@
             <option value="luminance">Brightness only</option>
             <option value="whitepoint">Panel white point</option>
           </select>
+          <label class="checkbox-label" data-tooltip="The panel's black is lighter than true black, so near-blacks are lifted to reach it. The lift keeps each colour's balance, which makes a faint tint you can't see in the source (e.g. a blue-black) into a visible colour. This keeps the source's colour at the lifted brightness instead. Saturated darks (navy, deep red) are unaffected.">
+            <input type="checkbox" id="checkShadowChroma" />
+            Limit shadow tint
+          </label>
         </div>
 
         <div class="advanced-panel" id="panelColorGrading">

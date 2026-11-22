@@ -157,6 +157,7 @@ const rotationWarn          = el<HTMLParagraphElement>('rotationWarn')
 const checkCDR         = el<HTMLInputElement>('checkCDR')
 const drcModeSelect    = el<HTMLSelectElement>('drcModeSelect')
 const panelDrcMode     = el<HTMLDivElement>('panelDrcMode')
+const checkShadowChroma = el<HTMLInputElement>('checkShadowChroma')
 const btnAutoTune      = el<HTMLButtonElement>('btnAutoTune')
 const debugDbs         = el<HTMLDivElement>('debugDbs')
 const btnRefineDbs     = el<HTMLButtonElement>('btnRefineDbs')
@@ -1267,6 +1268,11 @@ drcModeSelect.addEventListener('change', () => {
   markCustomPreset(); invalidateAll(); scheduleProcess()
 })
 
+checkShadowChroma.addEventListener('change', () => {
+  settings.capShadowChroma = checkShadowChroma.checked
+  markCustomPreset(); invalidateAll(); scheduleProcess()
+})
+
 checkCDR.addEventListener('change', () => {
   settings.compressDynamicRange = checkCDR.checked
   panelDrcMode.hidden = !settings.compressDynamicRange
@@ -1363,6 +1369,7 @@ function syncSlidersFromSettings() {
   setSlider('sliderMidpoint', 'valMidpoint', settings.midpoint * 100, settings.midpoint)
   checkCDR.checked = settings.compressDynamicRange
   drcModeSelect.value = settings.drcMode
+  checkShadowChroma.checked = settings.capShadowChroma
   panelDrcMode.hidden = !settings.compressDynamicRange
   toneModeSelect.value = settings.toneMode
   panelContrast.hidden = settings.toneMode !== 'contrast'

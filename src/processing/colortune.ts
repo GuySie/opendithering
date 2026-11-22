@@ -41,7 +41,7 @@ export interface ColorTuneResult {
 export function buildTuneReference(
   source: PipelineInput['source'], srcWidth: number, srcHeight: number, dstWidth: number, dstHeight: number,
   resizeMode: PipelineInput['resizeMode'], cropOffsetX: number | undefined, cropOffsetY: number | undefined,
-  palette: PipelineInput['palette'], settings: Pick<ProcessingSettings, 'compressDynamicRange' | 'drcMode'>,
+  palette: PipelineInput['palette'], settings: Pick<ProcessingSettings, 'compressDynamicRange' | 'drcMode' | 'capShadowChroma'>,
 ): ImageData {
   const reference = resizeImage(source, srcWidth, srcHeight, dstWidth, dstHeight, resizeMode, cropOffsetX, cropOffsetY)
   applyTuneReferenceMapping(reference, palette, settings)
@@ -53,9 +53,9 @@ export function buildTuneReference(
  * must be white-point mapped too: otherwise Color-tune sees the deliberate shift towards the panel's white
  * as a colour error and adjusts the gains to undo it.
  */
-export function applyTuneReferenceMapping(img: ImageData, palette: PipelineInput['palette'], settings: Pick<ProcessingSettings, 'compressDynamicRange' | 'drcMode'>): void {
+export function applyTuneReferenceMapping(img: ImageData, palette: PipelineInput['palette'], settings: Pick<ProcessingSettings, 'compressDynamicRange' | 'drcMode' | 'capShadowChroma'>): void {
   if (!settings.compressDynamicRange) return
-  if (settings.drcMode === 'whitepoint') mapToPanelWhitePoint(img.data, palette)
+  if (settings.drcMode === 'whitepoint') mapToPanelWhitePoint(img.data, palette, settings.capShadowChroma)
   else applyTuneReferenceDrc(img, palette)
 }
 

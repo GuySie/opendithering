@@ -1,11 +1,29 @@
 import type { ProcessingSettings, Palette } from '../types'
-import { srgbToLinear, linearToSrgb, rec709Luminance, rgbToOklab, oklabToRgb } from './colorspace'
+import { srgbToLinear, linearToSrgb, rec709Luminance, rgbToOklab, oklabToRgb, linearToOklab, oklabToLinear } from './colorspace'
+
+// --- Shadow chroma cap ---
+// Both DRC modes lift brightness by multiplying linear RGB by newY/Y, which keeps a colour's R:G:B balance.
+// That scales OKLab L, a and b by the same factor (scale^(1/3)), so where the lift brightens (scale > 1:
+// only colours darker than about the panel's black) it raises chroma along with lightness: a near-black
+// with an invisible tint, e.g. (13,13,24) at chroma 0.023, becomes a visible navy (29,29,47) at 0.034.
+// With the cap, the lifted colour keeps the pre-lift a and b, i.e. its chroma is capped at the source's:
+// the lift then fixes lightness without adding colour. Saturated darks (navy, deep red) never gain chroma
+// beyond the source's, so they keep their colour, unlike adding a neutral floor (dark red 0.101 → 0.033).
+
+/** Lift `pre` (linear RGB) by `scale`; with `capChroma` and scale > 1, keep pre's OKLab a/b at the lifted L. */
+function liftLinear(pre: number[], scale: number, capChroma: boolean): number[] {
+  const post = [pre[0] * scale, pre[1] * scale, pre[2] * scale]
+  if (!capChroma || scale <= 1) return post
+  const [, a, b] = linearToOklab(pre[0], pre[1], pre[2])
+  const [L] = linearToOklab(post[0], post[1], post[2])
+  return oklabToLinear(L, a, b)
+}
 
 // --- Dynamic range compression ---
 // Maps pixel luminance into the display's actual [black, white] luminance range
 // so that pure black pixels map to the display's real black level, not 0,0,0.
 
-export function compressDynamicRange(data: Uint8ClampedArray, palette: Palette): void {
+export function compressDynamicRange(data: Uint8ClampedArray, palette: Palette, capShadowChroma = false): void {
   // Find the black and white palette entries by name
   const blackColor = palette.colors.find(c => c.name === 'black') ?? palette.colors[0]
   const whiteColor = palette.colors.find(c => c.name === 'white') ?? palette.colors[palette.colors.length - 1]
@@ -25,9 +43,10 @@ export function compressDynamicRange(data: Uint8ClampedArray, palette: Palette):
     const newY = blackY + Y * range
     const scale = newY / Y
 
-    data[i]     = linearToSrgb(lr * scale)
-    data[i + 1] = linearToSrgb(lg * scale)
-    data[i + 2] = linearToSrgb(lb * scale)
+    const out = liftLinear([lr, lg, lb], scale, capShadowChroma)
+    data[i]     = linearToSrgb(out[0])
+    data[i + 1] = linearToSrgb(out[1])
+    data[i + 2] = linearToSrgb(out[2])
   }
 }
 
@@ -73,7 +92,7 @@ export function panelWhiteAdaptation(palette: Palette): Mat3 {
   return mul3(inv3(toLms), mul3(diag, toLms))
 }
 
-export function mapToPanelWhitePoint(data: Uint8ClampedArray, palette: Palette): void {
+export function mapToPanelWhitePoint(data: Uint8ClampedArray, palette: Palette, capShadowChroma = false): void {
   const A = panelWhiteAdaptation(palette)
   // Brightness compression as in compressDynamicRange, but on the adapted float values: the adapted white
   // exceeds 1.0 in some channels before compression, so an 8-bit round-trip in between would clip its hue.
@@ -89,7 +108,9 @@ export function mapToPanelWhitePoint(data: Uint8ClampedArray, palette: Palette):
       const o = apply3(A, [srgbToLinear(data[i]), srgbToLinear(data[i + 1]), srgbToLinear(data[i + 2])])
       const Y = 0.2126729 * o[0] + 0.7151522 * o[1] + 0.0721750 * o[2]
       const scale = Y < 1e-6 ? 0 : (blackY + Y * range) / Y
-      v = (linearToSrgb(o[0] * scale) << 16) | (linearToSrgb(o[1] * scale) << 8) | linearToSrgb(o[2] * scale)
+      // The cap compares against the adapted colour, so greys keep the panel white's tint (no pink cast)
+      const p = liftLinear(o, scale, capShadowChroma)
+      v = (linearToSrgb(p[0]) << 16) | (linearToSrgb(p[1]) << 8) | linearToSrgb(p[2])
       cache.set(key, v)
     }
     data[i] = v >> 16; data[i + 1] = (v >> 8) & 255; data[i + 2] = v & 255
