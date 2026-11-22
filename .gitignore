@@ -4,3 +4,6 @@ dist/
 
 # Local test images (other artists' work: do not commit)
 test images/
+
+# Python bytecode from the uv scripts
+__pycache__/
