@@ -384,6 +384,24 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "analyse":
         analyse(json.loads(Path(sys.argv[2]).read_text()))
         return
+    if len(sys.argv) > 1 and sys.argv[1] == "show":
+        # show a full-screen image (nominal ink colours) on the board, without measuring
+        sp = argparse.ArgumentParser(prog="measure-mixing.py show")
+        sp.add_argument("image")
+        sp.add_argument("--address", required=True)
+        sp.add_argument("--key")
+        a = sp.parse_args(sys.argv[2:])
+
+        async def show_one() -> None:
+            d = PatternDisplay(a.address, bytes.fromhex(a.key) if a.key else None, 0.0)
+            w, h = await d.connect()
+            try:
+                await d.show(_image_pattern(Path(a.image), w, h))
+            finally:
+                await d.close()
+        asyncio.run(show_one())
+        print(f"shown: {a.image}")
+        return
     ap.add_argument("--address", help="the OpenDisplay board: its name (e.g. OD216205), MAC or macOS UUID")
     ap.add_argument("--key", help="the board's encryption key (32 hex characters), if it has one")
     add_instrument_options(ap)

@@ -39,7 +39,13 @@ let showIdealPreview = false
 let dbsViewingDistanceCm = 40
 let dbsPpi = 127
 let dbsHighlightLift = 0 // 0–1, near-white lift applied to the refine target only
-let dbsUseMixing = false // use the calibration's measured mixing model (Palette.mixing) in DBS refine
+let dbsUseMixing = true // use the calibration's measured mixing model (Palette.mixing) in DBS refine, when it has one
+// With the mixing model, DBS has a reason to clump same-ink dots (fewer ink boundaries = less light lost), which
+// the 40 cm eye model underrates: on the panel the clumps showed as coarse grain. At 25 cm the sharper eye model
+// keeps the grain acceptable while keeping the colour gain (panel A/B, girl-on-deck illustration, 2026-11-22).
+const DBS_DISTANCE_DEFAULT = 40
+const DBS_DISTANCE_MIXING = 25
+let mixingDistanceApplied = false
 let dbsLiftTolerance = HIGHLIGHT_TINT_TOLERANCE // OKLab chroma at which the lift has faded out
 const DBS_DEFAULT_PASSES = 10
 let dbsMaxPasses = DBS_DEFAULT_PASSES // 1–30, upper bound on DBS passes (stops earlier if a pass changes nothing)
@@ -186,6 +192,7 @@ function renderSwatches() {
   const palette = getPaletteVariant(paletteGroupId, calibrationVariantId)
   // The measured mixing model belongs to one calibration (the panel it was measured on)
   el<HTMLLabelElement>('rowDbsMixing').hidden = !palette.mixing
+  syncMixingDistance()
   for (const c of palette.colors) {
     const swatch = document.createElement('span')
     swatch.className = 'swatch'
@@ -1248,7 +1255,16 @@ el<HTMLInputElement>('sliderDbsLift').addEventListener('input', () =>
 el<HTMLInputElement>('sliderDbsLift').addEventListener('dblclick', () => setDbsLift(0))
 el<HTMLInputElement>('checkDbsMixing').addEventListener('change', e => {
   dbsUseMixing = (e.target as HTMLInputElement).checked  // used by the next refine, like the other DBS settings
+  syncMixingDistance()
 })
+
+/** With the mixing model in use, view from 25 cm (see DBS_DISTANCE_MIXING); back to 40 cm when it isn't. */
+function syncMixingDistance() {
+  const want = !!getPaletteVariant(paletteGroupId, calibrationVariantId).mixing && dbsUseMixing
+  if (want === mixingDistanceApplied) return
+  setDbsDistance(want ? DBS_DISTANCE_MIXING : DBS_DISTANCE_DEFAULT)
+  mixingDistanceApplied = want
+}
 function setDbsPasses(v: number) {
   dbsMaxPasses = v
   el<HTMLInputElement>('sliderDbsPasses').value = String(v)
