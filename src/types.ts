@@ -37,8 +37,8 @@ export interface ProcessingSettings {
   saturation: number            // 0.5–2.0, default 1.0
   compressDynamicRange: boolean // default true
   drcMode: DrcMode              // 'luminance' = scale brightness only (default); 'whitepoint' = adapt colour balance to the panel's measured white first, so source white lands exactly on it (tone curve runs first)
-  capShadowChroma: boolean      // default false; where DRC brightens (near-blacks), keep the pre-lift OKLab a/b so the lift can't add colour
-  shadowChromaStrength: number  // 0–1, default 0.5; with the cap, fade lifted colours further towards the mode's neutral by scale^(−strength)
+  capShadowChroma: boolean      // default false (true in Pre-DBS); where DRC brightens (near-blacks), keep the pre-lift OKLab a/b so the lift can't add colour
+  shadowChromaStrength: number  // 0–1, default 0.25; with the cap, fade lifted colours further towards the mode's neutral by scale^(−strength)
   toneMode: ToneMode
   contrast: number              // 0.5–2.0 (contrast mode)
   strength: number              // 0.0–1.0 (scurve mode)
@@ -118,7 +118,7 @@ export const BALANCED_PRESET: ProcessingSettings = {
   hueSatBands: [1, 1, 1, 1, 1, 1],
   drcMode: 'luminance',
   capShadowChroma: false,
-  shadowChromaStrength: 0.5,
+  shadowChromaStrength: 0.25,
   gamutMapping: false,
   gamutMappingBalance: 0.5,
   gamutMappingMethod: 'nearest',
@@ -154,7 +154,7 @@ export const VIVID_PRESET: ProcessingSettings = {
   hueSatBands: [1, 1, 1, 1, 1, 1],
   drcMode: 'luminance',
   capShadowChroma: false,
-  shadowChromaStrength: 0.5,
+  shadowChromaStrength: 0.25,
   gamutMapping: false,
   gamutMappingBalance: 0.5,
   gamutMappingMethod: 'nearest',
@@ -190,7 +190,7 @@ export const SOFT_PRESET: ProcessingSettings = {
   hueSatBands: [1, 1, 1, 1, 1, 1],
   drcMode: 'luminance',
   capShadowChroma: false,
-  shadowChromaStrength: 0.5,
+  shadowChromaStrength: 0.25,
   gamutMapping: false,
   gamutMappingBalance: 0.5,
   gamutMappingMethod: 'nearest',
@@ -226,7 +226,7 @@ export const GRAYSCALE_PRESET: ProcessingSettings = {
   hueSatBands: [1, 1, 1, 1, 1, 1],
   drcMode: 'luminance',
   capShadowChroma: false,
-  shadowChromaStrength: 0.5,
+  shadowChromaStrength: 0.25,
   gamutMapping: false,
   gamutMappingBalance: 0.5,
   gamutMappingMethod: 'nearest',
@@ -262,7 +262,7 @@ export const NONE_PRESET: ProcessingSettings = {
   hueSatBands: [1, 1, 1, 1, 1, 1],
   drcMode: 'luminance',
   capShadowChroma: false,
-  shadowChromaStrength: 0.5,
+  shadowChromaStrength: 0.25,
   gamutMapping: false,
   gamutMappingBalance: 0.5,
   gamutMappingMethod: 'nearest',
@@ -282,6 +282,7 @@ export const PRE_DBS_PRESET: ProcessingSettings = {
   ditherAlgorithm: 'dizzy', // the error-diffusion result is DBS's starting point
   gamutMapping: true,       // closest-colour clip: keeps DBS's saturation, removes out-of-gamut edge halos
   gamutMappingMethod: 'nearest',
+  capShadowChroma: true,    // the lift to the panel's black mustn't turn invisible source tints into colour (blue skies/hair)
 }
 
 export type PresetName = 'balanced' | 'predbs' | 'vivid' | 'soft' | 'grayscale' | 'none' | 'custom'
