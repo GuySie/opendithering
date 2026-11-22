@@ -16,21 +16,36 @@ import { srgbToLinear, linearToSrgb, rec709Luminance, rgbToOklab, oklabToRgb, li
 // ~40×) end up neutral, a blue-black (~3×) keeps part of it. Strength 0 is the plain cap; colours the lift
 // does not brighten are never touched.
 
+// The cap is phased in with the lift factor: none up to CAP_LIFT_START, full from CAP_LIFT_FULL, smoothstep
+// between. Keeping the source's absolute chroma is right for an invisible tint on a true near-black, but a
+// real dark colour lifted to a lighter shade with the same chroma looks less saturated than in the source.
+// The two differ in how far below the panel's black they sit, not in chroma: on the guysie 7.09" palette the
+// astronaut's near-black sky (OKLab L 0.093, chroma 0.047) and the mermaid's blue-black hair (0.116, 0.035)
+// are lifted ~16× and ~8×, while a forest's dark reds (0.207, 0.061) and a navy winter sky (0.195, 0.028)
+// are lifted ~1.7–2×. Unweighted, the cap took the dark reds' perceived chroma from 0.042 to 0.034.
+export const CAP_LIFT_START = 2
+export const CAP_LIFT_FULL = 4
+
 /** Shadow chroma cap settings for one DRC run; null = off. */
 export interface ShadowCap { strength: number; neutral: number[] }
 
-/** Lift `pre` (linear RGB) by `scale`; with a cap and scale > 1, keep pre's OKLab a/b (faded by strength) at the lifted L. */
+/** Lift `pre` (linear RGB) by `scale`; with a cap, move the lifted a/b towards pre's (faded by strength), weighted by how far it was lifted. */
 function liftLinear(pre: number[], scale: number, cap: ShadowCap | null): number[] {
   const post = [pre[0] * scale, pre[1] * scale, pre[2] * scale]
-  if (!cap || scale <= 1) return post
-  const [, a, b] = linearToOklab(pre[0], pre[1], pre[2])
-  const [L] = linearToOklab(post[0], post[1], post[2])
-  if (cap.strength <= 0) return oklabToLinear(L, a, b)
-  const Y = 0.2126729 * post[0] + 0.7151522 * post[1] + 0.0721750 * post[2]
-  const n = cap.neutral
-  const [, an, bn] = linearToOklab(n[0] * Y, n[1] * Y, n[2] * Y)
-  const f = Math.pow(scale, -cap.strength)
-  return oklabToLinear(L, an + (a - an) * f, bn + (b - bn) * f)
+  if (!cap || scale <= CAP_LIFT_START) return post
+  const t = Math.min(1, (scale - CAP_LIFT_START) / (CAP_LIFT_FULL - CAP_LIFT_START))
+  const w = t * t * (3 - 2 * t)
+  let [, a, b] = linearToOklab(pre[0], pre[1], pre[2])
+  const [L, ap, bp] = linearToOklab(post[0], post[1], post[2])
+  if (cap.strength > 0) {
+    const Y = 0.2126729 * post[0] + 0.7151522 * post[1] + 0.0721750 * post[2]
+    const n = cap.neutral
+    const [, an, bn] = linearToOklab(n[0] * Y, n[1] * Y, n[2] * Y)
+    const f = Math.pow(scale, -cap.strength)
+    a = an + (a - an) * f
+    b = bn + (b - bn) * f
+  }
+  return oklabToLinear(L, ap + (a - ap) * w, bp + (b - bp) * w)
 }
 
 // --- Dynamic range compression ---
