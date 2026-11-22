@@ -1546,6 +1546,10 @@ function startRefine(maxPasses: number): Promise<RefineOutcome> {
 
 // Auto Tune: apply the Pre-DBS preset, re-dither, then run a fixed-length DBS refine.
 const AUTO_TUNE_PASSES = 10
+// Near-whites get pulled to the panel's white for the refine (faint tints only; real pale colours, skin and
+// saturated colours are left alone): on seven illustrations it raised white ink in near-white and light-grey
+// areas by 3–7 points without changing pale tints, skin or line art. Set on the slider, so it stays visible.
+const AUTO_TUNE_HIGHLIGHT_LIFT = 50 // %
 btnAutoTune.addEventListener('click', async () => {
   if (!images.some(i => i.id === activeId)) return
   btnAutoTune.disabled = true
@@ -1555,6 +1559,7 @@ btnAutoTune.addEventListener('click', async () => {
   if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null }
   await processActive()
   btnAutoTune.textContent = 'Refining…'
+  setDbsLift(AUTO_TUNE_HIGHLIGHT_LIFT)
   await startRefine(AUTO_TUNE_PASSES) // progress and cancel live on the Refine button; any settings change cancels it
   btnAutoTune.disabled = false
   btnAutoTune.textContent = 'Auto Tune'
