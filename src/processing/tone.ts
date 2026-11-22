@@ -149,7 +149,13 @@ export function mapToPanelWhitePoint(data: Uint8ClampedArray, palette: Palette, 
 export const HIGHLIGHT_KNEE = 0.65
 export const HIGHLIGHT_TINT_TOLERANCE = 0.025
 
-export function applyHighlightLift(data: Uint8ClampedArray, palette: Palette, strength: number, tintTolerance = HIGHLIGHT_TINT_TOLERANCE): void {
+// The tint is measured against what a *neutral* source colour becomes in the DRC mode (`whiteTintedGreys`):
+// plain grey in brightness-only mode, and in white point mode a scaled-down copy of the panel's white — whose
+// OKLab a/b scale with L, so the neutral at lightness L is (aw, bw)·L/Lw. Measuring absolute chroma instead
+// made the gate treat every near-white as tinted on a panel with a tinted white: guysie 7.09" white has
+// chroma 0.022, inside the 0.015–0.025 fade, so neutral greys (0.020) were barely lifted and a faintly cool
+// off-white (0.026, but 0.005 from the panel's white) not at all, while cream (0.012) was.
+export function applyHighlightLift(data: Uint8ClampedArray, palette: Palette, strength: number, tintTolerance = HIGHLIGHT_TINT_TOLERANCE, whiteTintedGreys = false): void {
   if (strength <= 0) return
   const hi = Math.max(tintTolerance, 1e-4), lo = 0.6 * hi
   const labs = palette.colors.map(c => ({ c, L: rgbToOklab(...c.measured)[0] })).sort((a, b) => a.L - b.L)
@@ -163,7 +169,8 @@ export function applyHighlightLift(data: Uint8ClampedArray, palette: Palette, st
     if (v === undefined) {
       const [L, a, b] = rgbToOklab(data[i], data[i + 1], data[i + 2])
       const t = Math.min(1, Math.max(0, ((L - Lb) / (Lw - Lb) - HIGHLIGHT_KNEE) / (1 - HIGHLIGHT_KNEE)))
-      const c = Math.min(1, Math.max(0, (Math.hypot(a, b) - lo) / (hi - lo)))
+      const k = whiteTintedGreys ? L / Lw : 0
+      const c = Math.min(1, Math.max(0, (Math.hypot(a - aw * k, b - bw * k) - lo) / (hi - lo)))
       const u = strength * t * t * (3 - 2 * t) * (1 - c * c * (3 - 2 * c))
       if (u <= 0) {
         v = key

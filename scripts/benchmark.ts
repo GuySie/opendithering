@@ -279,7 +279,7 @@ for (const { name, img } of images) {
 
   // DBS refine starting from Floyd-Steinberg
   const dbsTarget = cloneImg(target)
-  applyHighlightLift(dbsTarget.data, palette, highlightLift, liftTolerance === '' ? undefined : parseFloat(liftTolerance))
+  applyHighlightLift(dbsTarget.data, palette, highlightLift, liftTolerance === '' ? undefined : parseFloat(liftTolerance), settings.compressDynamicRange && settings.drcMode === 'whitepoint')
   const { idx, stats } = dbsRefine(dbsTarget, indicesFromMeasured(fsOut!, palette), palette, { viewingDistanceCm: distanceCm, ppi, maxPasses })
   score(highlightLift > 0 ? `DBS (from Floyd-Steinberg, highlight lift ${highlightLift})` : 'DBS (from Floyd-Steinberg)', measuredFromIndices(idx, target.width, target.height, palette), stats.ms)
 

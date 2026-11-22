@@ -1489,7 +1489,8 @@ function startRefine(maxPasses: number): Promise<RefineOutcome> {
   const target = img.target
   // Highlight lift only changes what DBS aims for; img.target itself stays the pipeline's output
   const dbsTarget = new ImageData(new Uint8ClampedArray(target.data), target.width, target.height)
-  applyHighlightLift(dbsTarget.data, palette, dbsHighlightLift, dbsLiftTolerance)
+  applyHighlightLift(dbsTarget.data, palette, dbsHighlightLift, dbsLiftTolerance,
+    settings.compressDynamicRange && settings.drcMode === 'whitepoint')
   const initIdx = indicesFromMeasured(before, palette)
 
   const worker = new Worker(new URL('./dithering/dbs.worker.ts', import.meta.url), { type: 'module' })
