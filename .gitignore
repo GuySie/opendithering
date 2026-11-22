@@ -1,3 +1,6 @@
 node_modules/
 reference/
 dist/
+
+# Local test images (other artists' work: do not commit)
+test images/
